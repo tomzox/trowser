@@ -517,7 +517,7 @@ proc SearchHighlightUpdate {{delay 10}} {
 
           HighlightVisible $tlb_find find $opt
 
-          set tid_search_hall [after $delay SearchHighlightStart $tlb_find $opt]
+          set tid_search_hall [after $delay [list SearchHighlightStart $tlb_find $opt]]
         }
       }
     } else {
@@ -1310,15 +1310,16 @@ proc Mark_OfferSave {} {
 # the text against the color highlight patterns to assign foreground
 # and background colors.
 #
-proc MarkList_Insert {pos mtext} {
-  global patlist
+proc MarkList_Insert {pos line} {
+  global patlist mark_list
 
-  .dlg_mark.l insert $pos $mtext
+  .dlg_mark.l insert $pos $mark_list($line)
 
-  foreach w $patlist {
-    set pat [lindex $w 0]
-    if {[string first $pat $mtext)] >= 0} {
-      .dlg_mark.l itemconfigure $pos -background [lindex $w 6] -foreground [lindex $w 7]
+  foreach tag [.f1.t tag names "$line.1"] {
+    if {[scan $tag "tag%d" tag_idx] == 1} {
+      set fg_col [.f1.t tag cget $tag -foreground]
+      set bg_col [.f1.t tag cget $tag -background]
+      .dlg_mark.l itemconfigure $pos -background $bg_col -foreground $fg_col
       break
     }
   }
@@ -1338,7 +1339,7 @@ proc MarkList_Fill {} {
     foreach line [lsort -integer [array names mark_list]] {
       lappend dlg_mark_list $line
 
-      MarkList_Insert end $mark_list($line)
+      MarkList_Insert end $line
     }
   }
 }
@@ -1360,7 +1361,7 @@ proc MarkList_Add {line} {
       incr idx
     }
     set dlg_mark_list [linsert $dlg_mark_list $idx $line]
-    MarkList_Insert $idx $mark_list($line)
+    MarkList_Insert $idx $line
     .dlg_mark.l selection clear 0 end
     .dlg_mark.l selection set $idx
     .dlg_mark.l see $idx
@@ -1487,7 +1488,7 @@ proc MarkList_Rename {idx txt} {
       set mark_list_modified 1
 
       .dlg_mark.l delete $idx
-      .dlg_mark.l insert $idx $txt
+      MarkList_Insert $idx $line
       .dlg_mark.l selection clear 0 end
       .dlg_mark.l selection set $idx
       .dlg_mark.l see $idx
@@ -2326,7 +2327,7 @@ proc MenuCmd_Reload {} {
   global cur_filename
 
   if {$cur_filename ne ""} {
-    after idle LoadFile $cur_filename
+    after idle [list LoadFile $cur_filename]
   }
 }
 
@@ -2361,7 +2362,7 @@ proc MenuCmd_OpenFile {} {
     MarkList_Fill
     SearchReset
 
-    after idle LoadFile $filename
+    after idle [list LoadFile $filename]
   }
 }
 
