@@ -1,0 +1,78 @@
+trowser (1.3) unstable; urgency=medium
+
+  * update highlighting in visible text portion when scrolling during initial
+    highlighting task (both for initial highlighting and global search)
+  * apply initial highlighting also to lines already in the search result list
+  * added "u" and CTRL-r key bindings to main win (undo/redo changes by "i")
+  * added ALT-N and ALT-P: "search all" only below or above cursor position;
+    extended search buttons in search history and tag editor dialogs
+  * improved display of progress bar and status messages (use internal overlay
+    instead of transient toplevels which didn't work with some window managers)
+  * included reg.exp. and case options into search history dialog
+  * new command to import line number list from file (e.g. from grep -n)
+  * search "all" no longer scrolls away from the selected line in the list
+  * optimized search list undo, redo, insert & frame number calculations:
+    now implemented as background task with progress bar
+  * major bugfix in background task pre-emption which sometimes caused the
+    background task to lock up infinitly
+  * allow aborting ongoing "search all" via Escape key
+  * ask via popup message before aborting background "search all" for
+    conflicting new commands
+  * major performance improvement of "Discard text below/above cursor" command
+
+ -- maintainer Tom Zoerner <tomzo@users.sourceforge.net>  Tue, 31 Mar 2009 21:07:26 +0200
+
+trowser (1.2) unstable; urgency=low
+
+  * improved "i" binding: ignore text selection if not visible
+    (instead insert the line holding cursor)
+  * removed key binding for CTRL-H in search box (got mixed up with backspace)
+  * multiple bugfixes in writing RC file updates
+  * bugfix quitting via "File" menu now also updates the RC file with the
+    search history
+
+ -- maintainer Tom Zoerner <tomzo@users.sourceforge.net>  Mon,  2 Mar 2009 21:38:16 +0100
+
+trowser (1.1) unstable; urgency=low
+
+  * search repeat ("n"/"N"): use top-most history if search entry field is empty
+  * search entry field not cleared when moving focus via mouse click
+  * bugfix: search list undo for ALT-A: list of added lines is fragmented
+  * show bookmarks also in filter window; add "m" key binding
+  * bugfix: selection wrong after insert in search list
+  * search list insert gets exponentially slower when many lines are in dialog
+  * improve viewport connection between main and search list windows
+  * improve cursor mark in bookmarks, search list and color highlight window
+  * add "EDIT" button to color highlight window
+  * increased default history size from 20 to 50
+
+  * split off key-binding creation for cursor and view control from main win
+    as preparation to allow using them in filter dialog
+  * apply CTRL-+/- also to font in highlights tags (e.g. for bold text)
+    added key binding to search filter dialog
+  * allow enabling line-wrap in main window via ALT-w
+  * don't raise search window upon "i" in main window (when already open)
+  * move focus into dialogs when raising the dialog window
+  * search filter dialog improvements:
+    + added search among filtered lines (still too slow)
+    + implemented undo in search filter dialog
+    + cache parsed FNs to improve performance
+  * selection improvement for line removal: remember last pos in anchor elem
+
+  * allow vim key bindings in filter window (step #1: scrolling only)
+  * optimisation: temp. disable reg-exp for cur. search if pattern is plain text
+  * search filter dialog: new mode to display FN deltas instead of abs. FN
+  * control menu command "discard text": display line count + percentage
+  * ctrl-g: display number of characters
+  * incremental search: view jiggling when appending chars to search expr.
+  * Key: /,RETURN: should repeat search, but does nothing
+  * bug: fast typing search expr. + hit RETURN -> match on partial text only
+  * suspend background tasks while other bg tasks are active
+  * search string not always copied to stack (e.g. All)
+  * search history not updated when searching via search history dialog
+  * reverse order of search history
+  * "Save as" in filter dialog saves the main text instead of the filtered text
+  * "Save as" in filter dialog: add option to save line numbers only
+  * tcl error when hitting "i" twice in main window
+
+ -- maintainer Tom Zoerner <tomzo@users.sourceforge.net>  Mon, 29 Sep 2008 19:53:40 +0200
