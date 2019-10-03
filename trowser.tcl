@@ -167,15 +167,15 @@ proc CreateMainWindow {} {
   # search with "/", "?"; repeat search with n/N
   bind .f1.t <Key-slash> {set tlb_last_dir 1; focus .f2.e; KeyClr; break}
   bind .f1.t <Key-question> {set tlb_last_dir 0; focus .f2.e; KeyClr; break}
-  bind .f1.t <Key-n> {Search 1 0; KeyClr; break}
-  bind .f1.t <Key-p> {Search 0 0; KeyClr; break}
-  bind .f1.t <Key-N> {Search 0 0; KeyClr; break}
+  bind .f1.t <Key-n> {SearchNext 1; KeyClr; break}
+  bind .f1.t <Key-p> {SearchNext 0; KeyClr; break}
+  bind .f1.t <Key-N> {SearchNext 0; KeyClr; break}
   bind .f1.t <Key-asterisk> {SearchWord 1; KeyClr; break}
   bind .f1.t <Key-numbersign> {SearchWord 0; KeyClr; break}
   bind .f1.t <Key-ampersand> {SearchHighlightClear; KeyClr; break}
   bind .f1.t <Alt-Key-f> {focus .f2.e; KeyClr; break}
-  bind .f1.t <Alt-Key-n> {Search 1 0; KeyClr; break}
-  bind .f1.t <Alt-Key-p> {Search 0 0; KeyClr; break}
+  bind .f1.t <Alt-Key-n> {SearchNext 1; KeyClr; break}
+  bind .f1.t <Alt-Key-p> {SearchNext 0; KeyClr; break}
   bind .f1.t <Alt-Key-h> {SearchHighlightOnOff; KeyClr; break}
   # bookmarks
   bind .f1.t <Double-Button-1> {Mark_ToggleAtInsert; KeyClr; break}
@@ -190,8 +190,8 @@ proc CreateMainWindow {} {
   label .f2.l -text "Find:" -underline 0
   entry .f2.e -width 20 -textvariable tlb_find -exportselection false
   menu .f2.mh -tearoff 0
-  button .f2.bn -text "Find next" -command {Search 1 0} -underline 5 -pady 2
-  button .f2.bp -text "Find previous" -command {Search 0 0} -underline 5 -pady 2
+  button .f2.bn -text "Find next" -command {SearchNext 1} -underline 5 -pady 2
+  button .f2.bp -text "Find previous" -command {SearchNext 0} -underline 5 -pady 2
   checkbutton .f2.bh -text "Highlight all" -variable tlb_hall -command SearchHighlightSettingChange -underline 0
   checkbutton .f2.cb -text "Match case" -variable tlb_case -command SearchHighlightSettingChange
   checkbutton .f2.re -text "Reg.Exp." -variable tlb_regexp -command SearchHighlightSettingChange
@@ -666,6 +666,28 @@ proc Search_GetOptions {is_re match_case {is_fwd -1}} {
 
 
 #
+# This function is used by the various key binginds which repeat a
+# previous search.
+#
+proc SearchNext {is_fwd} {
+  global tlb_find
+
+  if {$tlb_find ne ""} {
+    set found [Search $is_fwd 0]
+    if {$found == 0} {
+      if $is_fwd {
+        DisplayStatusLine warn "No match until end of file"
+      } else {
+        DisplayStatusLine warn "No match until start of file"
+      }
+    }
+  } else {
+    DisplayStatusLine warn "No pattern defined for search repeat"
+  }
+}
+
+
+#
 # This function resets the state of the search engine.  It is called when
 # the search string is empty or a search is aborted with the Escape key.
 #
@@ -978,7 +1000,7 @@ proc Search_RemoveFromHistory {} {
 # message.
 #
 proc DisplayStatusLine {type msg} {
-  global font_bold col_bg_content tid_status_line
+  global col_bg_content tid_status_line
 
   set old_focus [focus -displayof .]
   if {[info commands .stline] eq ""} {
@@ -988,11 +1010,17 @@ proc DisplayStatusLine {type msg} {
     wm group .stline .
     wm resizable . 0 0
 
-    set fh [font metrics $font_bold -linespace]
-    wm geometry .stline "+[winfo rootx .f1]+[expr [winfo rooty .f2] - $fh - 10]"
+    switch $type {
+      error {set col {#ff6b6b}}
+      warn {set col {#ffcc5d}}
+      default {set col $col_bg_content}
+    }
 
-    label .stline.l -font $font_bold -text $msg -background $col_bg_content
+    label .stline.l -text $msg -background $col
     pack .stline.l -side left
+
+    set fh [font metrics [.stline.l cget -font] -linespace]
+    wm geometry .stline "+[winfo rootx .f1]+[expr [winfo rooty .f2] - $fh - 10]"
 
   } else {
     raise .stline
@@ -1021,6 +1049,7 @@ proc DisplayLineNumer {} {
     if {[scan $pos "%d.%d" line char] == 2} {
       set pos [.f1.t index end]
       scan $pos "%d.%d" end_line char
+      incr end_line -1
 
       DisplayStatusLine msg "$cur_filename: line $line of $end_line lines"
     }
@@ -2636,274 +2665,6 @@ proc FontList_Quit {do_store} {
 
 # ----------------------------------------------------------------------------
 #
-# This function creates or raises the color palette dialog.
-#
-proc Palette_OpenDialog {} {
-  global font_normal dlg_cols_shown dlg_cols_palette dlg_cols_cid
-  global col_palette
-
-  if {![info exists dlg_cols_shown]} {
-    toplevel .dlg_cols
-    wm title .dlg_cols "Color palette"
-    wm group .dlg_cols .
-
-    label .dlg_cols.lab_hd -text "Pre-define a color palette for quick\nselection when adding patterns:" \
-                           -font $font_normal -justify left
-    pack .dlg_cols.lab_hd -side top -anchor w -pady 5 -padx 5
-
-    set w [expr 10*15 + 4]
-    canvas .dlg_cols.c -width $w -height 100 -background [.dlg_cols cget -background] \
-                       -cursor top_left_arrow
-    pack .dlg_cols.c -side top -fill both -expand 1 -padx 10 -pady 10
-
-    bind .dlg_cols.c <ButtonRelease-3> {Palette_ContextMenu %x %y}
-    bind .dlg_cols.c <Destroy> {+ unset -nocomplain dlg_cols_shown}
-    set dlg_cols_shown 1
-
-    frame .dlg_cols.f2
-    button .dlg_cols.f2.abort -text "Abort" -command {Palette_Save 0}
-    button .dlg_cols.f2.ok -text "Ok" -default active -command {Palette_Save 1}
-    pack .dlg_cols.f2.abort .dlg_cols.f2.ok -side left -padx 10 -pady 5
-    pack .dlg_cols.f2 -side top
-
-    menu .dlg_cols.ctxmen -tearoff 0
-
-    set dlg_cols_palette $col_palette
-    Palette_Fill .dlg_cols.c $dlg_cols_palette
-
-  } else {
-    wm deiconify .dlg_cols
-    raise .dlg_cols
-  }
-}
-
-
-#
-# This functions fills the color palette canvas with rectangles which
-# each display one of the currently defined colors. Each rectangle gets
-# mouse bindings for a context menu and changing the order of colors.
-#
-proc Palette_Fill {wid pal {sel_cmd {}}} {
-  global dlg_cols_cid
-
-  $wid delete all
-  set dlg_cols_cid {}
-
-  set x 2
-  set y 2
-  set col_idx 0
-  set idx 0
-  foreach col $pal {
-    set cid [$wid create rect $x $y [expr $x + 15] [expr $y + 15] \
-                                     -outline black -fill $col \
-                                     -activeoutline black -activewidth 2]
-    lappend dlg_cols_cid $cid
-
-    if {$sel_cmd eq ""} {
-      $wid bind $cid <Double-Button-1> [list Palette_EditColor $idx $cid]
-      $wid bind $cid <B1-Motion> [list Palette_MoveColor $idx $cid %x %y]
-      $wid bind $cid <ButtonRelease-1> [list Palette_MoveColorEnd $idx $cid %x %y]
-    } else {
-      $wid bind $cid <Button-1> [linsert $sel_cmd end $col]
-    }
-
-    incr x 15
-    incr col_idx 1
-    if {$col_idx >= 10} {
-      incr y 15
-      set x 2
-      set col_idx 0
-    }
-    incr idx
-  }
-
-  $wid configure -height [expr (int([llength $pal]+9) / 10) * 15 + 2+2]
-}
-
-
-#
-# This function is bound to right mouse clicks on color items.
-#
-proc Palette_ContextMenu {xcoo ycoo} {
-  global dlg_cols_palette dlg_cols_cid
-
-  set cid [.dlg_cols.c find closest $xcoo $ycoo]
-  if {$cid ne ""} {
-    set idx [lsearch -integer $dlg_cols_cid $cid]
-    if {$idx != -1} {
-
-      .dlg_cols.ctxmen delete 0 end
-      .dlg_cols.ctxmen add command -label "" -background [lindex $dlg_cols_palette $idx] -state disabled
-      .dlg_cols.ctxmen add separator
-      .dlg_cols.ctxmen add command -label "Change this color..." -command [list Palette_EditColor $idx $cid]
-      .dlg_cols.ctxmen add command -label "Duplicate this color" -command [list Palette_DuplicateColor $idx $cid]
-      .dlg_cols.ctxmen add command -label "Insert new color (white)" -command [list Palette_InsertColor $idx $cid]
-      .dlg_cols.ctxmen add separator
-      .dlg_cols.ctxmen add command -label "Remove this color" -command [list Palette_RemoveColor $idx]
-
-      set rootx [expr [winfo rootx .dlg_cols] + $xcoo]
-      set rooty [expr [winfo rooty .dlg_cols] + $ycoo]
-      tk_popup .dlg_cols.ctxmen $rootx $rooty 0
-    }
-  }
-}
-
-
-#
-# This function is bound to the "remove this color" menu item in the
-# color palette context menu.
-#
-proc Palette_RemoveColor {idx} {
-  global dlg_cols_palette
-
-  if {$idx < [llength $dlg_cols_palette]} {
-    set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx]
-    Palette_Fill .dlg_cols.c $dlg_cols_palette
-  }
-}
-
-
-#
-# This function is bound to the "insert new color" menu item in the
-# color palette entries. It inserts an white color entry at the mouse
-# pointer position.
-#
-proc Palette_InsertColor {idx cid} {
-  global dlg_cols_palette
-
-  set dlg_cols_palette [linsert $dlg_cols_palette $idx {#ffffff}]
-  Palette_Fill .dlg_cols.c $dlg_cols_palette
-}
-
-proc Palette_DuplicateColor {idx cid} {
-  global dlg_cols_palette
-
-  if {$idx < [llength $dlg_cols_palette]} {
-    set col [lindex $dlg_cols_palette $idx]
-    set dlg_cols_palette [linsert $dlg_cols_palette $idx $col]
-    Palette_Fill .dlg_cols.c $dlg_cols_palette
-  }
-}
-
-
-#
-# This function is bound to the "edit this color" menu item in the
-# color palette context menu.
-#
-proc Palette_EditColor {idx cid} {
-  global dlg_cols_palette
-
-  set col [lindex $dlg_cols_palette $idx]
-  set col [tk_chooseColor -initialcolor $col -parent .dlg_cols -title "Select color"]
-  if {$col ne ""} {
-    set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx $col]
-    .dlg_cols.c itemconfigure $cid -fill $col
-  }
-}
-
-
-#
-# This function is bound to motion events on color palette entries while
-# the left mouse button is helt down.
-#
-proc Palette_MoveColor {idx cid xcoo ycoo} {
-  .dlg_cols.c raise $cid
-  .dlg_cols.c coords $cid [expr $xcoo - 7] [expr $ycoo - 7] [expr $xcoo + 8] [expr $ycoo + 8]
-}
-
-
-#
-# This function is bound to the mouse button release event on color palette
-# entries. It's used to change the order of colors by drag-and-drop.
-#
-proc Palette_MoveColorEnd {idx cid xcoo ycoo} {
-  global dlg_cols_palette
-
-  set col_idx [expr ($xcoo < 2+7) ? 0 : (($xcoo - (2+7)) / 15)]
-  set row_idx [expr ($ycoo < 2+7) ? 0 : (($ycoo - (2+7)) / 15)]
-
-  set new_idx [expr ($row_idx * 10) + $col_idx]
-  set col [lindex $dlg_cols_palette $idx]
-  set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx]
-  set dlg_cols_palette [linsert $dlg_cols_palette $new_idx $col]
-
-  Palette_Fill .dlg_cols.c $dlg_cols_palette
-}
-
-
-#
-# This function is bound to the "ok" and "abort" buttons. Ths function
-# closes the color palette dialog. In case of "ok" the edited palette
-# is stored.
-#
-proc Palette_Save {do_save} {
-  global col_palette dlg_cols_palette dlg_cols_cid
-
-  if $do_save {
-    set col_palette $dlg_cols_palette
-    UpdateRcAfterIdle
-  }
-  unset -nocomplain dlg_cols_palette dlg_cols_cid
-  destroy .dlg_cols
-}
-
-
-#
-# This function creates a menu with all the colors. It's usually used as
-# sub-menu (i.e. cascade) in other menus.
-#
-proc PaletteMenu_Popup {parent rootx rooty cmd col_def} {
-  global col_palette font_normal
-
-  toplevel .colsel -highlightthickness 0
-  wm title .colsel "Color selection menu"
-  wm group .colsel $parent
-  wm transient .colsel $parent
-  wm geometry .colsel "+$rootx+$rooty"
-
-  set w [expr 10*15 + 4]
-  canvas .colsel.c -width $w -height 100 -background [.colsel cget -background] \
-                   -cursor top_left_arrow -highlightthickness 0
-  pack .colsel.c -side top
-
-  frame .colsel.f1
-  button .colsel.f1.b_other -text "Other..." -command [list PaletteMenu_OtherColor $parent $cmd $col_def] \
-                         -borderwidth 0 -relief flat -font [DeriveFont $font_normal -2 underline] \
-                         -foreground {#0000ff} -activeforeground {#0000ff} -padx 0 -pady 0
-  pack .colsel.f1.b_other -side left -expand 1 -anchor w
-  button .colsel.f1.b_none -text "None" -command [linsert $cmd end {}] \
-                       -borderwidth 0 -relief flat -font [DeriveFont $font_normal -2 underline] \
-                       -foreground {#0000ff} -activeforeground {#0000ff} -padx 0 -pady 0
-  pack .colsel.f1.b_none -side left -expand 1 -anchor e
-  pack .colsel.f1 -side top -fill x -expand 1
-
-  Palette_Fill .colsel.c $col_palette $cmd
-
-  bind .colsel <ButtonRelease-1> {destroy .colsel}
-  focus .colsel.c
-  grab .colsel
-}
-
-
-#
-# This helper function is bound to "Other..." in the palette popup menu.
-# This function opens the color editor and returns the selected color to
-# the owner of the palette popup, if any.
-#
-proc PaletteMenu_OtherColor {parent cmd col_def} {
-  destroy .colsel
-  if {$col_def eq ""} {
-    set col_def {#000000}
-  }
-  set col [tk_chooseColor -initialcolor $col_def -parent $parent -title "Select color"]
-  if {$col ne ""} {
-    eval [linsert $cmd end $col]
-  }
-}
-
-
-# ----------------------------------------------------------------------------
-#
 # This function creates or raises the color color highlight edit dialog.
 #
 proc Markup_OpenDialog {pat_idx} {
@@ -3015,7 +2776,7 @@ proc Markup_OpenDialog {pat_idx} {
 
     label   .dlg_fmt.mb.lsp_lab -text "Line spacing:"
     grid    .dlg_fmt.mb.lsp_lab -sticky w -column 0 -row $row
-    label   .dlg_fmt.mb.lsp2_lab -text "Dist.:" -font $font_normal
+    label   .dlg_fmt.mb.lsp2_lab -text "Distance:" -font $font_normal
     grid    .dlg_fmt.mb.lsp2_lab -sticky w -column 3 -row $row
     spinbox .dlg_fmt.mb.lsp_sb -from 0 -to 999 -width 3 -borderwidth 1 \
                                -textvariable dlg_fmt(spacing) -command Markup_UpdateFormat
@@ -3266,6 +3027,280 @@ proc Markup_UpdateColor {type col} {
   Markup_UpdateFormat
 }
 
+
+
+# ----------------------------------------------------------------------------
+#
+# This function creates or raises the color palette dialog.
+#
+proc Palette_OpenDialog {} {
+  global font_normal dlg_cols_shown dlg_cols_palette dlg_cols_cid
+  global col_palette
+
+  if {![info exists dlg_cols_shown]} {
+    toplevel .dlg_cols
+    wm title .dlg_cols "Color palette"
+    wm group .dlg_cols .
+
+    label .dlg_cols.lab_hd -text "Pre-define a color palette for quick selection\nwhen changing colors. Use the context menu\nto modify the palette:" \
+                           -font $font_normal -justify left
+    pack .dlg_cols.lab_hd -side top -anchor w -pady 5 -padx 5
+
+    canvas .dlg_cols.c -width 1 -height 1 -background [.dlg_cols cget -background] \
+                       -cursor top_left_arrow
+    pack .dlg_cols.c -side top -padx 10 -pady 10 -anchor w
+
+    bind .dlg_cols.c <ButtonRelease-3> {Palette_ContextMenu %x %y}
+    bind .dlg_cols.c <Destroy> {+ unset -nocomplain dlg_cols_shown}
+    set dlg_cols_shown 1
+
+    frame .dlg_cols.f2
+    button .dlg_cols.f2.abort -text "Abort" -command {Palette_Save 0}
+    button .dlg_cols.f2.ok -text "Ok" -default active -command {Palette_Save 1}
+    pack .dlg_cols.f2.abort .dlg_cols.f2.ok -side left -padx 10 -pady 5
+    pack .dlg_cols.f2 -side top
+
+    menu .dlg_cols.ctxmen -tearoff 0
+
+    set dlg_cols_palette $col_palette
+    Palette_Fill .dlg_cols.c $dlg_cols_palette
+
+  } else {
+    wm deiconify .dlg_cols
+    raise .dlg_cols
+  }
+}
+
+
+#
+# This functions fills the color palette canvas with rectangles which
+# each display one of the currently defined colors. Each rectangle gets
+# mouse bindings for a context menu and changing the order of colors.
+#
+proc Palette_Fill {wid pal {sz 20} {sel_cmd {}}} {
+  global dlg_cols_cid
+
+  $wid delete all
+  set dlg_cols_cid {}
+
+  set x 2
+  set y 2
+  set col_idx 0
+  set idx 0
+  foreach col $pal {
+    set cid [$wid create rect $x $y [expr $x + $sz] [expr $y + $sz] \
+                                     -outline black -fill $col \
+                                     -activeoutline black -activewidth 2]
+    lappend dlg_cols_cid $cid
+
+    if {$sel_cmd eq ""} {
+      $wid bind $cid <Double-Button-1> [list Palette_EditColor $idx $cid]
+      $wid bind $cid <B1-Motion> [list Palette_MoveColor $idx $cid %x %y]
+      $wid bind $cid <ButtonRelease-1> [list Palette_MoveColorEnd $idx $cid %x %y]
+    } else {
+      $wid bind $cid <Button-1> [linsert $sel_cmd end $col]
+    }
+
+    incr x $sz
+    incr col_idx 1
+    if {$col_idx >= 10} {
+      incr y $sz
+      set x 2
+      set col_idx 0
+    }
+    incr idx
+  }
+
+  $wid configure -width [expr 10 * $sz + 3+3] \
+                 -height [expr (int([llength $pal] + (10-1)) / 10) * $sz + 2+2]
+}
+
+
+#
+# This function is bound to right mouse clicks on color items.
+#
+proc Palette_ContextMenu {xcoo ycoo} {
+  global dlg_cols_palette dlg_cols_cid
+
+  set cid [.dlg_cols.c find closest $xcoo $ycoo]
+  if {$cid ne ""} {
+    set idx [lsearch -integer $dlg_cols_cid $cid]
+    if {$idx != -1} {
+
+      .dlg_cols.ctxmen delete 0 end
+      .dlg_cols.ctxmen add command -label "" -background [lindex $dlg_cols_palette $idx] -state disabled
+      .dlg_cols.ctxmen add separator
+      .dlg_cols.ctxmen add command -label "Change this color..." -command [list Palette_EditColor $idx $cid]
+      .dlg_cols.ctxmen add command -label "Duplicate this color" -command [list Palette_DuplicateColor $idx $cid]
+      .dlg_cols.ctxmen add command -label "Insert new color (white)" -command [list Palette_InsertColor $idx $cid]
+      .dlg_cols.ctxmen add separator
+      .dlg_cols.ctxmen add command -label "Remove this color" -command [list Palette_RemoveColor $idx]
+
+      set rootx [expr [winfo rootx .dlg_cols] + $xcoo]
+      set rooty [expr [winfo rooty .dlg_cols] + $ycoo]
+      tk_popup .dlg_cols.ctxmen $rootx $rooty 0
+    }
+  }
+}
+
+
+#
+# This function is bound to the "remove this color" menu item in the
+# color palette context menu.
+#
+proc Palette_RemoveColor {idx} {
+  global dlg_cols_palette
+
+  if {$idx < [llength $dlg_cols_palette]} {
+    set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx]
+    Palette_Fill .dlg_cols.c $dlg_cols_palette
+  }
+}
+
+
+#
+# This function is bound to the "insert new color" menu item in the
+# color palette entries. It inserts an white color entry at the mouse
+# pointer position.
+#
+proc Palette_InsertColor {idx cid} {
+  global dlg_cols_palette
+
+  set dlg_cols_palette [linsert $dlg_cols_palette $idx {#ffffff}]
+  Palette_Fill .dlg_cols.c $dlg_cols_palette
+}
+
+proc Palette_DuplicateColor {idx cid} {
+  global dlg_cols_palette
+
+  if {$idx < [llength $dlg_cols_palette]} {
+    set col [lindex $dlg_cols_palette $idx]
+    set dlg_cols_palette [linsert $dlg_cols_palette $idx $col]
+    Palette_Fill .dlg_cols.c $dlg_cols_palette
+  }
+}
+
+
+#
+# This function is bound to the "edit this color" menu item in the
+# color palette context menu.
+#
+proc Palette_EditColor {idx cid} {
+  global dlg_cols_palette
+
+  set col [lindex $dlg_cols_palette $idx]
+  set col [tk_chooseColor -initialcolor $col -parent .dlg_cols -title "Select color"]
+  if {$col ne ""} {
+    set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx $col]
+    .dlg_cols.c itemconfigure $cid -fill $col
+  }
+}
+
+
+#
+# This function is bound to motion events on color palette entries while
+# the left mouse button is helt down.
+#
+proc Palette_MoveColor {idx cid xcoo ycoo} {
+  set sz 20
+  set sz_2 [expr 0 - ($sz /2)]
+  incr xcoo $sz_2
+  incr ycoo $sz_2
+  .dlg_cols.c raise $cid
+  .dlg_cols.c coords $cid $xcoo $ycoo [expr $xcoo + $sz] [expr $ycoo + $sz]
+}
+
+
+#
+# This function is bound to the mouse button release event on color palette
+# entries. It's used to change the order of colors by drag-and-drop.
+#
+proc Palette_MoveColorEnd {idx cid xcoo ycoo} {
+  global dlg_cols_palette
+
+  set sz 20
+  incr xcoo -2
+  incr ycoo -2
+  if {$xcoo < 0} {set col_idx 0} else {set col_idx [expr $xcoo / $sz]}
+  if {$ycoo < 0} {set row_idx 0} else {set row_idx [expr $ycoo / $sz]}
+
+  set new_idx [expr ($row_idx * 10) + $col_idx]
+  set col [lindex $dlg_cols_palette $idx]
+  set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx]
+  set dlg_cols_palette [linsert $dlg_cols_palette $new_idx $col]
+
+  Palette_Fill .dlg_cols.c $dlg_cols_palette
+}
+
+
+#
+# This function is bound to the "ok" and "abort" buttons. Ths function
+# closes the color palette dialog. In case of "ok" the edited palette
+# is stored.
+#
+proc Palette_Save {do_save} {
+  global col_palette dlg_cols_palette dlg_cols_cid
+
+  if $do_save {
+    set col_palette $dlg_cols_palette
+    UpdateRcAfterIdle
+  }
+  unset -nocomplain dlg_cols_palette dlg_cols_cid
+  destroy .dlg_cols
+}
+
+
+#
+# This function creates a menu with all the colors. It's usually used as
+# sub-menu (i.e. cascade) in other menus.
+#
+proc PaletteMenu_Popup {parent rootx rooty cmd col_def} {
+  global col_palette font_normal
+
+  toplevel .colsel -highlightthickness 0
+  wm title .colsel "Color selection menu"
+  wm group .colsel $parent
+  wm transient .colsel $parent
+  wm geometry .colsel "+$rootx+$rooty"
+
+  canvas .colsel.c -width 1 -height 1 -background [.colsel cget -background] \
+                   -cursor top_left_arrow -highlightthickness 0
+  pack .colsel.c -side top
+
+  frame .colsel.f1
+  button .colsel.f1.b_other -text "Other..." -command [list PaletteMenu_OtherColor $parent $cmd $col_def] \
+                         -borderwidth 0 -relief flat -font [DeriveFont $font_normal -2 underline] \
+                         -foreground {#0000ff} -activeforeground {#0000ff} -padx 0 -pady 0
+  pack .colsel.f1.b_other -side left -expand 1 -anchor w
+  button .colsel.f1.b_none -text "None" -command [linsert $cmd end {}] \
+                       -borderwidth 0 -relief flat -font [DeriveFont $font_normal -2 underline] \
+                       -foreground {#0000ff} -activeforeground {#0000ff} -padx 0 -pady 0
+  pack .colsel.f1.b_none -side left -expand 1 -anchor e
+  pack .colsel.f1 -side top -fill x -expand 1
+
+  Palette_Fill .colsel.c $col_palette 15 $cmd
+
+  bind .colsel <ButtonRelease-1> {destroy .colsel}
+  focus .colsel.c
+  grab .colsel
+}
+
+
+#
+# This helper function is bound to "Other..." in the palette popup menu.
+# This function opens the color editor and returns the selected color to
+# the owner of the palette popup, if any.
+#
+proc PaletteMenu_OtherColor {parent cmd col_def} {
+  destroy .colsel
+  if {$col_def eq ""} {
+    set col_def {#000000}
+  }
+  set col [tk_chooseColor -initialcolor $col_def -parent $parent -title "Select color"]
+  if {$col ne ""} {
+    eval [linsert $cmd end $col]
+  }
+}
 
 
 # ----------------------------------------------------------------------------
