@@ -64,22 +64,6 @@ proc InitResources {} {
   # bookmark image which is inserted into the text widget
   global img_marker
   set img_marker [image create photo -data R0lGODlhBwAHAMIAAAAAuPj8+Hh8+JiYmDAw+AAAAAAAAAAAACH5BAEAAAEALAAAAAAHAAcAAAMUGDGsSwSMJ0RkpEIG4F2d5DBTkAAAOw==]
-
-  # note: default text widget background is #d9d9d9
-  global patlist
-  set patlist {
-    {{TDMA TICK} {#FFFFFF} {#000020}}
-    {l1_brs_dsp-frame_tick {#E6B3D9} {#000000}}
-    {l1d_brs_dsp-send_cmd {#E6B3FF} {#000000}}
-    {l1d_brs-mcu_task_exec {#EFBF80} {#000000}}
-    {l1cd-air_if_avail {#F0B0A0} {#000000}}
-    {BRS___DSP-REQUEST {#DAB3FF} {#000000}}
-    {BRS____DSP-RESULT {#DAB3D9} {#000000}}
-    {SDL-Signal {#FF6600} {#000000}}
-    {SDL-Loop {#FF6600} {#000000}}
-    {{######} {#FF6600} {#000000}}
-    {BRS____CONFIG-SET {#FF6600} {#000000}}
-  }
 }
 
 
@@ -190,13 +174,13 @@ proc HighlightInit {} {
   global patlist
 
   if {[llength $patlist] > 0} {
-    toplevel .hipro
+    toplevel .hipro -highlightthickness 0 -takefocus 0 -relief flat -padx 0 -pady 0
     wm transient .hipro .
     wm geometry .hipro "+[expr [winfo rootx .f1.t] + 1]+[expr [winfo rooty .f1.t] + 1]"
 
-    canvas .hipro.c -width 100 -height 10 -borderwidth 2 -relief sunken
+    canvas .hipro.c -width 100 -height 10 -borderwidth 1 -relief sunken
     pack .hipro.c
-    set cid [.hipro.c create rect 2 2 2 12 -fill {#0b1ff7}]
+    set cid [.hipro.c create rect 2 2 2 12 -fill {#0b1ff7} -outline {}]
 
     set tagidx 0
     foreach w $patlist {
@@ -1312,34 +1296,134 @@ proc LoadFile {filename} {
   .f1.t see end
   close $file
 
-  update
   HighlightInit
 }
 
 
 #
-# This function loads a new text.
+# This function is bound to the "Load file" menu command.  The function
+# allows to specify a file from which a new trace is read. The current browser
+# contents are discarded and all bookmarks are cleared.
 #
 proc MenuOpenFile {} {
+  global patlist
   #-initialfile [file tail $dumpdb_filename]
   #-initialdir [file dirname $dumpdb_filename]
   set filename [tk_getOpenFile -parent . -filetypes {{"trace" {out.*}} {all {*.*}}}]
   if {$filename ne ""} {
-    #.f1.t delete 1.0 end
-    # FIXME delete with 1000s of tags is extremely slow
-    destroy .f1.t
-    text .f1.t -width 100 -height 50 -wrap none -undo 0 \
-            -font $::font_normal -cursor top_left_arrow -relief flat \
-            -exportselection false \
-            -yscrollcommand {.f1.sb set}
-    pack .f1.t -side left -fill both -expand 1 -before .f1.sb
-    # MAJOR FIXME: need to re-assign all bindings
-    wm title . "$filename - Trace browser"
-    update
+    # the following is a work-around for a performance issue in the text widget:
+    # deleting text with large numbers of tags is extremely slow, so we clear the tags first
+    set tag_idx 0
+    foreach p $patlist {
+      set tagnam "tag$tag_idx"
+      .f1.t tag delete $tagnam
+      incr tag_idx
+    }
+    # discard the current trace content
+    .f1.t delete 1.0 end
+
     SearchReset
     array unset ::mark_list
 
-    LoadFile $filename
+    wm title . "$filename - Trace browser"
+    after idle LoadFile $filename
+  }
+}
+
+
+proc UserQuit {} {
+  UpdateRcFile
+  destroy .
+}
+
+
+#
+# This functions reads configuration variables from the rc file.
+#
+proc LoadRcFile {isDefault} {
+  global patlist tlb_hist tlb_case tlb_hall
+  global rcfile_version myrcfile
+
+  set error 0
+  set ver_check 0
+  set line_no 0
+
+  if {[catch {set rcfile [open $myrcfile "r"]} errmsg] == 0} {
+    while {[gets $rcfile line] >= 0} {
+      incr line_no
+      if {[string compare $line "___END___"] == 0} {
+        break;
+      } elseif {([catch $line] != 0) && !$error} {
+        tk_messageBox -type ok -default ok -icon error -message "Syntax error in rc file, line #$line_no: $line"
+        set error 1
+
+      } elseif {$ver_check == 0} {
+        # check if the given rc file is from a newer version
+        if {[info exists rc_compat_version] && [info exists rcfile_version]} {
+          if {$rc_compat_version > $rcfile_version} {
+            tk_messageBox -type ok -default ok -icon error \
+               -message "rc file '$myrcfile' is from an incompatible, newer version of nxtvepg ($rcfile_version) and cannot be loaded. Use -rcfile command line option to specify an alternate file name or use the newer nxtvepg executable."
+
+            # change name of rc file so that the newer one isn't overwritten
+            append myrcfile "." $rcfile_version
+            # abort loading further data (would overwrite valid defaults)
+            return
+          }
+          set ver_check 1
+        }
+      }
+    }
+    close $rcfile
+  }
+}
+
+#
+# This functions writes configuration variables into the rc file
+#
+proc UpdateRcFile {} {
+  global argv0 myrcfile rcfile_compat rcfile_version
+  global patlist tlb_hist tlb_case tlb_hall
+
+  set tmpfile ${myrcfile}.tmp
+
+  if {[catch {set rcfile [open $tmpfile "w"]} errstr] == 0} {
+    puts $rcfile "#"
+    puts $rcfile "# trowser configuration file"
+    puts $rcfile "#"
+    puts $rcfile "# This file is automatically generated - do not edit"
+    puts $rcfile "# Written at: [clock format [clock seconds] -format %c]"
+    puts $rcfile "#"
+
+    # dump software version
+    puts $rcfile [list set rcfile_version $rcfile_version]
+    puts $rcfile [list set rc_compat_version $rcfile_compat]
+    puts $rcfile [list set rc_timestamp [clock seconds]]
+
+    # dump highlighting patterns
+    puts $rcfile [list set patlist {}]
+    foreach val $patlist {
+      puts $rcfile [list lappend patlist $val]
+    }
+
+    # dump search history
+    puts $rcfile [list set tlb_hist {}]
+    foreach val $tlb_hist {
+      puts $rcfile [list lappend tlb_hist $val]
+    }
+
+    # dump search settings
+    puts $rcfile [list set tlb_case $tlb_case]
+    puts $rcfile [list set tlb_hall $tlb_hall]
+
+    close $rcfile
+
+    # move the new file over the old one
+    if {[catch {file rename -force $tmpfile ${myrcfile}} errstr] != 0} {
+      tk_messageBox -type ok -default ok -icon error -message "Could not replace rc file $myrcfile\n$errstr"
+    }
+
+  } else {
+     tk_messageBox -type ok -default ok -icon error -message "Could not create temporary rc file $tmpfile\n$errstr"
   }
 }
 
@@ -1373,7 +1457,7 @@ set tlb_last_dir 1
 #unset tlb_inc_base
 #unset tlb_inc_yview
 
-# This hash array stors the bookmark list. It's indices are text line numbers.
+# This hash array stores the bookmark list. It's indices are text line numbers.
 array set mark_list {}
 
 # This list stores text patterns and associated colors for color-highlighting
@@ -1381,13 +1465,30 @@ array set mark_list {}
 # 0: sub-string (case sensitive)
 # 1: foreground color
 # 2: background color
-set patlist {}
+# default patterns (note: default text widget background is #d9d9d9)
+set patlist {
+  {{TDMA TICK} {#FFFFFF} {#000020}}
+  {l1_brs_dsp-frame_tick {#E6B3D9} {#000000}}
+  {l1d_brs_dsp-send_cmd {#E6B3FF} {#000000}}
+  {l1d_brs-mcu_task_exec {#EFBF80} {#000000}}
+  {l1cd-air_if_avail {#F0B0A0} {#000000}}
+  {BRS___DSP-REQUEST {#DAB3FF} {#000000}}
+  {BRS____DSP-RESULT {#DAB3D9} {#000000}}
+  {SDL-Signal {#FF6600} {#000000}}
+  {SDL-Loop {#FF6600} {#000000}}
+  {{######} {#FF6600} {#000000}}
+  {BRS____CONFIG-SET {#FF6600} {#000000}}
+}
 
 # These variables are used by the bookmark list dialog.
 #set dlg_mark_list {}
 #unset dlg_mark_shown
 #unset dlg_mark_size
 
+# define limit for forwards compatibility
+set rcfile_compat 0x01000000
+set rcfile_version 0x01000000
+set myrcfile "~/.l1trowserc"
 
 #
 # Main
@@ -1397,8 +1498,11 @@ if {[catch {tk appname "trowser"}]} {
   puts stderr "Tk initialization failed"
   exit
 }
+LoadRcFile 1
 InitResources
 CreateLogBrowser
+wm protocol . WM_DELETE_WINDOW UserQuit
+update
 
 if {$argc == 0} {
   LoadStream
