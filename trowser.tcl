@@ -33,11 +33,11 @@ proc InitResources {} {
   global font_normal font_bold
 
   # override default font for the Tk message box
-  option add *Dialog.msg.font {helvetica -12 bold} userDefault
+  option add *Dialog.msg.font {helvetica 9 bold} userDefault
 
   # fonts for text and label widgets
-  set font_normal {helvetica -12 normal}
-  set font_bold {helvetica -12 bold}
+  set font_normal {helvetica 9 normal}
+  set font_bold {helvetica 9 bold}
 
   # bindings to allow scrolling a text widget with the mouse wheel
   bind TextWheel    <Button-4>     {%W yview scroll -3 units}
@@ -71,8 +71,9 @@ proc InitResources {} {
 #
 # This function creates the main window of the trace browser.
 #
-proc CreateLogBrowser {} {
-  global font_normal tlb_find tlb_hall tlb_case tlb_regexp
+proc CreateMainWindow {} {
+  global font_content col_bg_content col_fg_content main_win_geom
+  global tlb_find tlb_hall tlb_case tlb_regexp
 
   # menubar at the top of the window
   menu .menubar -relief raised
@@ -87,6 +88,8 @@ proc CreateLogBrowser {} {
   .menubar.ctrl add command -label "Save bookmarks to file..." -command Mark_SaveFile
   .menubar.ctrl add separator
   .menubar.ctrl add command -label "Edit color highlighting..." -command Tags_OpenDialog
+  .menubar.ctrl add command -label "Edit color palette..." -command Palette_OpenDialog
+  .menubar.ctrl add command -label "Font selection..." -command FontList_OpenDialog
   .menubar.ctrl add separator
   .menubar.ctrl add command -label "Quit" -command {destroy .; update}
   menu .menubar.mark -tearoff 0
@@ -98,9 +101,9 @@ proc CreateLogBrowser {} {
 
   # frame #1: text widget and scrollbar
   frame .f1
-  text .f1.t -width 100 -height 50 -wrap none -undo 0 \
-          -font $font_normal -cursor top_left_arrow -relief flat \
-          -exportselection false \
+  text .f1.t -width 1 -height 1 -wrap none -undo 0 \
+          -font $font_content -background $col_bg_content -foreground $col_fg_content \
+          -cursor top_left_arrow -relief flat -exportselection false \
           -yscrollcommand {.f1.sb set}
   pack .f1.t -side left -fill both -expand 1
   scrollbar .f1.sb -orient vertical -command {.f1.t yview} -takefocus 0
@@ -108,17 +111,21 @@ proc CreateLogBrowser {} {
   pack .f1 -side top -fill both -expand 1
 
   focus .f1.t
+  # note: order is important: find must be "lowest" for tags created by color highlighting
   .f1.t tag configure find -background {#faee0a}
   .f1.t tag configure findinc -background {#c8ff00}
   .f1.t tag configure margin -lmargin1 17
   .f1.t tag configure bookmark -lmargin1 0
-  .f1.t tag raise sel
+  .f1.t tag configure sel -bgstipple gray50
+  .f1.t tag lower sel
   bindtags .f1.t {.f1.t TextReadOnly . all}
   # Ctrl+cursor and Ctrl-E/Y allow to shift the view up/down
   bind .f1.t <Control-Up> {YviewScroll -1; KeyClr; break}
   bind .f1.t <Control-Down> {YviewScroll 1; KeyClr; break}
   bind .f1.t <Control-e> {YviewScroll 1; KeyClr; break}
   bind .f1.t <Control-y> {YviewScroll -1; KeyClr; break}
+  bind .f1.t <Control-f> {event generate %W <Key-Next>; KeyClr; break}
+  bind .f1.t <Control-b> {event generate %W <Key-Prior>; KeyClr; break}
   bind .f1.t <Key-H> {CursorSetLine top; KeyClr; break}
   bind .f1.t <Key-M> {CursorSetLine center; KeyClr; break}
   bind .f1.t <Key-L> {CursorSetLine bottom; KeyClr; break}
@@ -126,7 +133,6 @@ proc CreateLogBrowser {} {
   bind .f1.t <G> {.f1.t mark set insert end; .f1.t see insert; KeyClr; break}
   bind .f1.t <Key-dollar> {.f1.t mark set insert [list insert lineend]; .f1.t see insert; KeyClr; break}
   # search with "/", "?"; repeat search with n/N
-  bind .f1.t <Control-f> {focus .f2.e; KeyClr; break}
   bind .f1.t <Key-slash> {set tlb_last_dir 1; focus .f2.e; KeyClr; break}
   bind .f1.t <Key-question> {set tlb_last_dir 0; focus .f2.e; KeyClr; break}
   bind .f1.t <Key-n> {Search 1 0; KeyClr; break}
@@ -160,23 +166,28 @@ proc CreateLogBrowser {} {
   pack .f2 -side top -fill x
 
   bind .f2.e <Escape> {SearchAbort; break}
-  bind .f2.e <Return> {if [SearchExprCheck] {SearchIncLeave; focus .f1.t}; break}
-  bind .f2.e <FocusIn> {SearchInit}
-  bind .f2.e <FocusOut> {SearchIncLeave}
+  bind .f2.e <Return> {SearchReturn; break}
+  bind .f2.e <FocusIn> {SearchInit %W}
+  bind .f2.e <FocusOut> {SearchLeave}
   bind .f2.e <Control-n> {Search 1 0; break}
   bind .f2.e <Control-N> {Search 0 0; break}
   bind .f2.e <Key-Up> {Search_BrowseHistory 1; break}
   bind .f2.e <Key-Down> {Search_BrowseHistory 0; break}
-  bind .f2.e <Control-d> {Search_CompleteByHistory; break}
+  bind .f2.e <Control-d> {Search_Complete; break}
   bind .f2.e <Control-x> {Search_RemoveFromHistory; break}
+  bind .f2.e <Control-c> {SearchAbort; break}
   trace add variable tlb_find write SearchVarTrace
+
+  wm protocol . WM_DELETE_WINDOW UserQuit
+  wm geometry . $main_win_geom
+  bind .f1.t <Configure> {TestCaseList_Resize %W . .f1.t main_win_geom}
 }
 
 
 #
 # This function is bound to key presses in the main window. It's called
-# when none of the specific key bindings match and is used to handle
-# more compley key sequences.
+# when none of the single-key bindings match. It's used to handle complex
+# key press event sequences.
 #
 proc KeyCmd {char} {
   global last_key_char last_jump_orig
@@ -331,6 +342,18 @@ proc CursorSetLine {where} {
 
 
 #
+# Helper function to extrace a range of characters from the content.
+#
+proc ExtractText {pos1 pos2} {
+  set dump {}
+  foreach {key val idx} [.f1.t dump -text $pos1 $pos2] {
+    append dump $val
+  }
+  return $dump
+}
+
+
+#
 # This function is called after loading a new text to apply the color
 # highlighting to the complete text. Since this can take some time,
 # the operation done separately for each pattern with a 10ms pause
@@ -353,17 +376,13 @@ proc HighlightInit {} {
     pack .hipro.c
     set cid [.hipro.c create rect 0 0 0 12 -fill {#0b1ff7} -outline {}]
 
-    set tagidx 0
     foreach w $patlist {
-      set pat [lindex $w 0]
+      set tagnam [lindex $w 4]
 
-      # create a tag for the text widget which defines text colors
-      set tagnam "tag$tagidx"
-      .f1.t tag configure $tagnam -background [lindex $w 1] -foreground [lindex $w 2]
-      .f1.t tag lower $tagnam
-      incr tagidx
+      .f1.t tag configure $tagnam -background [lindex $w 6] -foreground [lindex $w 7]
+      .f1.t tag lower $tagnam find
 
-      HighlightVisible $pat $tagnam {}
+      HighlightVisible [lindex $w 0] $tagnam {}
     }
 
     .f1.t tag add margin 1.0 end
@@ -380,23 +399,23 @@ proc HighlightInit {} {
 # loops across all patterns to apply color highlights. The loop is broken
 # up by means of a 10ms timer.
 #
-proc HighlightInitBg {tagidx cid} {
+proc HighlightInitBg {pat_idx cid} {
   global patlist tid_high_init
 
-  if {$tagidx < [llength $patlist]} {
-    set w [lindex $patlist $tagidx]
-    set pat [lindex $w 0]
-    set tagnam "tag$tagidx"
+  if {$pat_idx < [llength $patlist]} {
+    set w [lindex $patlist $pat_idx]
+    set tagnam [lindex $w 4]
+    set opt [Search_GetOptions [lindex $w 1] [lindex $w 2]]
 
     # apply the tag to all matching lines of text
-    HighlightAll $pat $tagnam {}
+    HighlightAll [lindex $w 0] $tagnam $opt
 
     # trigger next tag right away - or allow user interaction
-    incr tagidx
-    set tid_high_init [after 10 HighlightInitBg $tagidx $cid]
+    incr pat_idx
+    set tid_high_init [after 10 HighlightInitBg $pat_idx $cid]
 
     # update the progress bar
-    catch {.hipro.c coords $cid 0 0 [expr int(100*$tagidx/[llength $patlist])] 12}
+    catch {.hipro.c coords $cid 0 0 [expr int(100*$pat_idx/[llength $patlist])] 12}
 
   } else {
     catch {destroy .hipro}
@@ -443,220 +462,6 @@ proc HighlightVisible {pat tagnam opt} {
 
 
 #
-# This is the main search function which is invoked when the user
-# enters text in the "find" entry field or repeats a previous search.
-#
-proc Search {is_fwd is_changed {start_pos {}}} {
-  global tlb_find tlb_hall tlb_case tlb_regexp tlb_last_hall tlb_last_dir
-
-  if {($tlb_find ne "") && [SearchExprCheck]} {
-
-    set tlb_last_dir $is_fwd
-    set search_opt [Search_GetOptions 1]
-    if {$start_pos eq {}} {
-      set start_pos [Search_GetBase $is_fwd 0]
-      Mark_JumpPos
-    }
-    if $is_fwd {
-      set search_range [list $start_pos end]
-    } else {
-      set search_range [list $start_pos "0.0"]
-    }
-
-    set pos [eval .f1.t search $search_opt -count match_len -- {$tlb_find} $search_range]
-    if {($pos ne "") || $is_changed} {
-      if {!$tlb_hall || ($tlb_last_hall ne $tlb_find)} {
-        SearchHighlightClear
-      } else {
-        .f1.t tag remove findinc 1.0 end
-      }
-    }
-    if {$pos ne ""} {
-      scan $pos "%d.%d" tlb_find_line char
-      .f1.t see $pos
-      .f1.t mark set insert $pos
-      .f1.t tag add findinc $pos "$pos + $match_len chars"
-      .f1.t tag add find "$tlb_find_line.0" "[expr $tlb_find_line + 1].0"
-    }
-    if $tlb_hall {
-      SearchHighlightUpdate 1200
-    }
-
-  } else {
-    SearchReset
-  }
-}
-
-
-#
-# This function checks if the search pattern syntax is valid
-#
-proc SearchExprCheck {} {
-  global tlb_find tlb_regexp
-
-  if {$tlb_regexp && [catch {regexp -- $tlb_find ""} cerr]} {
-    tk_messageBox -icon error -type ok -message "Invalid regular expression: $cerr"
-    return 0
-  } else {
-    return 1
-  }
-}
-
-
-#
-# This function returns the start address for a search.  The first search
-# starts at the insertion cursor. If the cursor is not visible, the search
-# starts at the top or bottom of the visible text. When a search is repeated,
-# the search must start at line start or end to avoid finding the same line
-# again.
-#
-proc Search_GetBase {is_fwd is_init} {
-  if {[.f1.t bbox insert] eq ""} {
-    if $is_fwd {
-      .f1.t mark set insert {@1,1}
-    } else {
-      .f1.t mark set insert "@[expr [winfo width .f1.t] - 1],[expr [winfo height .f1.t] - 1]"
-    }
-    set start_pos insert
-  } else {
-    if $is_init {
-      set start_pos insert
-    } elseif $is_fwd {
-      set start_pos [list insert lineend]
-    } else {
-      set start_pos [list insert linestart]
-    }
-  }
-  return [.f1.t index $start_pos]
-}
-
-
-#
-# This function translates user-options into search options for the text widget.
-#
-proc Search_GetOptions {with_dir} {
-  global tlb_case tlb_regexp tlb_last_dir
-
-  set search_opt {}
-  if $tlb_regexp {
-    lappend search_opt {-regexp}
-  }
-  if {$tlb_case == 0} {
-    lappend search_opt {-nocase}
-  }
-  if $with_dir {
-    if $tlb_last_dir {
-      lappend search_opt {-forwards}
-    } else {
-      lappend search_opt {-backwards}
-    }
-  }
-  return $search_opt
-}
-
-
-#
-# This function resets the state of the search engine.  It is called when
-# the search string is empty or a search is aborted with the Escape key.
-#
-proc SearchReset {} {
-  global tlb_find tlb_last_hall tlb_last_dir tlb_inc_base
-
-  .f1.t tag remove find 1.0 end
-  .f1.t tag remove findinc 1.0 end
-  set tlb_last_hall {}
-
-  if [info exists tlb_inc_base] {
-    .f1.t mark set insert $tlb_inc_base
-    .f1.t see insert
-    unset tlb_inc_base
-  }
-}
-
-
-#
-# This function is bound to all changes of the search text in the
-# "find" entry field. It's called when the user enters new text and
-# triggers an incremental search.
-#
-proc SearchVarTrace {name1 name2 op} {
-  global tid_search_inc tid_search_hall
-
-  after cancel $tid_search_inc
-  after cancel $tid_search_hall
-
-  set tid_search_inc [after 10 SearchIncrement]
-}
-
-
-#
-# This function performs an so-called "incremental" search after the user
-# has modified the search text. This means searches are started already
-# while the user is typing.
-#
-proc SearchIncrement {} {
-  global tlb_find tlb_last_dir tlb_inc_base tlb_hist tlb_hist_pos
-
-  if {($tlb_find ne {}) &&
-      ([catch {regexp -- $tlb_find ""}] == 0)} {
-
-    if {![info exists tlb_inc_base]} {
-      set tlb_inc_base [Search_GetBase $tlb_last_dir 1]
-      Mark_JumpPos
-    }
-    Search $tlb_last_dir 1 $tlb_inc_base
-
-    if {[info exists tlb_hist_pos] &&
-        ($tlb_find ne [lindex $tlb_hist $tlb_hist_pos])} {
-      unset tlb_hist_pos
-    }
-  } else {
-    SearchReset
-  }
-}
-
-
-#
-# This function is called when the "find" entry field receives keyboard focus
-# to intialize the search state machine for a new search.
-#
-proc SearchInit {} {
-  global tlb_find
-
-  set tlb_find {}
-  unset -nocomplain tlb_hist_pos
-}
-
-
-#
-# This function is called when the search window is left via "Escape" key.
-# The search highlighting is removed and the search text is deleted.
-#
-proc SearchAbort {} {
-  global tlb_find
-
-  Search_AddHistory $tlb_find
-  set tlb_find {}
-  SearchReset
-  # note more clean-up is triggered via the focus-out event
-  focus .f1.t
-}
-
-
-#
-# This function is bound to the FocusOut event in the search entry field.
-# It resets the incremental search state.
-#
-proc SearchIncLeave {} {
-  global tlb_find tlb_inc_base tlb_inc_yview tlb_hist_pos
-
-  unset -nocomplain tlb_inc_base tlb_inc_yview tlb_hist_pos
-  .f1.t tag remove findinc 1.0 end
-  Search_AddHistory $tlb_find
-}
-
-
-#
 # This function clears the current search color highlighting without
 # resetting the search string. It's bound to the "&" key, but also used
 # during regular search reset.
@@ -699,7 +504,7 @@ proc SearchHighlightStart {pattern opt} {
 # in the search entry field.)
 #
 proc SearchHighlightUpdate {{delay 10}} {
-  global tlb_find tlb_regexp tlb_hall tlb_last_hall
+  global tlb_find tlb_regexp tlb_case tlb_hall tlb_last_hall
   global tid_search_hall
 
   if {$tlb_find ne ""} {
@@ -708,7 +513,7 @@ proc SearchHighlightUpdate {{delay 10}} {
 
       if {$tlb_last_hall ne $tlb_find} {
         if [SearchExprCheck] {
-          set opt [Search_GetOptions 0]
+          set opt [Search_GetOptions $tlb_regexp $tlb_case]
 
           HighlightVisible $tlb_find find $opt
 
@@ -718,6 +523,259 @@ proc SearchHighlightUpdate {{delay 10}} {
     } else {
       SearchHighlightClear
     }
+  }
+}
+
+
+#
+# This is the main search function which is invoked when the user
+# enters text in the "find" entry field or repeats a previous search.
+#
+proc Search {is_fwd is_changed {start_pos {}}} {
+  global tlb_find tlb_hall tlb_case tlb_regexp tlb_last_hall tlb_last_dir
+
+  set found 0
+  if {($tlb_find ne "") && [SearchExprCheck]} {
+
+    set tlb_last_dir $is_fwd
+    set search_opt [Search_GetOptions $tlb_regexp $tlb_case $tlb_last_dir]
+    if {$start_pos eq {}} {
+      set start_pos [Search_GetBase $is_fwd 0]
+      Mark_JumpPos
+    }
+    if $is_fwd {
+      set search_range [list $start_pos end]
+    } else {
+      set search_range [list $start_pos "0.0"]
+    }
+
+    set pos [eval .f1.t search $search_opt -count match_len -- {$tlb_find} $search_range]
+    if {($pos ne "") || $is_changed} {
+      if {!$tlb_hall || ($tlb_last_hall ne $tlb_find)} {
+        SearchHighlightClear
+      } else {
+        .f1.t tag remove findinc 1.0 end
+      }
+    }
+    if {$pos ne ""} {
+      scan $pos "%d.%d" tlb_find_line char
+      .f1.t see $pos
+      .f1.t mark set insert $pos
+      .f1.t tag add findinc $pos "$pos + $match_len chars"
+      .f1.t tag add find "$tlb_find_line.0" "[expr $tlb_find_line + 1].0"
+      set found 1
+    }
+    if $tlb_hall {
+      if {[string length $tlb_find] <= 2} {
+        SearchHighlightUpdate 4000
+      } else {
+        SearchHighlightUpdate 1200
+      }
+    }
+
+  } else {
+    SearchReset
+  }
+  return $found
+}
+
+
+#
+# This function is bound to all changes of the search text in the
+# "find" entry field. It's called when the user enters new text and
+# triggers an incremental search.
+#
+proc SearchVarTrace {name1 name2 op} {
+  global tid_search_inc tid_search_hall
+
+  after cancel $tid_search_inc
+  after cancel $tid_search_hall
+
+  set tid_search_inc [after 10 SearchIncrement]
+}
+
+
+#
+# This function performs an so-called "incremental" search after the user
+# has modified the search text. This means searches are started already
+# while the user is typing.
+#
+proc SearchIncrement {} {
+  global tlb_find tlb_last_dir tlb_inc_base tlb_hist tlb_hist_pos tlb_hist_base
+
+  if {($tlb_find ne {}) &&
+      ([catch {regexp -- $tlb_find ""}] == 0)} {
+
+    if {![info exists tlb_inc_base]} {
+      set tlb_inc_base [Search_GetBase $tlb_last_dir 1]
+      Mark_JumpPos
+    }
+
+    set found [Search $tlb_last_dir 1 $tlb_inc_base]
+
+    if {($found == 0) && [info exists tlb_inc_base]} {
+      .f1.t mark set insert $tlb_inc_base
+      .f1.t see insert
+    }
+
+    if {[info exists tlb_hist_pos] &&
+        ($tlb_find ne [lindex $tlb_hist $tlb_hist_pos])} {
+      unset tlb_hist_pos tlb_hist_base
+    }
+  } else {
+    SearchReset
+  }
+}
+
+
+#
+# This function checks if the search pattern syntax is valid
+#
+proc SearchExprCheck {} {
+  global tlb_find tlb_regexp
+
+  if {$tlb_regexp && [catch {regexp -- $tlb_find ""} cerr]} {
+    set str $tlb_find
+    tk_messageBox -icon error -type ok -message "Invalid regular expression: $cerr"
+    return 0
+  } else {
+    return 1
+  }
+}
+
+
+#
+# This function returns the start address for a search.  The first search
+# starts at the insertion cursor. If the cursor is not visible, the search
+# starts at the top or bottom of the visible text. When a search is repeated,
+# the search must start at line start or end to avoid finding the same line
+# again.
+#
+proc Search_GetBase {is_fwd is_init} {
+  if {[.f1.t bbox insert] eq ""} {
+    if $is_fwd {
+      .f1.t mark set insert {@1,1}
+    } else {
+      .f1.t mark set insert "@[expr [winfo width .f1.t] - 1],[expr [winfo height .f1.t] - 1]"
+    }
+    set start_pos insert
+  } else {
+    if $is_init {
+      set start_pos insert
+    } elseif $is_fwd {
+      set start_pos [list insert + 1 chars]
+    } else {
+      set start_pos insert
+    }
+  }
+  return [.f1.t index $start_pos]
+}
+
+
+#
+# This function translates user-options into search options for the text widget.
+#
+proc Search_GetOptions {is_re match_case {is_fwd -1}} {
+  global tlb_case tlb_regexp tlb_last_dir
+
+  set search_opt {}
+  if $is_re {
+    lappend search_opt {-regexp}
+  }
+  if {$match_case == 0} {
+    lappend search_opt {-nocase}
+  }
+  if {$is_fwd != -1} {
+    if $is_fwd {
+      lappend search_opt {-forwards}
+    } else {
+      lappend search_opt {-backwards}
+    }
+  }
+  return $search_opt
+}
+
+
+#
+# This function resets the state of the search engine.  It is called when
+# the search string is empty or a search is aborted with the Escape key.
+#
+proc SearchReset {} {
+  global tlb_find tlb_last_hall tlb_last_dir tlb_inc_base
+
+  .f1.t tag remove find 1.0 end
+  .f1.t tag remove findinc 1.0 end
+  set tlb_last_hall {}
+
+  if [info exists tlb_inc_base] {
+    .f1.t mark set insert $tlb_inc_base
+    .f1.t see insert
+    unset tlb_inc_base
+  }
+}
+
+
+#
+# This function is called when the "find" entry field receives keyboard focus
+# to intialize the search state machine for a new search.
+#
+proc SearchInit {wid} {
+  global tlb_find tlb_find_focus tlb_hist_pos tlb_hist_base
+
+  if {$tlb_find_focus == 0} {
+    set tlb_find_focus 1
+    set tlb_find {}
+    unset -nocomplain tlb_hist_pos tlb_hist_base
+  }
+}
+
+
+#
+# This function is bound to the FocusOut event in the search entry field.
+# It resets the incremental search state.
+#
+proc SearchLeave {} {
+  global tlb_find tlb_inc_base tlb_inc_yview tlb_find_focus
+  global tlb_hist_pos tlb_hist_base
+
+  # ignore if the keyboard focus is leaving towards another application
+  if {[focus -displayof .] ne {}} {
+
+    unset -nocomplain tlb_inc_base tlb_inc_yview tlb_hist_pos tlb_hist_base
+    .f1.t tag remove findinc 1.0 end
+    Search_AddHistory $tlb_find
+    set tlb_find_focus 0
+  }
+}
+
+
+#
+# This function is called when the search window is left via "Escape" key.
+# The search highlighting is removed and the search text is deleted.
+#
+proc SearchAbort {} {
+  global tlb_find
+
+  Search_AddHistory $tlb_find
+  set tlb_find {}
+  SearchReset
+  # note more clean-up is triggered via the focus-out event
+  focus .f1.t
+}
+
+
+#
+# This function is bound to the Return key in the search entry field.
+# If the search pattern is invalid (reg.exp. syntax) an error message is
+# displayed and the focus stays in the entry field. Else, the keyboard
+# focus is switched to the main window.
+#
+proc SearchReturn {} {
+  global tlb_find
+
+  if [SearchExprCheck] {
+    # note this implicitly triggers the leave event
+    focus .f1.t
   }
 }
 
@@ -749,12 +807,16 @@ proc Search_AddHistory {txt} {
 #
 # This function is bound to the up/down cursor keys in the search entry
 # field. The function is used to iterate through the search history stack.
+# The "up" key starts with the most recently used pattern, the "down" key
+# with the oldest. When the end of the history is reached, the original
+# search string is displayed again.
 #
 proc Search_BrowseHistory {is_up} {
-  global tlb_find tlb_hist tlb_hist_pos
+  global tlb_find tlb_hist tlb_hist_pos tlb_hist_base
 
   if {[llength $tlb_hist] > 0} {
     if {![info exists tlb_hist_pos]} {
+      set tlb_hist_base $tlb_find
       if {$is_up} {
         set tlb_hist_pos [expr [llength $tlb_hist] - 1]
       } else {
@@ -763,36 +825,78 @@ proc Search_BrowseHistory {is_up} {
     } elseif $is_up {
       incr tlb_hist_pos -1
     } else {
-      incr tlb_hist_pos 1
-    }
-    if {$tlb_hist_pos >= [llength $tlb_hist]} {
-      set tlb_hist_pos 0
-    } elseif {$tlb_hist_pos < 0} {
-      set tlb_hist_pos [expr [llength $tlb_hist] - 1]
+      if {$tlb_hist_pos + 1 < [llength $tlb_hist]} {
+        incr tlb_hist_pos 1
+      } else {
+        set tlb_hist_pos -1
+      }
     }
 
-    set tlb_find [lindex $tlb_hist $tlb_hist_pos]
-    .f2.e icursor end
+    if {[string length $tlb_hist_base] > 0} {
+      set tlb_hist_pos [Search_HistoryComplete [expr $is_up ? -1 : 1]]
+    }
+
+    if {$tlb_hist_pos >= 0} {
+      set tlb_find [lindex $tlb_hist $tlb_hist_pos]
+      .f2.e icursor end
+    } else {
+      # end of history reached -> reset
+      set tlb_find $tlb_hist_base
+      unset tlb_hist_pos tlb_hist_base
+      .f2.e icursor end
+    }
   }
 }
 
 
 #
-# This function is bound to "CTRL-d" in the "Find" entry field and
-# performs auto-completion of a search text by using the search history.
-# 
-proc Search_CompleteByHistory {} {
-  global tlb_find tlb_hist
+# This helper function searches the search history stack for a search
+# string with a given prefix.
+#
+proc Search_HistoryComplete {step} {
+  global tlb_find tlb_hist_base tlb_hist tlb_hist_pos tlb_hist_base
 
-  if {($tlb_find ne "") && ([llength $tlb_hist] > 0)} {
-    set len [expr [string length $tlb_find]]
-    for {set idx [expr [llength $tlb_hist] - 1]} {$idx >= 0} {incr idx -1} {
-      set hi [lindex $tlb_hist $idx]
-      if {[string compare -length $len $tlb_find $hi] == 0} {
-        set tlb_find $hi
-        .f2.e icursor end
-        break
+  set len [string length $tlb_hist_base]
+  for {set idx $tlb_hist_pos} {($idx >= 0) && ($idx < [llength $tlb_hist])} {incr idx $step} {
+    set hi [lindex $tlb_hist $idx]
+    if {[string compare -length $len $tlb_find $hi] == 0} {
+      return $idx
+    }
+  }
+  return -1
+}
+
+
+#
+# This function is bound to "CTRL-d" in the "Find" entry field and
+# performs auto-completion of a search text by adding any following
+# characters in the word matched by the current expression.
+# 
+proc Search_Complete {} {
+  global tlb_find tlb_regexp tlb_case
+
+  set pos [.f1.t index insert]
+  if {$pos ne ""} {
+    set dump [ExtractText $pos [list $pos lineend]]
+
+    if $tlb_regexp {
+      if $tlb_case {
+        set opt {-nocase}
+      } else {
+        set opt {--}
       }
+      if {[regexp $opt "^${tlb_find}" $dump word]} {
+        set off [string length $word]
+      } else {
+        set off 0
+      }
+    } else {
+      set off [string length $tlb_find]
+    }
+
+    if {[regexp {^[^A-Za-z0-9_]+|[[A-Za-z0-9_]*} [string range $dump $off end] word]} {
+      append tlb_find $word
+      .f2.e icursor end
     }
   }
 }
@@ -803,13 +907,13 @@ proc Search_CompleteByHistory {} {
 # removes the current entry from the search history.
 #
 proc Search_RemoveFromHistory {} {
-  global tlb_hist tlb_hist_pos
+  global tlb_hist tlb_hist_pos tlb_hist_base
 
   if {[info exists tlb_hist_pos] && ($tlb_hist_pos < [llength $tlb_hist])} {
     set tlb_hist [lreplace $tlb_hist $tlb_hist_pos $tlb_hist_pos]
 
     if {[llength $tlb_hist] == 0} {
-      unset tlb_hist_pos
+      unset tlb_hist_pos tlb_hist_base
     } elseif {$tlb_hist_pos >= [llength $tlb_hist]} {
       set tlb_hist_pos [expr [llength $tlb_hist] - 1]
     }
@@ -911,13 +1015,14 @@ proc KeyCmd_ExecGoto {} {
   global keycmd_ent
 
   # check if the content is a valid line number
-  if {[catch {expr $keycmd_ent + 1}] == 0} {
+  set foo 0
+  if {[catch {incr foo $keycmd_ent}] == 0} {
     # note: line range check not required, text widget does not complain
     if {$keycmd_ent >= 0} {
       .f1.t mark set insert "$keycmd_ent.0"
     } else {
       set keycmd_ent [expr 1 - $keycmd_ent]
-      .f1.t mark set insert "end - $keycmd_ent lines"
+      catch {.f1.t mark set insert "end - $keycmd_ent lines"}
     }
     .f1.t see insert
     KeyCmd_Leave
@@ -932,11 +1037,12 @@ proc KeyCmd_ExecCursor {is_fwd} {
   global keycmd_ent
 
   # check if the content is a valid line number
-  if {[catch {expr $keycmd_ent + 1}] == 0} {
+  set foo 0
+  if {[catch {incr foo $keycmd_ent}] == 0} {
     if {$is_fwd} {
-      .f1.t mark set insert [list insert linestart + $keycmd_ent lines]
+      catch {.f1.t mark set insert [list insert linestart + $keycmd_ent lines]}
     } else {
-      .f1.t mark set insert [list insert linestart - $keycmd_ent lines]
+      catch {.f1.t mark set insert [list insert linestart - $keycmd_ent lines]}
     }
     .f1.t xview moveto 0
     .f1.t see insert
@@ -952,9 +1058,10 @@ proc KeyCmd_ExecColumn {} {
   global keycmd_ent
 
   # check if the content is a valid line number
-  if {[catch {expr $keycmd_ent + 1}] == 0} {
+  set foo 0
+  if {[catch {incr foo $keycmd_ent}] == 0} {
     # note: line range check not required, text widget does not complain
-    .f1.t mark set insert [list insert linestart + $keycmd_ent chars]
+    catch {.f1.t mark set insert [list insert linestart + $keycmd_ent chars]}
     .f1.t see insert
     KeyCmd_Leave
   }
@@ -968,7 +1075,8 @@ proc KeyCmd_ExecSearch {dir} {
   global keycmd_ent
 
   # check if the content is a repeat count
-  if {[catch {expr $keycmd_ent + 1}] == 0} {
+  set foo 0
+  if {[catch {incr foo $keycmd_ent}] == 0} {
     KeyCmd_Leave
     for {set idx 0} {$idx < $keycmd_ent} {incr idx} {
       Search $dir 0
@@ -993,10 +1101,7 @@ proc ParseTdmaFn {pos} {
   set pat {^\d+:\d+ l1g.fint.tick}
   set pos3 [.f1.t search -regexp -count match_len -- $pat $pos1 $pos2]
   if {$pos3 ne ""} {
-    set dump {}
-    foreach {key val idx} [.f1.t dump -text $pos3 [list $pos3 + $match_len chars]] {
-      append dump $val
-    }
+    set dump [ExtractText $pos3 [list $pos3 + $match_len chars]]
     if {[regexp {\d+:(\d+)} $dump foo fn] == 0} {
       set fn "???"
     }
@@ -1013,15 +1118,13 @@ proc ParseTdmaFn {pos} {
 # is added to the bookmark list dialog, if it's currently open.
 #
 proc Mark_Toggle {line {txt {}}} {
-  global img_marker mark_list
+  global img_marker mark_list mark_list_modified
 
   if {![info exists mark_list($line)]} {
     if {$txt eq ""} {
       set fn [ParseTdmaFn insert]
       set mark_list($line) "FN:$fn "
-      foreach {key val idx} [.f1.t dump -text "$line.0" "$line.0 lineend"] {
-        append mark_list($line) $val
-      }
+      append mark_list($line) [ExtractText "$line.0" "$line.0 lineend"]
     } else {
       set mark_list($line) $txt
     }
@@ -1034,6 +1137,7 @@ proc Mark_Toggle {line {txt {}}} {
     .f1.t delete "$line.0" "$line.1"
     MarkList_Delete $line
   }
+  set mark_list_modified 1
 }
 
 
@@ -1075,10 +1179,20 @@ proc Mark_DeleteAll {} {
 
 #
 # This function reads a list of line numbers and tags from a file and
-# adds them to the bookmark list.
+# adds them to the bookmark list. (Note already existing bookmars are
+# not discarded, hence there's no warning when bookmars already exist.)
 #
 proc Mark_ReadFile {} {
-  set filename [tk_getOpenFile -parent . -filetypes {{all {*.*}}}]
+  global mark_list cur_filename
+
+  set def_name "${cur_filename}.bok"
+  if {![file readable $def_name]} {
+    set def_name ""
+  }
+  set filename [tk_getOpenFile -parent . -filetypes {{Bookmarks {*.bok}} {all {*.*}}} \
+                               -title "Select bookmark file" \
+                               -initialfile [file tail $def_name] \
+                               -initialdir [file dirname $def_name]]
   if {$filename ne ""} {
     if {[catch {set file [open $filename r]} cerr] == 0} {
       set line_num 1
@@ -1099,7 +1213,11 @@ proc Mark_ReadFile {} {
       close $file
 
       if {$line_num > 0} {
-        global mark_list
+        global mark_list mark_list_modified
+
+        if {[array size mark_list] != 0} {
+          set mark_list_modified 1
+        }
         foreach {line txt} $bol {
           if {![info exists mark_list($line)]} {
             Mark_Toggle $line $txt
@@ -1118,22 +1236,70 @@ proc Mark_ReadFile {} {
 # This function stores the bookmark list in a file.
 #
 proc Mark_SaveFile {} {
-  global mark_list
+  global mark_list mark_list_modified cur_filename
 
   if {[array size mark_list] > 0} {
-    set filename [tk_getSaveFile -parent . -filetypes {{all {*.*}}}]
+    set def_name "${cur_filename}.bok"
+    set filename [tk_getSaveFile -parent . -filetypes {{Bookmarks {*.bok}} {all {*.*}}} \
+                                 -title "Select bookmark file" \
+                                 -initialfile [file tail $def_name] \
+                                 -initialdir [file dirname $def_name]]
     if {$filename ne ""} {
       if {[catch {set file [open $filename w]} cerr] == 0} {
         foreach {line txt} [array get mark_list] {
           puts $file "$line $txt"
         }
         close $file
+        set mark_list_modified 0
       } else {
         tk_messageBox -icon error -type ok -message "Failed to save bookmarks: $cerr"
       }
     }
   } else {
     tk_messageBox -icon info -type ok -message "Your bookmark list is empty."
+  }
+}
+
+
+#
+# This function offers to store the bookmark list into a file if the list was
+# modified.  The function is called when the application is closed or a new file
+# is loaded.
+#
+proc Mark_OfferSave {} {
+  global mark_list mark_list_modified
+
+  if {$mark_list_modified && ([array size mark_list] > 0)} {
+    set answer [tk_messageBox -icon question -type yesno -parent . \
+                  -message "Store changes in the bookmark list?"]
+
+    if {$answer eq "yes"} {
+      Mark_SaveFile
+
+      # give some positive feedback via a popup message
+      # (and don't annoy the user by forcing him to press an "ok" button to close the message)
+      if {$mark_list_modified == 0} {
+        toplevel .minfo
+        wm transient .minfo .
+        wm geometry .minfo "+[expr [winfo rootx .] + 100]+[expr [winfo rooty .] + 100]"
+        button  .minfo.b -bitmap info -relief flat
+        pack .minfo.b -side left -padx 10 -pady 20
+        label .minfo.t -text "Bookmarks have been saved..."
+        pack .minfo.t -side left -padx 10 -pady 20
+
+        set ::minfo_shown 1
+        bind .minfo <Button-1> {destroy .minfo}
+        bind .minfo <Return> {destroy .minfo}
+        bind .minfo.t <Destroy> {unset -nocomplain minfo_shown}
+        grab .minfo
+
+        # remove the popup message after 3 seconds (or when the user clicks into it)
+        set id [after 3000 {catch {destroy .minfo}}]
+        vwait ::minfo_shown
+        after cancel $id
+        catch {destroy .minfo}
+      }
+    }
   }
 }
 
@@ -1152,7 +1318,7 @@ proc MarkList_Insert {pos mtext} {
   foreach w $patlist {
     set pat [lindex $w 0]
     if {[string first $pat $mtext)] >= 0} {
-      .dlg_mark.l itemconfigure $pos -background [lindex $w 1] -foreground [lindex $w 2]
+      .dlg_mark.l itemconfigure $pos -background [lindex $w 6] -foreground [lindex $w 7]
       break
     }
   }
@@ -1287,7 +1453,7 @@ proc MarkList_Selection {} {
 # list dialog.
 #
 proc MarkList_Remove {idx} {
-  global dlg_mark_shown dlg_mark_list mark_list
+  global dlg_mark_shown dlg_mark_list mark_list mark_list_modified
 
   if {[info exists dlg_mark_shown] &&
       ($idx < [llength $dlg_mark_list])} {
@@ -1297,6 +1463,7 @@ proc MarkList_Remove {idx} {
     set dlg_mark_list [lreplace $dlg_mark_list $idx $idx]
     .dlg_mark.l delete $idx
 
+    set mark_list_modified 1
     unset mark_list($line)
     .f1.t delete "$line.0" "$line.1"
   }
@@ -1309,7 +1476,7 @@ proc MarkList_Remove {idx} {
 # closed the bookmark text entry dialog with "Return"
 #
 proc MarkList_Rename {idx txt} {
-  global dlg_mark_shown dlg_mark_list mark_list
+  global dlg_mark_shown dlg_mark_list mark_list mark_list_modified
 
   if {[info exists dlg_mark_shown] &&
       ($idx < [llength $dlg_mark_list])} {
@@ -1317,6 +1484,7 @@ proc MarkList_Rename {idx txt} {
     set line [lindex $dlg_mark_list $idx]
     if {$txt ne ""} {
       set mark_list($line) $txt
+      set mark_list_modified 1
 
       .dlg_mark.l delete $idx
       .dlg_mark.l insert $idx $txt
@@ -1355,7 +1523,8 @@ proc MarkList_ContextMenu {xcoo ycoo} {
 # all currently defined bookmarks.
 #
 proc MarkList_OpenDialog {} {
-  global font_normal cur_filename dlg_mark_shown dlg_mark_size
+  global font_content col_bg_content col_fg_content
+  global cur_filename dlg_mark_shown dlg_mark_size
 
   if {![info exists dlg_mark_shown]} {
     toplevel .dlg_mark
@@ -1366,9 +1535,10 @@ proc MarkList_OpenDialog {} {
     }
     wm group .dlg_mark .
 
-    listbox .dlg_mark.l -width 40 -height 10 -font $font_normal -exportselection false \
-                        -cursor top_left_arrow -yscrollcommand {.dlg_mark.sb set} \
-                        -selectmode browse
+    listbox .dlg_mark.l -width 40 -height 10 -cursor top_left_arrow -font $font_content \
+                        -background $col_bg_content -foreground $col_fg_content \
+                        -selectmode browse -exportselection false \
+                        -yscrollcommand {.dlg_mark.sb set}
     pack .dlg_mark.l -side left -fill both -expand 1
     scrollbar .dlg_mark.sb -orient vertical -command {.dlg_mark.l yview} -takefocus 0
     pack .dlg_mark.sb -side left -fill y
@@ -1383,8 +1553,9 @@ proc MarkList_OpenDialog {} {
     focus .dlg_mark.l
 
     set dlg_mark_shown 1
-    bind .dlg_mark.l <Destroy> {+ unset -nocomplain dlg_mark_shown}
-    bind .dlg_mark <Configure> {TestCaseList_Resize %W .dlg_mark dlg_mark_size}
+    bind .dlg_mark.l <Destroy> {+ MarkList_Quit 1}
+    bind .dlg_mark <Configure> {TestCaseList_Resize %W .dlg_mark .dlg_mark dlg_mark_size}
+    wm protocol .dlg_mark WM_DELETE_WINDOW {MarkList_Quit 0}
     if [info exists dlg_mark_size] {
       wm geometry .dlg_mark $dlg_mark_size
     }
@@ -1398,6 +1569,20 @@ proc MarkList_OpenDialog {} {
 }
 
 
+#
+# This function is bound to destroy
+#
+proc MarkList_Quit {is_destroyed} {
+  global dlg_mark_shown
+
+  unset -nocomplain dlg_mark_shown
+  if {!$is_destroyed} {
+    destroy .dlg_mark
+  }
+  catch {destroy .mren}
+}
+
+
 # ----------------------------------------------------------------------------
 #
 # This function opens a tiny dialog window which allows to enter a new text
@@ -1408,16 +1593,15 @@ proc MarkList_OpenDialog {} {
 proc MarkList_OpenRename {idx} {
   global dlg_mark_shown dlg_mark_list mark_list
   global mark_rename mark_rename_idx
-  global font_normal
+  global font_normal font_bold
 
   if {[info exists dlg_mark_shown] &&
-      ($idx < [llength $dlg_mark_list]) &&
-      ([llength [info commands .mren.e]] == 0)} {
+      ($idx < [llength $dlg_mark_list])} {
 
     set coo [.dlg_mark.l bbox $idx]
     if {[llength $coo] > 0} {
+      catch {destroy .mren}
       toplevel .mren
-      bind .mren <Leave> {destroy .mren}
       wm transient .mren .dlg_mark
 
       set xcoo [expr [lindex $coo 0] + [winfo rootx .dlg_mark.l] - 3]
@@ -1431,12 +1615,12 @@ proc MarkList_OpenRename {idx} {
       set mark_rename_idx $idx
 
       entry .mren.e -width 12 -textvariable mark_rename -exportselection false -font $font_normal
-      pack .mren.e -fill both -expand 1
+      pack .mren.e -side left -fill both -expand 1
       bind .mren.e <Return> {MarkList_Rename $mark_rename_idx $mark_rename; MarkList_LeaveRename; break}
       bind .mren.e <Escape> {MarkList_LeaveRename; break}
-      bind .mren.e <Leave> {MarkList_LeaveRename; break}
-      bind .mren.e <FocusOut> {MarkList_LeaveRename; break}
-      focus .mren.e
+
+      button .mren.b -text "X" -padx 2 -font $font_bold -command MarkList_LeaveRename
+      pack .mren.b -side left
 
       .mren.e selection clear
       if {[regexp {^(FN:)?\d+ } $mark_rename match]} {
@@ -1447,6 +1631,9 @@ proc MarkList_OpenRename {idx} {
       .mren.e selection from $off
       .mren.e selection to end
       .mren.e icursor $off
+
+      focus .mren.e
+      grab set .mren
     }
   }
 }
@@ -1457,26 +1644,51 @@ proc MarkList_OpenRename {idx} {
 # dialog window. The window is destroyed.
 #
 proc MarkList_LeaveRename {} {
-  focus .dlg_mark.l
-  destroy .mren
   unset -nocomplain mark_rename mark_rename_idx
+  catch {destroy .mren}
+  catch {focus .dlg_mark.l}
 }
 
 
 # ----------------------------------------------------------------------------
 #
-# This helper function determines which line is selected in the tag list.
+# This function is bound to the next/prev buttons below the highlight tags
+# list. When one of more list entries are selected, the function searches
+# for the tag in the main window and makes the line visible.
 #
-proc TagsList_GetSelectedIdx {} {
-  global dlg_tags_list
+proc Tags_Search {is_fwd} {
+  global patlist
 
-  set sel [.dlg_tags.l curselection]
-  if {([llength $sel] == 1) && ($sel < [llength $dlg_tags_list])} {
-    set idx $sel
-  } else {
-    set idx -1
+  set sel [.dlg_tags.f1.l curselection]
+  if {[llength $sel] >= 0} {
+    set min_line -1
+    foreach pat_idx $sel {
+      set w [lindex $patlist $pat_idx]
+      set pat [lindex $w 0]
+      set tagnam [lindex $w 4]
+      set start_pos [Search_GetBase $is_fwd 0]
+
+      if {$is_fwd} {
+        set pos12 [.f1.t tag nextrange $tagnam $start_pos]
+      } else {
+        set pos12 [.f1.t tag prevrange $tagnam $start_pos]
+      }
+      if {$pos12 ne ""} {
+        scan [lindex $pos12 0] "%d.%d" line char
+        if {($min_line == -1) ||
+            ($is_fwd ? ($line < $min_line) : ($line > $min_line))} {
+          set min_line $line
+        }
+      }
+    }
+    if {$min_line > 0} {
+      Mark_JumpPos
+      .f1.t mark set insert "$min_line.0"
+      .f1.t see insert
+      .f1.t tag remove sel 1.0 end
+      .f1.t tag add sel "$min_line.0" "[expr $min_line + 1].0"
+    }
   }
-  return $idx
 }
 
 
@@ -1486,10 +1698,13 @@ proc TagsList_GetSelectedIdx {} {
 proc TagsList_Selection {} {
   global dlg_tags_list
 
-  set idx [TagsList_GetSelectedIdx]
-  if {$idx >= 0} {
-    set line [lindex $dlg_tags_list $idx]
-    # TODO
+  set sel [.dlg_tags.f1.l curselection]
+  if {[llength $sel] >= 0} {
+    .dlg_tags.f2.bn configure -state normal
+    .dlg_tags.f2.bp configure -state normal
+  } else {
+    .dlg_tags.f2.bn configure -state disabled
+    .dlg_tags.f2.bp configure -state disabled
   }
 }
 
@@ -1503,8 +1718,8 @@ proc TagsList_Insert {pos tag_idx} {
 
   set w [lindex $patlist $tag_idx]
 
-  .dlg_tags.l insert $pos [lindex $w 0]
-  .dlg_tags.l itemconfigure $pos -background [lindex $w 1] -foreground [lindex $w 2]
+  .dlg_tags.f1.l insert $pos [lindex $w 0]
+  .dlg_tags.f1.l itemconfigure $pos -background [lindex $w 6] -foreground [lindex $w 7]
 }
 
 
@@ -1516,7 +1731,7 @@ proc TagsList_Fill {} {
 
   if [info exists dlg_tags_shown] {
     set dlg_tags_list {}
-    .dlg_tags.l delete 0 end
+    .dlg_tags.f1.l delete 0 end
 
     set tag_idx 0
     foreach w $patlist {
@@ -1537,10 +1752,10 @@ proc TagsList_EditColor {tag_idx is_fg} {
 
   set w [lindex $patlist $tag_idx]
   if $is_fg {
-    set col_idx 2
+    set col_idx 6
     set what foreground
   } else {
-    set col_idx 1
+    set col_idx 7
     set what background
   }
 
@@ -1550,12 +1765,12 @@ proc TagsList_EditColor {tag_idx is_fg} {
 
   if {$col ne ""} {
     set w [lreplace $w $col_idx $col_idx $col]
-    if {[catch {.dlg_tags.l itemconfigure $tag_idx -background [lindex $w 1] -foreground [lindex $w 2]}] == 0} {
+    if {[catch {.dlg_tags.f1.l itemconfigure $tag_idx -background [lindex $w 6] -foreground [lindex $w 7]}] == 0} {
 
       set patlist [lreplace $patlist $tag_idx $tag_idx $w]
 
       set tagnam "tag$tag_idx"
-      .f1.t tag configure $tagnam -background [lindex $w 1] -foreground [lindex $w 2]
+      .f1.t tag configure $tagnam -background [lindex $w 6] -foreground [lindex $w 7]
     }
   }
 }
@@ -1567,18 +1782,17 @@ proc TagsList_EditColor {tag_idx is_fg} {
 proc TagsList_ContextMenu {xcoo ycoo} {
   global dlg_tags_list
 
-  set idx [.dlg_tags.l index "@$xcoo,$ycoo"]
+  set idx [.dlg_tags.f1.l index "@$xcoo,$ycoo"]
   if {([llength $idx] > 0) && ($idx < [llength $dlg_tags_list])} {
-    .dlg_tags.l selection clear 0 end
-    .dlg_tags.l selection set $idx
+    .dlg_tags.f1.l selection clear 0 end
+    .dlg_tags.f1.l selection set $idx
 
     .dlg_tags.ctxmen delete 0 end
-    .dlg_tags.ctxmen add command -label "Edit background color" -command [list TagsList_EditColor $idx 0]
-    .dlg_tags.ctxmen add command -label "Edit foreground color" -command [list TagsList_EditColor $idx 1]
-    .dlg_tags.ctxmen add command -label "Edit pattern" -state disabled
+    .dlg_tags.ctxmen add cascade -label "Change background color" -menu .dlg_tags.ctxmen.bgcol
+    .dlg_tags.ctxmen add command -label "Edit markup..." -state disabled
     .dlg_tags.ctxmen add separator
+    .dlg_tags.ctxmen add command -label "Add current search" -state disabled
     .dlg_tags.ctxmen add command -label "Remove this entry" -state disabled
-    .dlg_tags.ctxmen add command -label "Add new entry" -state disabled
 
     set rootx [expr [winfo rootx .dlg_tags] + $xcoo]
     set rooty [expr [winfo rooty .dlg_tags] + $ycoo]
@@ -1592,30 +1806,46 @@ proc TagsList_ContextMenu {xcoo ycoo} {
 # This dialog shows all currently defined tag assignments.
 #
 proc Tags_OpenDialog {} {
-  global font_normal dlg_tags_shown dlg_tags_size
+  global font_content col_bg_content col_fg_content
+  global dlg_tags_shown dlg_tags_size
 
   if {![info exists dlg_tags_shown]} {
     toplevel .dlg_tags
     wm title .dlg_tags "Color highlights list"
     wm group .dlg_tags .
 
-    listbox .dlg_tags.l -width 40 -height 10 -font $font_normal -exportselection false \
-                        -cursor top_left_arrow -yscrollcommand {.dlg_tags.sb set} \
-                        -selectmode browse
-    pack .dlg_tags.l -side left -fill both -expand 1
-    scrollbar .dlg_tags.sb -orient vertical -command {.dlg_tags.l yview} -takefocus 0
-    pack .dlg_tags.sb -side left -fill y
+    frame .dlg_tags.f1
+    listbox .dlg_tags.f1.l -width 40 -height 10 -cursor top_left_arrow -font $font_content \
+                        -background $col_bg_content -foreground $col_fg_content \
+                        -selectmode extended -exportselection false \
+                        -yscrollcommand {.dlg_tags.f1.sb set}
+    pack .dlg_tags.f1.l -side left -fill both -expand 1
+    scrollbar .dlg_tags.f1.sb -orient vertical -command {.dlg_tags.f1.l yview} -takefocus 0
+    pack .dlg_tags.f1.sb -side left -fill y
+    pack .dlg_tags.f1 -side top -fill both -expand 1
 
-    bind .dlg_tags.l <<ListboxSelect>> {TagsList_Selection; break}
-    #bind .dlg_tags.l <Delete> {TagsList_DeleteSelection; break}
-    bind .dlg_tags.l <ButtonRelease-3> {TagsList_ContextMenu %x %y}
-    focus .dlg_tags.l
+    bind .dlg_tags.f1.l <<ListboxSelect>> {TagsList_Selection; break}
+    bind .dlg_tags.f1.l <ButtonRelease-3> {TagsList_ContextMenu %x %y; break}
+    bind .dlg_tags.f1.l <Key-n> {Tags_Search 1; break}
+    bind .dlg_tags.f1.l <Key-N> {Tags_Search 0; break}
+    bind .dlg_tags.f1.l <Alt-Key-n> {Tags_Search 1; break}
+    bind .dlg_tags.f1.l <Alt-Key-p> {Tags_Search 0; break}
+    focus .dlg_tags.f1.l
+
+    frame .dlg_tags.f2
+    label .dlg_tags.f2.l -text "Find:"
+    button .dlg_tags.f2.bn -text "Next" -command {Tags_Search 1} -underline 0 -state disabled
+    button .dlg_tags.f2.bp -text "Previous" -command {Tags_Search 0} -underline 0 -state disabled
+    pack .dlg_tags.f2.l .dlg_tags.f2.bn .dlg_tags.f2.bp -side left -pady 5 -padx 10
+    pack .dlg_tags.f2 -side top
 
     menu .dlg_tags.ctxmen -tearoff 0
+    menu .dlg_tags.ctxmen.bgcol -tearoff 0
+    Palette_FillMenu .dlg_tags.ctxmen.bgcol
 
     set dlg_tags_shown 1
-    bind .dlg_tags.l <Destroy> {+ unset -nocomplain dlg_tags_shown}
-    bind .dlg_tags <Configure> {TestCaseList_Resize %W .dlg_tags dlg_tags_size}
+    bind .dlg_tags.f1.l <Destroy> {+ unset -nocomplain dlg_tags_shown}
+    bind .dlg_tags <Configure> {TestCaseList_Resize %W .dlg_tags .dlg_tags dlg_tags_size}
     if [info exists dlg_tags_size] {
       wm geometry .dlg_tags $dlg_tags_size
     }
@@ -1629,16 +1859,402 @@ proc Tags_OpenDialog {} {
 }
 
 
+# ----------------------------------------------------------------------------
+#
+# This function creates or raises the font selection dialog.
+#
+proc FontList_OpenDialog {} {
+  global font_normal font_content dlg_font_shown
+  global dlg_font_fams dlg_font_size dlg_font_bold
+
+  if {![info exists dlg_font_shown]} {
+    set dlg_font_shown 1
+    toplevel .dlg_font
+    wm title .dlg_font "Font selection"
+    wm group .dlg_font .
+
+    # frame #1: listbox with all available fonts
+    frame .dlg_font.f1
+    listbox .dlg_font.f1.fams -width 40 -height 10 -font $font_normal -exportselection false \
+                        -cursor top_left_arrow -yscrollcommand {.dlg_font.f1.sb set} \
+                        -selectmode browse
+    pack .dlg_font.f1.fams -side left -fill both -expand 1
+    scrollbar .dlg_font.f1.sb -orient vertical -command {.dlg_font.f1.fams yview} -takefocus 0
+    pack .dlg_font.f1.sb -side left -fill y
+    pack .dlg_font.f1 -side top -fill both -expand 1 -padx 5 -pady 5
+    bind .dlg_font.f1.fams <<ListboxSelect>> {FontList_Selection; break}
+
+    # frame #2: size and weight controls
+    frame .dlg_font.f2
+    label .dlg_font.f2.lab_sz -text "Font size:"
+    pack .dlg_font.f2.lab_sz -side left
+    spinbox .dlg_font.f2.sz -from 1 -to 99 -width 3 \
+                            -textvariable dlg_font_size -command FontList_Selection
+    pack .dlg_font.f2.sz -side left
+    checkbutton .dlg_font.f2.bold -text "bold" \
+                            -variable dlg_font_bold -command FontList_Selection
+    pack .dlg_font.f2.bold -side left -padx 15
+    pack .dlg_font.f2 -side top -fill x -padx 5 -pady 5
+
+    # frame #3: demo text
+    text .dlg_font.demo -width 20 -height 4 -wrap none -exportselection false \
+                        -relief ridge -takefocus 0
+    pack .dlg_font.demo -side top -fill x -expand 1 -padx 15 -pady 10
+    bindtags .dlg_font.demo {.dlg_font.demo TextReadOnly . all}
+
+    .dlg_font.demo insert end "ABCDEFGHIJKLMNOPQRSTUVWXYZ\n"
+    .dlg_font.demo insert end "abcdefghijklmnopqrstuvwxyz\n"
+    .dlg_font.demo insert end "0123456789\n"
+    .dlg_font.demo insert end "AAA ,,,...---;;;:::___+++=== AAA\n"
+
+    # frame #4: ok/abort buttons
+    frame .dlg_font.f3
+    button .dlg_font.f3.abort -text "Abort" -command {FontList_Quit 0}
+    button .dlg_font.f3.ok -text "Ok" -default active -command {FontList_Quit 1}
+    pack .dlg_font.f3.abort .dlg_font.f3.ok -side left -padx 10 -pady 5
+    pack .dlg_font.f3 -side top
+
+    bind .dlg_font.f1 <Destroy> {unset -nocomplain dlg_font_shown}
+    bind .dlg_font.f3.ok <Return> {event generate .dlg_font.f3.ok <space>}
+    bind .dlg_font <Escape> {event generate .dlg_font.f3.abort <space>}
+    focus .dlg_font.f1.fams
+
+    # fill font list and select current font
+    FontList_Fill
+    set dlg_font_bold [expr ![string equal [font actual $font_content -weight] "normal"]]
+    set dlg_font_size [font actual $font_content -size]
+    set idx [lsearch -exact $dlg_font_fams [font actual $font_content -family]]
+    if {$idx >= 0} {
+      .dlg_font.f1.fams selection set $idx
+      .dlg_font.f1.fams see $idx
+    }
+
+  } else {
+    wm deiconify .dlg_font
+    raise .dlg_font
+  }
+}
+
+
+#
+# This function fills the font selection listbox with  list of all
+# font families which are available on the system.
+#
+proc FontList_Fill {} {
+  global dlg_font_fams dlg_font_size dlg_font_bold
+
+  set dlg_font_fams [lsort [font families -displayof .]]
+
+  # move known fonts to the front
+  set known_fonts {arial courier fixed helvetica times}
+  foreach known $known_fonts {
+    set idx [lsearch -exact $dlg_font_fams $known]
+    if {$idx >= 0} {
+      set dlg_font_fams [lreplace $dlg_font_fams $idx $idx]
+      set dlg_font_fams [linsert $dlg_font_fams 0 $known]
+    }
+  }
+
+  foreach f $dlg_font_fams {
+    lappend dlg_font_fams $f
+    .dlg_font.f1.fams insert end $f
+  }
+}
+
+
+#
+# This function is bound to changes of the selection in the font list
+# or changes in the size and weight controls.  The function applies
+# the selection to the demo text.
+#
+proc FontList_Selection {} {
+  global dlg_font_fams dlg_font_size dlg_font_bold
+
+  set sel [.dlg_font.f1.fams curselection]
+  if {([llength $sel] == 1) && ($sel < [llength $dlg_font_fams])} {
+    set name [list [lindex $dlg_font_fams $sel]]
+    lappend name $dlg_font_size
+    if $dlg_font_bold {
+      lappend name bold
+    }
+    if {[catch {.dlg_font.demo configure -font $name}] != 0} {
+      catch {.dlg_font.demo configure -font fixed}
+    }
+  }
+}
+
+
+#
+# This function is bound to the "Ok" and "Abort" command buttons.
+# In case of OK the function checks and stores the selection.
+# In case of abort, the function just closes the dialog.
+#
+proc FontList_Quit {do_store} {
+  global dlg_font_fams dlg_font_size dlg_font_bold
+  global font_content
+
+  if $do_store {
+    set sel [.dlg_font.f1.fams curselection]
+    if {([llength $sel] == 1) && ($sel < [llength $dlg_font_fams])} {
+      set name [list [lindex $dlg_font_fams $sel]]
+      lappend name $dlg_font_size
+      if $dlg_font_bold {
+        lappend name bold
+      }
+      if {[catch {.f1.t configure -font $name} cerr] != 0} {
+        tk_messageBox -type ok -icon error -message "Selected font is unavailable: $cerr"
+        return
+      }
+
+      # save to rc
+      set font_content $name
+
+    } else {
+      tk_messageBox -type ok -icon error -message "No font is selected - Use \"Abort\" to leave without selection"
+      return
+    }
+  }
+  unset -nocomplain dlg_font_fams dlg_font_size dlg_font_bold
+  destroy .dlg_font
+}
+
+
+# ----------------------------------------------------------------------------
+#
+# This function creates or raises the color palette dialog.
+#
+proc Palette_OpenDialog {} {
+  global font_normal dlg_cols_shown dlg_cols_palette dlg_cols_cid
+  global col_palette
+
+  if {![info exists dlg_cols_shown]} {
+    toplevel .dlg_cols
+    wm title .dlg_cols "Color palette"
+    wm group .dlg_cols .
+
+    label .dlg_cols.lab_hd -text "Pre-define a color palette for quick\nselection when adding patterns:" \
+                           -font $font_normal -justify left
+    pack .dlg_cols.lab_hd -side top -anchor w -pady 5 -padx 5
+
+    set w [expr 10*15 + 4]
+    canvas .dlg_cols.c -width $w -height 100 -background [.dlg_cols cget -background] \
+                       -cursor top_left_arrow
+    pack .dlg_cols.c -side top -fill both -expand 1 -padx 10 -pady 10
+
+    bind .dlg_cols.c <ButtonRelease-3> {Palette_ContextMenu %x %y}
+    bind .dlg_cols.c <Destroy> {+ unset -nocomplain dlg_cols_shown}
+
+    frame .dlg_cols.f2
+    button .dlg_cols.f2.abort -text "Abort" -command {Palette_Save 0}
+    button .dlg_cols.f2.ok -text "Ok" -default active -command {Palette_Save 1}
+    pack .dlg_cols.f2.abort .dlg_cols.f2.ok -side left -padx 10 -pady 5
+    pack .dlg_cols.f2 -side top
+
+    menu .dlg_cols.ctxmen -tearoff 0
+
+    set dlg_cols_palette $col_palette
+    Palette_Fill
+
+  } else {
+    wm deiconify .dlg_cols
+    raise .dlg_cols
+  }
+}
+
+
+#
+# This functions fills the color palette canvas with rectangles which
+# each display one of the currently defined colors. Each rectangle gets
+# mouse bindings for a context menu and changing the order of colors.
+#
+proc Palette_Fill {} {
+  global dlg_cols_palette dlg_cols_cid
+
+  .dlg_cols.c delete all
+  set dlg_cols_cid {}
+
+  set x 2
+  set y 2
+  set col_idx 0
+  set idx 0
+  foreach col $dlg_cols_palette {
+    set cid [.dlg_cols.c create rect $x $y [expr $x + 15] [expr $y + 15] -outline black -fill $col]
+    lappend dlg_cols_cid $cid
+
+    .dlg_cols.c bind $cid <Double-Button-1> [list Palette_EditColor $idx $cid]
+    .dlg_cols.c bind $cid <B1-Motion> [list Palette_MoveColor $idx $cid %x %y]
+    .dlg_cols.c bind $cid <ButtonRelease-1> [list Palette_MoveColorEnd $idx $cid %x %y]
+
+    incr x 15
+    incr col_idx 1
+    if {$col_idx >= 10} {
+      incr y 15
+      set x 2
+      set col_idx 0
+    }
+    incr idx
+  }
+
+  .dlg_cols.c configure -height [expr (int([llength $dlg_cols_palette]+9) / 10) * 15 + 2+2]
+}
+
+
+#
+# This function is bound to right mouse clicks on color items.
+#
+proc Palette_ContextMenu {xcoo ycoo} {
+  global dlg_cols_palette dlg_cols_cid
+
+  set cid [.dlg_cols.c find closest $xcoo $ycoo]
+  if {$cid ne ""} {
+    set idx [lsearch -integer $dlg_cols_cid $cid]
+    if {$idx != -1} {
+
+      .dlg_cols.ctxmen delete 0 end
+      .dlg_cols.ctxmen add command -label "" -background [lindex $dlg_cols_palette $idx] -state disabled
+      .dlg_cols.ctxmen add separator
+      .dlg_cols.ctxmen add command -label "Change this color..." -command [list Palette_EditColor $idx $cid]
+      .dlg_cols.ctxmen add command -label "Duplicate this color" -command [list Palette_DuplicateColor $idx $cid]
+      .dlg_cols.ctxmen add command -label "Insert new color (white)" -command [list Palette_InsertColor $idx $cid]
+      .dlg_cols.ctxmen add separator
+      .dlg_cols.ctxmen add command -label "Remove this color" -command [list Palette_RemoveColor $idx]
+
+      set rootx [expr [winfo rootx .dlg_cols] + $xcoo]
+      set rooty [expr [winfo rooty .dlg_cols] + $ycoo]
+      tk_popup .dlg_cols.ctxmen $rootx $rooty 0
+    }
+  }
+}
+
+
+#
+# This function is bound to the "remove this color" menu item in the
+# color palette context menu.
+#
+proc Palette_RemoveColor {idx} {
+  global dlg_cols_palette
+
+  if {$idx < [llength $dlg_cols_palette]} {
+    set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx]
+    Palette_Fill
+  }
+}
+
+
+#
+# This function is bound to the "insert new color" menu item in the
+# color palette entries. It inserts an white color entry at the mouse
+# pointer position.
+#
+proc Palette_InsertColor {idx cid} {
+  global dlg_cols_palette
+
+  set dlg_cols_palette [linsert $dlg_cols_palette $idx {#ffffff}]
+  Palette_Fill
+}
+
+proc Palette_DuplicateColor {idx cid} {
+  global dlg_cols_palette
+
+  if {$idx < [llength $dlg_cols_palette]} {
+    set col [lindex $dlg_cols_palette $idx]
+    set dlg_cols_palette [linsert $dlg_cols_palette $idx $col]
+    Palette_Fill
+  }
+}
+
+
+#
+# This function is bound to the "edit this color" menu item in the
+# color palette context menu.
+#
+proc Palette_EditColor {idx cid} {
+  global dlg_cols_palette
+
+  set col [lindex $dlg_cols_palette $idx]
+  set col [tk_chooseColor -initialcolor $col -parent .dlg_cols -title "Select color"]
+  if {$col ne ""} {
+    set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx $col]
+    .dlg_cols.c itemconfigure $cid -fill $col
+  }
+}
+
+
+#
+# This function is bound to motion events on color palette entries while
+# the left mouse button is helt down.
+#
+proc Palette_MoveColor {idx cid xcoo ycoo} {
+  .dlg_cols.c raise $cid
+  .dlg_cols.c coords $cid [expr $xcoo - 7] [expr $ycoo - 7] [expr $xcoo + 8] [expr $ycoo + 8]
+}
+
+
+#
+# This function is bound to the mouse button release event on color palette
+# entries. It's used to change the order of colors by drag-and-drop.
+#
+proc Palette_MoveColorEnd {idx cid xcoo ycoo} {
+  global dlg_cols_palette
+
+  set col_idx [expr ($xcoo < 2+7) ? 0 : (($xcoo - (2+7)) / 15)]
+  set row_idx [expr ($ycoo < 2+7) ? 0 : (($ycoo - (2+7)) / 15)]
+
+  set new_idx [expr ($row_idx * 10) + $col_idx]
+  set col [lindex $dlg_cols_palette $idx]
+  set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx]
+  set dlg_cols_palette [linsert $dlg_cols_palette $new_idx $col]
+
+  Palette_Fill
+}
+
+
+#
+# This function is bound to the "ok" and "abort" buttons. Ths function
+# closes the color palette dialog. In case of "ok" the edited palette
+# is stored.
+#
+proc Palette_Save {do_save} {
+  global col_palette dlg_cols_palette dlg_cols_cid
+
+  if $do_save {
+    set col_palette $dlg_cols_palette
+  }
+  unset -nocomplain dlg_cols_palette dlg_cols_cid
+  destroy .dlg_cols
+}
+
+
+#
+# This function creates a menu with all the colors. It's usually used as
+# sub-menu (i.e. cascade) in other menus.
+#
+proc Palette_FillMenu {wid} {
+  global col_palette
+
+  set idx 0
+  foreach col $col_palette {
+    $wid add command -label "x" -background $col -foreground $col \
+                                -activebackground $col -activeforeground black
+    if {($idx % 10) == 0} {
+      $wid entryconfigure last -columnbreak 1
+    }
+    incr idx
+  }
+}
+
+
+# ----------------------------------------------------------------------------
 #
 # This function is bound to configure events on dialog windows, i.e. called
 # when the window size or stacking changes. The function stores the new size
 # so that the same size can be used when the window is closed and re-opened.
 #
-proc TestCaseList_Resize {wid top var} {
-  upvar $var size
+proc TestCaseList_Resize {wid top cmp var} {
+  upvar {#0} $var size
 
-  if {$wid eq $top} {
-    set size "[winfo width $wid]x[winfo height $wid]"
+  if {$wid eq $cmp} {
+    set size "[winfo width $top]x[winfo height $top]"
   }
 }
 
@@ -1723,14 +2339,15 @@ proc MenuCmd_Reload {} {
 proc MenuCmd_OpenFile {} {
   global patlist
 
-  #-initialfile [file tail $dumpdb_filename]
-  #-initialdir [file dirname $dumpdb_filename]
+  # offer to save old bookmarks before discarding them below
+  Mark_OfferSave
+
   set filename [tk_getOpenFile -parent . -filetypes {{"trace" {out.*}} {all {*.*}}}]
   if {$filename ne ""} {
     # the following is a work-around for a performance issue in the text widget:
     # deleting text with large numbers of tags is extremely slow, so we clear the tags first
     set tag_idx 0
-    foreach p $patlist {
+    foreach w $patlist {
       set tagnam "tag$tag_idx"
       .f1.t tag delete $tagnam
       incr tag_idx
@@ -1738,27 +2355,35 @@ proc MenuCmd_OpenFile {} {
     # discard the current trace content
     .f1.t delete 1.0 end
 
-    SearchReset
-    array unset ::mark_list
+    global mark_list mark_list_modified
+    array unset mark_list
+    set mark_list_modified 0
     MarkList_Fill
+    SearchReset
 
     after idle LoadFile $filename
   }
 }
 
 
+#
+# This function installed as callback for destroy requests on the main window.
+#
 proc UserQuit {} {
   UpdateRcFile
+  Mark_OfferSave
   destroy .
 }
 
 
 #
 # This functions reads configuration variables from the rc file.
+# The function is called once during start-up.
 #
 proc LoadRcFile {isDefault} {
   global patlist tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
-  global dlg_mark_size dlg_tags_size
+  global dlg_mark_size dlg_tags_size main_win_geom
+  global font_content
   global rcfile_version myrcfile
 
   set error 0
@@ -1771,7 +2396,8 @@ proc LoadRcFile {isDefault} {
       if {[string compare $line "___END___"] == 0} {
         break;
       } elseif {([catch $line] != 0) && !$error} {
-        tk_messageBox -type ok -default ok -icon error -message "Syntax error in rc file, line #$line_no: $line"
+        tk_messageBox -type ok -default ok -icon error \
+                      -message "Syntax error in rc file, line #$line_no: $line"
         set error 1
 
       } elseif {$ver_check == 0} {
@@ -1779,7 +2405,7 @@ proc LoadRcFile {isDefault} {
         if {[info exists rc_compat_version] && [info exists rcfile_version]} {
           if {$rc_compat_version > $rcfile_version} {
             tk_messageBox -type ok -default ok -icon error \
-               -message "rc file '$myrcfile' is from an incompatible, newer version of nxtvepg ($rcfile_version) and cannot be loaded. Use -rcfile command line option to specify an alternate file name or use the newer nxtvepg executable."
+               -message "rc file '$myrcfile' is from an incompatible, newer browser version ($rcfile_version) and cannot be loaded."
 
             # change name of rc file so that the newer one isn't overwritten
             append myrcfile "." $rcfile_version
@@ -1799,8 +2425,9 @@ proc LoadRcFile {isDefault} {
 #
 proc UpdateRcFile {} {
   global argv0 myrcfile rcfile_compat rcfile_version
-  global dlg_mark_size dlg_tags_size
+  global dlg_mark_size dlg_tags_size main_win_geom
   global patlist tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
+  global font_content
 
   set tmpfile ${myrcfile}.tmp
 
@@ -1842,6 +2469,10 @@ proc UpdateRcFile {} {
     if [info exists dlg_tags_size] {
       puts $rcfile [list set dlg_tags_size $dlg_tags_size]
     }
+    puts $rcfile [list set main_win_geom $main_win_geom]
+
+    # font setting
+    puts $rcfile [list set font_content $font_content]
 
     close $rcfile
 
@@ -1856,6 +2487,7 @@ proc UpdateRcFile {} {
 }
 
 
+# ----------------------------------------------------------------------------
 #
 # Global variables
 #
@@ -1884,10 +2516,14 @@ set tlb_hall 0
 # This variable stores the search direction: 0:=backwards, 1:=forwards
 set tlb_last_dir 1
 
+# This variable indicates if the search entry field has keyboard focus.
+set tlb_find_focus 0
+
 # These variables are used while keyboard focus is in the search entry field.
-#unset tlb_hist_pos
 #unset tlb_inc_base
 #unset tlb_inc_yview
+#unset tlb_hist_pos
+#unset tlb_hist_base
 
 # This variable is used to parse multi-key command sequences
 set last_key_char {}
@@ -1899,30 +2535,79 @@ set last_jump_orig {}
 # This hash array stores the bookmark list. It's indices are text line numbers.
 array set mark_list {}
 
+# This variable tracks if the marker list was changed since the last save.
+# It's used to offer automatic save upon quit
+set mark_list_modified 0
+
 # These variables hold IDs of timers (i.e. scripts delayed by "after")
 # They are used to cancel the scripts when necessary
 set tid_search_inc {}
 set tid_search_hall {}
 set tid_high_init {}
 
+# These variable holds the font and color selections for the main text content.
+set font_content {helvetica 9 normal}
+set col_bg_content {#dcdcdf}
+set col_fg_content {#000}
+
+# This variable stores the geometry of the main window
+set main_win_geom "640x480"
+
+# This variable stores a list of pre-defined colors.
+set col_palette [list \
+  {#000000} \
+  {#94ff80} \
+  {#b3beff} \
+  {#b3fff3} \
+  {#b4f9b4} \
+  {#bfffb3} \
+  {#c180ff} \
+  {#ccffff} \
+  {#dab3d9} \
+  {#dab3ff} \
+  {#e6b3d9} \
+  {#e6b3ff} \
+  {#e6ccff} \
+  {#e7b3ff} \
+  {#e9ff80} \
+  {#efbf80} \
+  {#f0b0a0} \
+  {#f2ffb3} \
+  {#ffb3be} \
+  {#ffbf80} \
+  {#ffd9b3} \
+  {#ff6600} \
+  {#ffffff}]
+
 # This list stores text patterns and associated colors for color-highlighting
 # in the main text window. Each list entry is again a list:
-# 0: sub-string (case sensitive)
-# 1: foreground color
-# 2: background color
-# default patterns (note: default text widget background is #d9d9d9)
+# 0: sub-string or regular expression
+# 1: reg.exp. yes/no:=1/0
+# 2: match case yes/no:=1/0
+# 3: group tag
+# 4: text tag name (arbitrary, but unique in list)
+# 5: reserved, empty
+# 6: background color
+# 7: foreground color
+# 8: bold yes/no:=1/0
+# 9: underline yes/no:=1/0
+# 10: overstrike yes/no:=1/0
+# 11: background bitmap name ("", gray75, gray50, gray25, gray12)
+# 12: foreground bitmap name ("", gray75, gray50, gray25, gray12)
+# 13: relief: none, raised, sunken, ridge
+# 14: relief borderwidth: 1,2,...,9
 set patlist {
-  {{TDMA TICK} {#FFFFFF} {#000020}}
-  {l1_brs_dsp-frame_tick {#E6B3D9} {#000000}}
-  {l1d_brs_dsp-send_cmd {#E6B3FF} {#000000}}
-  {l1d_brs-mcu_task_exec {#EFBF80} {#000000}}
-  {l1cd-air_if_avail {#F0B0A0} {#000000}}
-  {BRS___DSP-REQUEST {#DAB3FF} {#000000}}
-  {BRS____DSP-RESULT {#DAB3D9} {#000000}}
-  {SDL-Signal {#FF6600} {#000000}}
-  {SDL-Loop {#FF6600} {#000000}}
-  {{######} {#FF6600} {#000000}}
-  {BRS____CONFIG-SET {#FF6600} {#000000}}
+  {{TDMA TICK} 0 1 l1host tag0 {} #FFFFFF #000020 0 0 0 {} {} none 2}
+  {l1_brs_dsp-frame_tick 0 1 l1host tag1 {} #E6B3D9 #000000 0 0 0 {} {} none 2}
+  {l1d_brs_dsp-send_cmd 0 1 l1host tag2 {} #E6B3FF #000000 0 0 0 {} {} none 2}
+  {l1d_brs-mcu_task_exec 0 1 l1host tag3 {} #EFBF80 #000000 0 0 0 {} {} none 2}
+  {l1cd-air_if_avail 0 1 l1host tag4 {} #F0B0A0 #000000 0 0 0 {} {} none 2}
+  {BRS___DSP-REQUEST 0 1 l1host tag5 {} #DAB3FF #000000 0 0 0 {} {} none 2}
+  {BRS____DSP-RESULT 0 1 l1host tag6 {} #DAB3D9 #000000 0 0 0 {} {} none 2}
+  {SDL-Signal 0 1 l1host tag7 {} #FF6600 #000000 0 0 0 {} {} none 2}
+  {SDL-Loop 0 1 l1host tag8 {} #FF6600 #000000 0 0 0 {} {} none 2}
+  {###### 0 1 l1host tag9 {} #FF6600 #000000 0 0 0 {} {} none 2}
+  {BRS____CONFIG-SET 0 1 l1host tag10 {} #FF6600 #000000 0 0 0 {} {} none 2}
 }
 
 # These variables are used by the bookmark list dialog.
@@ -1945,8 +2630,7 @@ if {[catch {tk appname "trowser"}]} {
 }
 LoadRcFile 1
 InitResources
-CreateLogBrowser
-wm protocol . WM_DELETE_WINDOW UserQuit
+CreateMainWindow
 update
 
 if {$argc == 0} {
