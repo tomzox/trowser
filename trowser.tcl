@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.38 2010/09/08 10:35:52 tom Exp $
+# $Id: trowser.tcl,v 1.39 2010/10/03 17:36:59 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -3908,8 +3908,8 @@ proc SearchList_Open {raise_win} {
     .dlg_srch.menubar.ctrl add command -label "Clear all" -command SearchList_Clear
     .dlg_srch.menubar.ctrl add command -label "Close" -command {destroy .dlg_srch}
     menu .dlg_srch.menubar.edit -tearoff 0 -postcommand SearchList_MenuPosted
-    .dlg_srch.menubar.edit add command -label "Undo" -command SearchList_Undo
-    .dlg_srch.menubar.edit add command -label "Redo" -command SearchList_Redo
+    .dlg_srch.menubar.edit add command -label "Undo" -command SearchList_Undo -accelerator "u"
+    .dlg_srch.menubar.edit add command -label "Redo" -command SearchList_Redo -accelerator "^r"
     .dlg_srch.menubar.edit add separator
     .dlg_srch.menubar.edit add command -label "Import selected lines from main window" -command SearchList_CopyCurrentLine
     .dlg_srch.menubar.edit add separator
@@ -4087,7 +4087,6 @@ proc SearchList_MenuPosted {} {
 proc SearchList_ContextMenu {xcoo ycoo} {
   global tlb_find
   global dlg_srch_sel dlg_srch_lines
-  global dlg_srch_show_fn dlg_srch_show_tick dlg_srch_tick_delta dlg_srch_tick_root
   global tick_pat_sep tick_pat_num tick_str_prefix dlg_srch_fn_cache
 
   TextSel_ContextSelection dlg_srch_sel $xcoo $ycoo
@@ -4245,6 +4244,7 @@ proc SearchList_ToggleFrameNo {} {
   } else {
     DisplayStatusLine search error "No patterns defined in the RC file for parsing frame numbers"
     set dlg_srch_tick_delta 0
+    set dlg_srch_show_tick 0
     set dlg_srch_show_fn 0
   }
 }
@@ -5227,7 +5227,7 @@ proc SearchList_InsertLine {txt_line ins_pos} {
   set dump [ExtractText [list $pos linestart] [list $pos lineend]]
   set tag_list [lsearch -all -inline -glob [.f1.t tag names $pos] "tag*"]
 
-  if {$dlg_srch_tick_delta || $dlg_srch_show_fn} {
+  if {$dlg_srch_tick_delta || $dlg_srch_show_fn || $dlg_srch_show_tick} {
     set fn [ParseFrameTickNo $pos dlg_srch_fn_cache]
     if {[llength $fn] > 0} {
       set tick_no [lindex $fn 0]
@@ -5237,7 +5237,7 @@ proc SearchList_InsertLine {txt_line ins_pos} {
     } else {
       set tick_no 0
     }
-    set prefix "   "
+    set prefix ""
     if {$dlg_srch_tick_delta} {
       append prefix [expr {$tick_no - $dlg_srch_tick_root}]
     }
@@ -5249,7 +5249,7 @@ proc SearchList_InsertLine {txt_line ins_pos} {
       if {$prefix ne ""} {append prefix ":"}
       append prefix $tick_str_prefix [lindex $fn 1]
     }
-    append prefix " "
+    set prefix "   $prefix "
   } else {
     set prefix "   "
   }
@@ -5423,7 +5423,7 @@ proc SearchList_SaveFile {filename lnum_only} {
       } else {
         # save text content
         foreach line $dlg_srch_lines {
-          puts $file [ExtractText "$line.0" "$line.0 lineend"]]
+          puts $file [ExtractText "$line.0" "$line.0 lineend"]
         }
       }
       close $file
