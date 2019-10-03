@@ -40,9 +40,9 @@ proc InitResources {} {
   set font_bold {helvetica 9 bold}
 
   # bindings to allow scrolling a text widget with the mouse wheel
-  bind TextWheel    <Button-4>     {%W yview scroll -3 units}
-  bind TextWheel    <Button-5>     {%W yview scroll 3 units}
-  bind TextWheel    <MouseWheel>   {%W yview scroll [expr {- (%D / 120) * 3}] units}
+  bind TextWheel <Button-4>     {%W yview scroll -3 units}
+  bind TextWheel <Button-5>     {%W yview scroll 3 units}
+  bind TextWheel <MouseWheel>   {%W yview scroll [expr {- (%D / 120) * 3}] units}
 
   # bindings for a read-only text widget
   # copy allowed bindings from the regular text widget (i.e. move, mark, copy)
@@ -59,11 +59,19 @@ proc InitResources {} {
                  <Control-Shift-Key-Up> <Control-Key-slash>} {
     bind TextReadOnly $event [bind Text $event]
   }
+  # bindings for a selection text widget (listbox emulation)
+  # (uses non-standard cursor movement event bindings, hence not added here)
+  foreach event {<Button-2> <B2-Motion> <Key-Prior> <Key-Next> \
+                 <Shift-Key-Tab> <Control-Key-Tab> <Control-Shift-Key-Tab>} {
+    bind TextSel $event [bind Text $event]
+  }
   foreach event {<Button-4> <Button-5> <MouseWheel>} {
     bind TextReadOnly $event [bind TextWheel $event]
+    bind TextSel $event [bind TextWheel $event]
   }
   bind TextReadOnly <Control-Key-c> [bind Text <<Copy>>]
   bind TextReadOnly <Key-Tab> [bind Text <Control-Key-Tab>]
+  bind TextSel <Key-Tab> [bind Text <Control-Key-Tab>]
 
   # bookmark image which is inserted into the text widget
   global img_marker
@@ -1268,13 +1276,13 @@ proc DisplayLineNumer {} {
 # is the reason for passing widget and compare parameters.
 #
 proc ToplevelResized {wid top cmp var} {
-  upvar {#0} $var size
+  upvar {#0} $var geom
 
   if {$wid eq $cmp} {
     set new_size [wm geometry $top]
 
-    if {![info exists size] || ($new_size ne $size)} {
-      set size $new_size
+    if {![info exists geom] || ($new_size ne $geom)} {
+      set geom $new_size
       UpdateRcAfterIdle
     }
   }
@@ -2530,7 +2538,7 @@ proc MarkList_OpenDialog {} {
     scrollbar .dlg_mark.sb -orient vertical -command {.dlg_mark.l yview} -takefocus 0
     pack .dlg_mark.sb -side left -fill y
 
-    bindtags .dlg_mark.l {.dlg_mark.l TextReadOnly . all}
+    bindtags .dlg_mark.l {.dlg_mark.l TextSel . all}
     TextSel_Init .dlg_mark.l dlg_mark_sel MarkList_SelectionChange MarkList_GetLen "browse"
 
     foreach w $patlist {
@@ -2671,7 +2679,7 @@ proc SearchList_Open {} {
 
     TextSel_Init .dlg_srch.l dlg_srch_sel SearchList_SelectionChange SearchList_GetLen "browse"
 
-    bindtags .dlg_srch.l {.dlg_srch.l TextReadOnly . all}
+    bindtags .dlg_srch.l {.dlg_srch.l TextSel . all}
     bind .dlg_srch.l <ButtonRelease-3> {SearchList_ContextMenu %x %y; break}
     bind .dlg_srch.l <Delete> {SearchList_Remove; break}
     focus .dlg_srch.l
@@ -2819,23 +2827,25 @@ proc SearchList_Search {} {
   global dlg_srch_lines
 
   if {$tlb_find ne ""} {
-    set line_list {}
-    set line 1
-    set opt [Search_GetOptions $tlb_regexp $tlb_case $tlb_last_dir]
-    set pos [.f1.t index end]
-    scan $pos "%d.%d" max_line char
+    if [SearchExprCheck 1] {
+      set line_list {}
+      set line 1
+      set opt [Search_GetOptions $tlb_regexp $tlb_case $tlb_last_dir]
+      set pos [.f1.t index end]
+      scan $pos "%d.%d" max_line char
 
-    # search matching text
-    while {($line < $max_line) &&
-           ([set pos [eval .f1.t search $opt -- {$tlb_find} "$line.0" end]] ne {})} {
-      scan $pos "%d.%d" line char
+      # search matching text
+      while {($line < $max_line) &&
+             ([set pos [eval .f1.t search $opt -- {$tlb_find} "$line.0" end]] ne {})} {
+        scan $pos "%d.%d" line char
 
-      lappend line_list $line
+        lappend line_list $line
 
-      incr line
+        incr line
+      }
+
+      set dlg_srch_lines [lsort -integer -uniq [concat $dlg_srch_lines $line_list]]
     }
-
-    set dlg_srch_lines [lsort -integer -uniq [concat $dlg_srch_lines $line_list]]
   }
 }
 
@@ -2925,8 +2935,8 @@ proc TagList_OpenDialog {} {
     scrollbar .dlg_tags.f1.sb -orient vertical -command {.dlg_tags.f1.l yview} -takefocus 0
     pack .dlg_tags.f1.sb -side left -fill y
 
-    bindtags .dlg_tags.f1.l {.dlg_tags.f1.l TextReadOnly . all}
     TextSel_Init .dlg_tags.f1.l dlg_tags_sel TagList_SelectionChange TagList_GetLen "extended"
+    bindtags .dlg_tags.f1.l {.dlg_tags.f1.l TextSel . all}
 
     bind .dlg_tags.f1.l <Double-Button-1> {TagList_DoubleClick %x %y; break}
     bind .dlg_tags.f1.l <ButtonRelease-3> {TagList_ContextMenu %x %y; break}
