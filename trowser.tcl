@@ -155,6 +155,8 @@ proc CreateMainWindow {} {
   bind .f1.t <Control-Down> {YviewScroll 1; KeyClr; break}
   bind .f1.t <Control-e> {YviewScroll 1; KeyClr; break}
   bind .f1.t <Control-y> {YviewScroll -1; KeyClr; break}
+  bind .f1.t <Control-Left> {XviewScroll -1; KeyClr; break}
+  bind .f1.t <Control-Right> {XviewScroll 1; KeyClr; break}
   bind .f1.t <Control-f> {event generate %W <Key-Next>; KeyClr; break}
   bind .f1.t <Control-b> {event generate %W <Key-Prior>; KeyClr; break}
   bind .f1.t <Key-H> {CursorSetLine top; KeyClr; break}
@@ -164,6 +166,8 @@ proc CreateMainWindow {} {
   bind .f1.t <G> {.f1.t mark set insert end; .f1.t see insert; KeyClr; break}
   bind .f1.t <Key-dollar> {.f1.t mark set insert "insert lineend"; .f1.t see insert; KeyClr; break}
   bind .f1.t <Control-g> {DisplayLineNumer; KeyClr; break}
+  bind .f1.t <Key-Home> {CursorSetColumn left; KeyClr; break}
+  bind .f1.t <Key-End> {CursorSetColumn right; KeyClr; break}
   # search with "/", "?"; repeat search with n/N
   bind .f1.t <Key-slash> {set tlb_last_dir 1; focus .f2.e; KeyClr; break}
   bind .f1.t <Key-question> {set tlb_last_dir 0; focus .f2.e; KeyClr; break}
@@ -180,7 +184,9 @@ proc CreateMainWindow {} {
   # bookmarks
   bind .f1.t <Double-Button-1> {Mark_ToggleAtInsert; KeyClr; break}
   bind .f1.t <Key-m> {Mark_ToggleAtInsert; KeyClr; break}
-  # catch-all
+  # misc & catch-all
+  bind .f1.t <Control-plus> {ChangeFontSize 1; KeyClr}
+  bind .f1.t <Control-minus> {ChangeFontSize -1; KeyClr}
   bind .f1.t <FocusIn> {KeyClr}
   bind .f1.t <Return> {if {[KeyCmd return]} break}
   bind .f1.t <KeyPress> {if {[KeyCmd %A]} break}
@@ -1099,10 +1105,26 @@ proc DeriveFont {afont delta_size {style {}}} {
 
 
 #
+# This function is bound to the Control +/- keys as a way to quickly
+# adjust the content font size (as in web browsers)
+#
+proc ChangeFontSize {delta} {
+  global font_content
+
+  set new [DeriveFont $font_content $delta]
+
+  if {[catch {.f1.t configure -font $new}] == 0} {
+    set font_content $new
+    UpdateRcAfterIdle
+  }
+}
+
+
+#
 # This function adjusts the view so that the line holding the cursor is
 # placed at the top, center or bottom of the viewable area, if possible.
 #
-proc YviewSet {where} {
+proc YviewSet {where col} {
   global font_normal
 
   .f1.t see insert
@@ -1126,9 +1148,14 @@ proc YviewSet {where} {
 
     if {$delta > 0} {
       .f1.t yview scroll $delta units
-      .f1.t see insert
     } elseif {$delta < 0} {
       .f1.t yview scroll $delta units
+    }
+
+    if {$col == 0} {
+      .f1.t xview moveto 0
+      .f1.t mark set insert [list insert linestart]
+    } else {
       .f1.t see insert
     }
   }
@@ -1136,8 +1163,51 @@ proc YviewSet {where} {
 
 
 #
+# This function scrolls the view horizontally by the given number of characters.
+# When the cursor is scrolled out of the window, it's placed in the last visible
+# column in scrolling direction.
+#
+proc XviewScroll {delta} {
+  global font_normal
+
+  set pos_old [.f1.t bbox insert]
+  .f1.t xview scroll $delta units
+
+  set pos_new [.f1.t bbox insert]
+
+  # check if cursor is fully visible
+  if {([llength $pos_new] != 4) || ([lindex $pos_new 2] == 0)} {
+    set ycoo [expr [lindex $pos_old 1] + ([lindex $pos_old 3] / 2)]
+    if {$delta < 0} {
+      .f1.t mark set insert "@[winfo width .f1.t],$ycoo"
+    } else {
+      .f1.t mark set insert [list "@1,$ycoo" + 1 chars]
+    }
+  }
+}
+
+
+#
+# This function moves the cursor into a given column in the current view.
+#
+proc CursorSetColumn {where} {
+  global font_normal
+
+  if {$where eq "left"} {
+    .f1.t xview moveto 0
+    .f1.t mark set insert [list insert linestart]
+
+  } elseif {$where eq "right"} {
+    .f1.t mark set insert [list insert lineend]
+    .f1.t see insert
+  }
+}
+
+
+#
 # This function scrolls the view vertically by the given number of lines.
-# When the line holding the cursor is scrolled out of the window
+# When the line holding the cursor is scrolled out of the window, the cursor
+# is placed in the last visible line in scrolling direction.
 #
 proc YviewScroll {delta} {
   global font_normal
@@ -1159,7 +1229,7 @@ proc YviewScroll {delta} {
 
 
 #
-# This function moves the cursor onto a given position in the current view.
+# This function moves the cursor into a given line in the current view.
 #
 proc CursorSetLine {where} {
   global font_normal
@@ -1231,17 +1301,27 @@ proc KeyCmd {char} {
 
     } elseif {$last_key_char eq "z"} {
       if {$char eq "-"} {
-        YviewSet bottom
-      } elseif {($char eq ".") || ($char eq "z")} {
-        YviewSet center
-      } elseif {($char eq "+") || ($char eq "return")} {
-        YviewSet top
+        YviewSet bottom 0
+      } elseif {$char eq "b"} {
+        YviewSet bottom 1
+      } elseif {$char eq "."} {
+        YviewSet center 0
+      } elseif {$char eq "z"} {
+        YviewSet center 1
+      } elseif {$char eq "t"} {
+        YviewSet top 0
+      } elseif {$char eq "return"} {
+        YviewSet top 1
       }
       set last_key_char {}
       set result 1
 
     } else {
-      if {[regexp {[0-9]} $char]} {
+      if {$char eq "0"} {
+        CursorSetColumn left
+        set result 1
+
+      } elseif {[regexp {[0-9]} $char]} {
         KeyCmd_OpenDialog any $char
         set last_key_char {}
         set result 1
