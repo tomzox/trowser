@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.23 2008/04/01 18:30:47 tom Exp $
+# $Id: trowser.tcl,v 1.24 2008/06/30 20:45:20 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -197,7 +197,7 @@ proc CreateMainWindow {} {
   entry .f2.e -width 20 -textvariable tlb_find -exportselection false
   menu .f2.mh -tearoff 0
   button .f2.bn -text "Next" -command {SearchNext 1} -underline 0 -pady 2
-  button .f2.bp -text "Previous" -command {SearchNext 0} -underline 0 -pady 2
+  button .f2.bp -text "Prev." -command {SearchNext 0} -underline 0 -pady 2
   button .f2.bl -text "All" -command {SearchAll} -underline 0 -pady 2
   checkbutton .f2.bh -text "Highlight all" -variable tlb_hall -command SearchHighlightSettingChange -underline 0
   checkbutton .f2.cb -text "Match case" -variable tlb_case -command SearchHighlightSettingChange -underline 6
@@ -953,9 +953,16 @@ proc Search_GetOptions {pat is_re match_case {is_fwd -1}} {
 # previous search.
 #
 proc SearchNext {is_fwd} {
-  global tlb_find
+  global tlb_find tlb_hist
 
   ClearStatusLine search
+
+  if {$tlb_find eq ""} {
+    # empty expression: repeat last search
+    if {[llength $tlb_hist] > 0} {
+      set tlb_find [lindex $tlb_hist 0]
+    }
+  }
 
   if {$tlb_find ne ""} {
     set found [Search_Atomic $is_fwd 0]
@@ -1033,7 +1040,6 @@ proc SearchInit {} {
 
   if {$tlb_find_focus == 0} {
     set tlb_find_focus 1
-    set tlb_find {}
     unset -nocomplain tlb_hist_pos tlb_hist_prefix
 
     ClearStatusLine search
@@ -1048,9 +1054,10 @@ proc SearchInit {} {
 # Escape keys.
 #
 proc SearchEnter {is_fwd {wid ""}} {
-  global tlb_last_dir tlb_last_wid
+  global tlb_find tlb_last_dir tlb_last_wid
 
   set tlb_last_dir $is_fwd
+  set tlb_find {}
   focus .f2.e
 
   set tlb_last_wid $wid
@@ -1270,7 +1277,7 @@ proc Search_HistoryComplete {step} {
 # This function is bound to "CTRL-d" in the "Find" entry field and
 # performs auto-completion of a search text by adding any following
 # characters in the word matched by the current expression.
-# 
+#
 proc Search_Complete {} {
   global tlb_find tlb_regexp tlb_case
 
@@ -1312,7 +1319,7 @@ proc Search_Complete {} {
 # This function is bound to "CTRL-SHIFT-D" in the "Find" entry field and
 # performs auto-completion to the left by adding any preceding characters
 # before the current cursor position.
-# 
+#
 proc Search_CompleteLeft {} {
   global tlb_find tlb_regexp tlb_case
 
@@ -2316,7 +2323,7 @@ proc KeyCmd_ExecSearch {is_fwd} {
       DisplayStatusLine search error "No pattern defined for search repeat"
     }
   }
-} 
+}
 
 
 #
@@ -2382,7 +2389,6 @@ proc ParseFrameTickNo {pos} {
   return $prefix
 }
 
-
 #
 # This function adds or removes a bookmark at the given text line.
 # The line is marked by inserting an image in the text and the bookmark
@@ -2402,7 +2408,7 @@ proc Mark_Toggle {line {txt {}}} {
       set mark_list($line) $txt
     }
     .f1.t image create "$line.0" -image $img_marker -padx 5
-    .f1.t tag add bookmark "$line.0" "$line.1"
+    .f1.t tag add bookmark "$line.0"
 
     # extend highlighting tags to the inserted bookmark char
     foreach {key val idx} [.f1.t dump -tag "$line.1"] {
@@ -2417,6 +2423,7 @@ proc Mark_Toggle {line {txt {}}} {
     .f1.t delete "$line.0" "$line.1"
     MarkList_Delete $line
   }
+  SearchList_MarkLine $line
   set mark_list_modified 1
 }
 
@@ -2756,9 +2763,9 @@ proc Mark_OfferSave {} {
 
 # ----------------------------------------------------------------------------
 #
-# This function inserts a bookmark text into the listbox and matches
-# the text against the color highlight patterns to assign foreground
-# and background colors.
+# This function inserts a bookmark text into the listbox and copies
+# color highlight tags from the main window so that the text displays
+# in the same way.
 #
 proc MarkList_Insert {idx line} {
   global patlist mark_list
@@ -2774,7 +2781,7 @@ proc MarkList_Insert {idx line} {
   append txt "\n"
 
   # insert text (prepend space to improve visibility of selection)
-  .dlg_mark.l insert "[expr $idx + 1].0" "  " {} $txt $tag_list
+  .dlg_mark.l insert "[expr $idx + 1].0" "  " margin $txt $tag_list
 }
 
 
@@ -2886,7 +2893,9 @@ proc MarkList_SelectionChange {sel} {
   global dlg_mark_list
 
   if {[llength $sel] >= 1} {
-    Mark_Line [lindex $dlg_mark_list [lindex $sel 0]]
+    set line [lindex $dlg_mark_list [lindex $sel 0]]
+    Mark_Line $line
+    SearchList_MatchView $line
   }
   if {[llength $sel] > 1} {
     foreach idx [lrange $sel 1 end] {
@@ -3029,6 +3038,7 @@ proc MarkList_OpenDialog {} {
       eval [linsert [HighlightConfigure $w] 0 .dlg_mark.l tag configure $tagnam]
     }
     .dlg_mark.l tag configure sel -bgstipple gray75 -foreground {}
+    .dlg_mark.l tag configure margin -lmargin1 10
     .dlg_mark.l tag lower sel
 
     menu .dlg_mark.ctxmen -tearoff 0
@@ -3438,7 +3448,7 @@ proc SearchList_Open {{no_raise 0}} {
     }
     wm group .dlg_srch .
 
-    menu .dlg_srch.menubar -relief raised
+    menu .dlg_srch.menubar
     .dlg_srch config -menu .dlg_srch.menubar
     .dlg_srch.menubar add cascade -label "Control" -menu .dlg_srch.menubar.ctrl -underline 0
     .dlg_srch.menubar add cascade -label "Edit" -menu .dlg_srch.menubar.edit -underline 0
@@ -3489,6 +3499,7 @@ proc SearchList_Open {{no_raise 0}} {
     KeyCmdBind .dlg_srch.f1.l "&" {SearchHighlightClear}
     KeyCmdBind .dlg_srch.f1.l "Return" {CursorMoveLine .dlg_srch.f1.l 1}
     KeyCmdBind .dlg_srch.f1.l "u" SearchList_Undo
+    KeyCmdBind .dlg_srch.f1.l "m" SearchList_ToggleMark
     bind .dlg_srch.f1.l <Control-Key-r> SearchList_Redo
     bind .dlg_srch.f1.l <Alt-Key-h> {set dlg_srch_highlight [expr !$dlg_srch_highlight]; SearchList_ToggleHighlight; break}
     bind .dlg_srch.f1.l <Alt-Key-f> {set dlg_srch_show_fn [expr !$dlg_srch_show_fn]; SearchList_ToggleTickNo; break}
@@ -3619,12 +3630,12 @@ proc SearchList_ContextMenu {xcoo ycoo} {
 
   set c 0
   if {$tlb_find ne ""} {
-    .dlg_srch.ctxmen add command -label "Add matches on current search" \
+    .dlg_srch.ctxmen add command -label "Import matches on current search" \
                                  -command SearchList_AddMatches
     incr c 1
   }
   if {[.f1.t tag nextrange sel 1.0] ne ""} {
-    .dlg_srch.ctxmen add command -label "Add main window selection" \
+    .dlg_srch.ctxmen add command -label "Import main window selection" \
                                  -command SearchList_AddMainSelection
     incr c 1
   }
@@ -3768,25 +3779,35 @@ proc SearchList_InvertCmd {op line_list mode} {
 
   if {$op * $mode < 0} {
     # undo insertion, i.e. delete lines again
-    foreach line $line_list {
+    set new_lines $dlg_srch_lines
+    set count 0
+    foreach line [lsort -integer -decreasing $line_list] {
       set idx [SearchList_GetLineIdx $line]
       if {[lindex $dlg_srch_lines $idx] == $line} {
-        set dlg_srch_lines [lreplace $dlg_srch_lines $idx $idx]
         set pos "[expr $idx + 1].0"
         .dlg_srch.f1.l delete $pos "$pos +1 lines"
+
+        #too slow: set dlg_srch_lines [lreplace $new_lines $idx $idx]
+        set new_lines [lreplace $new_lines $idx $idx -1]
+        incr count
       }
     }
+    set dlg_srch_lines [lrange [lsort -integer -increasing $new_lines] $count end]
 
   } elseif {$op * $mode > 0} {
     # re-insert previously removed lines
-    foreach line $line_list {
+    set new_lines {}
+    foreach line [lsort -integer -decreasing $line_list] {
       set idx [SearchList_GetLineIdx $line]
       if {[lindex $dlg_srch_lines $idx] != $line} {
-        set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
         set pos "[expr $idx + 1].0"
         SearchList_InsertLine $line $pos
+
+        #too slow: set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
+        lappend new_lines $line
       }
     }
+    set dlg_srch_lines [lsort -integer -increasing [concat $dlg_srch_lines $new_lines]]
   }
   if [info exists pos] {
     .dlg_srch.f1.l see $pos
@@ -3930,9 +3951,10 @@ proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx} {
 
   } elseif [info exists dlg_srch_shown] {
     scan [.f1.t index end] "%d" max_line
-    set start_t [clock clicks -milliseconds]
+    set stop_t [expr [clock clicks -milliseconds] + 200]
     set pat [lindex $pat_list $pat_idx]
     set line_list {}
+    set off 0
 
     while {($line < $max_line) &&
            ([set pos [eval .f1.t search $opt -- {$pat} "$line.0" end]] ne "")} {
@@ -3941,9 +3963,11 @@ proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx} {
       set idx [SearchList_GetLineIdx $line]
       if $do_add {
         if {[lindex $dlg_srch_lines $idx] != $line} {
+          SearchList_InsertLine $line "[expr $idx + $off + 1].0"
           lappend line_list $line
-          set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
-          SearchList_InsertLine $line "[expr $idx + 1].0"
+          # linsert is extremely slow on large lists, so use append and sort instead (outside of the loop)
+          #set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
+          incr off
         }
       } else {
         if {[lindex $dlg_srch_lines $idx] == $line} {
@@ -3955,14 +3979,16 @@ proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx} {
 
       incr line
 
-      if {([clock clicks -milliseconds] >= $start_t + 100) && ($line < $max_line)} {
+      if {[clock clicks -milliseconds] >= $stop_t} {
         break
       }
     }
 
     if {[llength $line_list] > 0} {
-      global dlg_srch_undo
-      lappend dlg_srch_undo [list [expr $do_add ? 1:-1] $line_list]
+      SearchList_BgSearch_AppendUndoList $do_add $line_list
+      if $do_add {
+        set dlg_srch_lines [lsort -integer -increasing [concat $dlg_srch_lines $line_list]]
+      }
     }
 
     if {($line < $max_line) && ($pos ne "")} {
@@ -3973,6 +3999,7 @@ proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx} {
       set tid_search_list [after idle [list SearchList_BgSearchLoop $pat_list $opt $do_add $line $pat_idx]]
 
     } else {
+      SearchList_BgSearch_FinalizeUndoList
       incr pat_idx
       if {$pat_idx < [llength $pat_list]} {
         set tid_search_list [after idle [list SearchList_BgSearchLoop $pat_list $opt $do_add 1 $pat_idx]]
@@ -4017,20 +4044,30 @@ proc SearchList_BgSearchTagsLoop {tag_list tag_idx line} {
   } elseif [info exists dlg_srch_shown] {
     set start_t [clock clicks -milliseconds]
     set tagnam [lindex $tag_list $tag_idx]
+    set line_list {}
+    set off 0
 
     while {[set pos12 [.f1.t tag nextrange $tagnam "$line.0"]] ne ""} {
       scan [lindex $pos12 0] "%d" line
 
       set idx [SearchList_GetLineIdx $line]
       if {[lindex $dlg_srch_lines $idx] != $line} {
-        set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
         SearchList_InsertLine $line "[expr $idx + 1].0"
+        lappend line_list $line
+        # linsert is extremely slow on large lists... (see also comments in other search loop)
+        #set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
+        incr off
       }
       incr line
 
       if {[clock clicks -milliseconds] >= $start_t + 100} {
         break
       }
+    }
+
+    if {[llength $line_list] > 0} {
+      SearchList_BgSearch_AppendUndoList 1 $line_list
+      set dlg_srch_lines [lsort -integer -increasing [concat $dlg_srch_lines $line_list]]
     }
 
     if {$pos12 ne ""} {
@@ -4042,6 +4079,7 @@ proc SearchList_BgSearchTagsLoop {tag_list tag_idx line} {
       set tid_search_list [after idle [list SearchList_BgSearchTagsLoop $tag_list $tag_idx $line]]
 
     } else {
+      SearchList_BgSearch_FinalizeUndoList
       incr tag_idx
       if {$tag_idx < [llength $tag_list]} {
         set tid_search_list [after idle [list SearchList_BgSearchTagsLoop $tag_list $tag_idx 1]]
@@ -4098,10 +4136,54 @@ proc SearchList_SearchAbort {} {
 
 
 #
+# This function is during background tasks which fill the search match dialog
+# after adding new matches. The function adds the respective line numbers to
+# the undo list. If there's already an undo item for the current search, the
+# numbers are merged into it.
+#
+proc SearchList_BgSearch_AppendUndoList {do_add line_list} {
+  global dlg_srch_undo
+
+  if {[llength $dlg_srch_undo] > 0} {
+    set prev_undo [lindex $dlg_srch_undo end]
+    set prev_op [lindex $prev_undo 0]
+    if {$prev_op == [expr $do_add ? 2 : -2]} {
+      set prev_l [lindex $prev_undo 1]
+      set dlg_srch_undo [lreplace $dlg_srch_undo end end [list $prev_op [concat $prev_l $line_list]]]
+    } else {
+      lappend dlg_srch_undo [list [expr $do_add ? 2 : -2] $line_list]
+    }
+  } else {
+    lappend dlg_srch_undo [list [expr $do_add ? 2 : -2] $line_list]
+  }
+}
+
+
+#
+# This function is invoked at the end of background tasks which fill the
+# search list window to mark the entry on the undo list as closed (so that
+# future search matches go into a new undo element.)
+#
+proc SearchList_BgSearch_FinalizeUndoList {} {
+  global dlg_srch_undo
+
+  if {[llength $dlg_srch_undo] > 0} {
+    set prev_undo [lindex $dlg_srch_undo end]
+    set prev_op [lindex $prev_undo 0]
+    if {($prev_op == 2) || ($prev_op == -2)} {
+      set prev_l [lindex $prev_undo 1]
+      set prev_op [expr ($prev_op == -2) ? -1 : 1]
+      set dlg_srch_undo [lreplace $dlg_srch_undo end end [list $prev_op $prev_l]]
+    }
+  }
+}
+
+
+#
 # This function inserts all selected lines in the main window into the list.
 #
 proc SearchList_AddMainSelection {} {
-  global dlg_srch_shown dlg_srch_lines
+  global dlg_srch_shown dlg_srch_lines dlg_srch_sel
   global dlg_srch_undo dlg_srch_redo
 
   if [info exists dlg_srch_shown] {
@@ -4112,13 +4194,15 @@ proc SearchList_AddMainSelection {} {
       if {$char == 0} {incr line_2 -1}
 
       set line_list {}
+      set idx_list {}
       for {set line $line_1} {$line <= $line_2} {incr line} {
         set idx [SearchList_GetLineIdx $line]
+        set pos "[expr $idx + 1].0"
         if {[lindex $dlg_srch_lines $idx] != $line} {
           set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
-          set pos "[expr $idx + 1].0"
           SearchList_InsertLine $line $pos
           lappend line_list $line
+          lappend idx_list $idx
         }
         .dlg_srch.f1.l see $pos
       }
@@ -4126,6 +4210,7 @@ proc SearchList_AddMainSelection {} {
       if {[llength $line_list] > 0} {
         lappend dlg_srch_undo [list 1 $line_list]
         set dlg_srch_redo {}
+        TextSel_SetSelection dlg_srch_sel $idx_list 0
       }
     }
   }
@@ -4138,7 +4223,7 @@ proc SearchList_AddMainSelection {} {
 # press event in the main window.
 #
 proc SearchList_CopyCurrentLine {} {
-  global dlg_srch_shown dlg_srch_lines
+  global dlg_srch_shown dlg_srch_lines dlg_srch_sel
   global dlg_srch_undo dlg_srch_redo
 
   if [info exists dlg_srch_shown] {
@@ -4155,9 +4240,14 @@ proc SearchList_CopyCurrentLine {} {
         set pos "[expr $idx + 1].0"
         SearchList_InsertLine $line $pos
         .dlg_srch.f1.l see $pos
+        TextSel_SetSelection dlg_srch_sel $idx 0
 
         lappend dlg_srch_undo [list 1 $line]
         set dlg_srch_redo {}
+
+      } else {
+        # line is already included - make it visible & select it
+        SearchList_MatchView $line
       }
     }
   }
@@ -4186,7 +4276,10 @@ proc SearchList_CreateHighlightTags {} {
     .dlg_srch.f1.l tag lower sel
 
     # create tag to invisibly mark prefixes (used to exclude the text from search and mark-up)
-    .dlg_srch.f1.l tag configure prefix
+    # padding is added to align bookmarked lines (note padding is smaller than
+    # in the main window because there's extra space in front anyways)
+    .dlg_srch.f1.l tag configure prefix -lmargin1 11
+    .dlg_srch.f1.l tag configure bookmark -lmargin1 0
   }
 }
 
@@ -4248,23 +4341,72 @@ proc SearchList_MatchView {line} {
 
 
 #
-# This functions copies a line from the main text into the search list.
+# This function is called when a bookmark is added or removed in the main
+# window.  The function displays the bookmark in the respective line in
+# the search filter dialog, if the line is currently visible.  (Note this
+# function is not used to mark lines which are newly inserted into the
+# dialog and which already have a bookmark; see the insert function below)
+#
+proc SearchList_MarkLine {line} {
+  global dlg_srch_shown dlg_srch_lines
+  global img_marker mark_list
+
+  if [info exists dlg_srch_shown] {
+    set idx [lsearch -exact -integer $dlg_srch_lines $line]
+    if {$idx != -1} {
+      set pos "[expr $idx + 1].0"
+      if [info exists mark_list($line)] {
+        .dlg_srch.f1.l image create $pos -image $img_marker -padx 2
+        .dlg_srch.f1.l tag add bookmark $pos
+        .dlg_srch.f1.l see $pos
+
+        scan [.dlg_srch.f1.l index insert] "%d.%d" lil lic
+        if {$lic > 0} {
+          .dlg_srch.f1.l mark set insert "$lil.0"
+        }
+      } else {
+        .dlg_srch.f1.l delete $pos
+      }
+    }
+  }
+}
+
+
+#
+# This function is bound to the "m" key in the search filter dialog.
+# The function adds or removes a bookmark on the currently selected
+# line (but only if exactly one line is selected.)
+#
+proc SearchList_ToggleMark {} {
+  global dlg_srch_shown dlg_srch_lines dlg_srch_sel
+
+  set sel [TextSel_GetSelection dlg_srch_sel]
+  if {[llength $sel] == 1} {
+    set line [lindex $dlg_srch_lines $sel]
+    Mark_Toggle $line
+  }
+}
+
+
+#
+# This functions copies a line of text (including highlighting tags and
+# bookmark marker) from the main window into the the search filter dialog.
 #
 proc SearchList_InsertLine {txt_line ins_pos} {
   global dlg_srch_fns dlg_srch_show_fn dlg_srch_fn_delta dlg_srch_fn_root
-  global tick_str_prefix
+  global tick_str_prefix img_marker mark_list
 
   # copy text content and tags out of the main window
-  set txt_line "$txt_line.0"
-  set dump [ExtractText [list $txt_line linestart] [list $txt_line lineend]]
-  set tag_list [lsearch -all -inline -glob [.f1.t tag names $txt_line] "tag*"]
+  set pos "$txt_line.0"
+  set dump [ExtractText [list $pos linestart] [list $pos lineend]]
+  set tag_list [lsearch -all -inline -glob [.f1.t tag names $pos] "tag*"]
 
   if {$dlg_srch_fn_delta || $dlg_srch_show_fn} {
-    if [info exists dlg_srch_fns($txt_line)] {
-      set fn $dlg_srch_fns($txt_line)
+    if [info exists dlg_srch_fns($pos)] {
+      set fn $dlg_srch_fns($pos)
     } else {
-      set fn [ParseFrameTickNo $txt_line]
-      set dlg_srch_fns($txt_line) $fn
+      set fn [ParseFrameTickNo $pos]
+      set dlg_srch_fns($pos) $fn
     }
     if {[catch {expr $fn + 0}]} {
       set fn 0
@@ -4279,7 +4421,15 @@ proc SearchList_InsertLine {txt_line ins_pos} {
   } else {
     set prefix "   "
   }
+
+  # display the text
   .dlg_srch.f1.l insert $ins_pos $prefix prefix "$dump\n" $tag_list
+
+  # add bookmark, if this line is marked
+  if [info exists mark_list($txt_line)] {
+    .dlg_srch.f1.l image create $ins_pos -image $img_marker -padx 2
+    .dlg_srch.f1.l tag add bookmark $ins_pos
+  }
 }
 
 
@@ -4295,8 +4445,10 @@ proc SearchList_Fill {} {
 
   TextSel_SetSelection dlg_srch_sel {}
 
+  set idx 1
   foreach txt_line $dlg_srch_lines {
-    SearchList_InsertLine $txt_line end 
+    SearchList_InsertLine $txt_line "$idx.0"
+    incr idx
   }
 }
 
@@ -4455,14 +4607,18 @@ proc TagList_OpenDialog {} {
     pack .dlg_tags.f1 -side top -fill both -expand 1
 
     frame .dlg_tags.f2
+    menubutton .dlg_tags.f2.e -text "Edit" -underline 0 -menu .dlg_tags.f2.e.men -direction below
+    pack .dlg_tags.f2.e -side left -pady 5 -padx 5
     label .dlg_tags.f2.l -text "Find:"
+    pack .dlg_tags.f2.l -side left -pady 5 -padx 10
     button .dlg_tags.f2.bn -text "Next" -command {Tags_Search 1} -underline 0 -state disabled -pady 2
     button .dlg_tags.f2.bp -text "Previous" -command {Tags_Search 0} -underline 0 -state disabled -pady 2
     button .dlg_tags.f2.bl -text "List all" -command {Tags_SearchList} -underline 0 -state disabled -pady 2
-    pack .dlg_tags.f2.l .dlg_tags.f2.bn .dlg_tags.f2.bp .dlg_tags.f2.bl -side left -pady 5 -padx 10
+    pack .dlg_tags.f2.bn .dlg_tags.f2.bp .dlg_tags.f2.bl -side left -pady 5 -padx 5
     pack .dlg_tags.f2 -side top -anchor w
 
     menu .dlg_tags.ctxmen -tearoff 0
+    menu .dlg_tags.f2.e.men -tearoff 0 -postcommand {TagList_ContextPopulate .dlg_tags.f2.e.men 1}
 
     set dlg_tags_shown 1
     bind .dlg_tags.f1.l <Destroy> {+ unset -nocomplain dlg_tags_shown}
@@ -4481,38 +4637,50 @@ proc TagList_OpenDialog {} {
 
 
 #
-# This function pops up a context menu for the color tags list dialog.
+# This function is bound to right mouse clicks in the highlight tag list and pops
+# up a context menu. If the mouse click occurred outside of the current selection
+# the selection is updated. Then the menu is populated and shown at the mouse
+# coordinates.
 #
 proc TagList_ContextMenu {xcoo ycoo} {
-  global patlist tlb_find dlg_tags_sel
+  global tlb_find dlg_tags_sel
 
   TextSel_ContextSelection dlg_tags_sel $xcoo $ycoo
 
-  set sel [TextSel_GetSelection dlg_tags_sel]
-
-  if {$tlb_find ne ""} {
-    set find_state normal
-  } else {
-    set find_state disabled
-  }
-
-  .dlg_tags.ctxmen delete 0 end
-  if {[llength $sel] == 1} {
-    .dlg_tags.ctxmen add command -label "Change background color" -command [list TagList_PopupColorPalette $sel 0]
-    .dlg_tags.ctxmen add command -label "Edit markup..." -command [list Markup_OpenDialog $sel]
-    .dlg_tags.ctxmen add separator
-    .dlg_tags.ctxmen add command -label "Copy to search field" -command [list TagList_CopyToSearch $sel]
-    .dlg_tags.ctxmen add command -label "Update from search field" -command [list TagList_CopyFromSearch $sel] -state $find_state
-  }
-  .dlg_tags.ctxmen add command -label "Add current search" -command {TagList_AddSearch .dlg_tags} -state $find_state
-  if {[llength $sel] > 0} {
-    .dlg_tags.ctxmen add separator
-    .dlg_tags.ctxmen add command -label "Remove selected entries" -command [list TagList_Remove $sel]
-  }
+  TagList_ContextPopulate .dlg_tags.ctxmen 0
 
   set rootx [expr [winfo rootx .dlg_tags] + $xcoo]
   set rooty [expr [winfo rooty .dlg_tags] + $ycoo]
   tk_popup .dlg_tags.ctxmen $rootx $rooty 0
+}
+
+
+#
+# This function is used both to populate the "Edit" menu and the context menu.
+# The contents depend on the number of selected items.
+#
+proc TagList_ContextPopulate {wid show_all} {
+  global tlb_find dlg_tags_sel
+
+  set sel [TextSel_GetSelection dlg_tags_sel]
+
+  set state_find [expr {($tlb_find eq "") ? "disabled" : "normal"}]
+  set state_sel_1 [expr {([llength $sel] != 1) ? "disabled" : "normal"}]
+  set state_sel_n0 [expr {([llength $sel] == 0) ? "disabled" : "normal"}]
+
+  $wid delete 0 end
+  if {($state_sel_1 eq "normal") || $show_all} {
+    $wid add command -label "Change background color" -command [list TagList_PopupColorPalette $sel 0] -state $state_sel_1
+    $wid add command -label "Edit markup..." -command [list Markup_OpenDialog $sel] -state $state_sel_1
+    $wid add separator
+    $wid add command -label "Copy to search field" -command [list TagList_CopyToSearch $sel] -state $state_sel_1
+    $wid add command -label "Update from search field" -command [list TagList_CopyFromSearch $sel] -state $state_find
+  }
+  $wid add command -label "Add current search" -command {TagList_AddSearch .dlg_tags} -state $state_find
+  if {($state_sel_n0 eq "normal") || $show_all} {
+    $wid add separator
+    $wid add command -label "Remove selected entries" -command [list TagList_Remove $sel] -state $state_sel_n0
+  }
 }
 
 
@@ -4707,7 +4875,7 @@ proc TagList_Update {pat_idx} {
 # This function removes an entry from the listbox.
 #
 proc TagList_DisplayDelete {pat_idx} {
-  .dlg_tags.f1.l delete "[expr $idx + 1].0" "[expr $idx + 2].0"
+  .dlg_tags.f1.l delete "[expr $pat_idx + 1].0" "[expr $pat_idx + 2].0"
 }
 
 
@@ -4724,7 +4892,7 @@ proc TagList_DisplayInsert {pos pat_idx} {
   append txt "\n"
 
   # insert text (prepend space to improve visibility of selection)
-  .dlg_tags.f1.l insert "[expr $pos + 1].0" "  " {} $txt [lindex $w 4]
+  .dlg_tags.f1.l insert "[expr $pos + 1].0" "  " margin $txt [lindex $w 4]
 }
 
 
@@ -4748,6 +4916,7 @@ proc TagList_Fill {} {
     }
 
     # configure appearance of selected rows
+    .dlg_tags.f1.l tag configure margin -lmargin1 6
     .dlg_tags.f1.l tag configure sel -bgstipple gray75 -foreground {}
     .dlg_tags.f1.l tag lower sel
   }
@@ -5835,13 +6004,13 @@ You should have received a copy of the GNU General Public License along with thi
     bind  .about.dismiss <Destroy> {+ unset -nocomplain dlg_about_shown}
     bind  .about.dismiss <Return> {event generate .about.dismiss <space>}
     bind  .about.dismiss <Escape> {event generate .about.dismiss <space>}
-    focus .about.dismiss 
+    focus .about.dismiss
     set dlg_about_shown 1
 
   } else {
     wm deiconify .about
     raise .about
-    focus .about.dismiss 
+    focus .about.dismiss
   }
   ResumeBgTasks
 }
@@ -5895,9 +6064,9 @@ proc TextSel_Init {wid var cb_proc len_proc mode} {
 
   #KeyBinding_UpDown $wid
   #KeyBinding_LeftRight $wid
-  #bind $wid <FocusIn> {KeyClr}
+  bind $wid <FocusIn> {KeyClr}
   #bind $wid <Return> "if {\[KeyCmd $wid Return\]} break"
-  #bind $wid <KeyPress> "if {\[KeyCmd $wid %A\]} break"
+  bind $wid <KeyPress> "if {\[KeyCmd $wid %A\]} break"
 
   bind $wid <Key-Prior> "TextSel_SetSelection $var {}"
   bind $wid <Key-Next> "TextSel_SetSelection $var {}"
@@ -6341,7 +6510,9 @@ proc TextSel_ShowSelection {var} {
     $wid tag add sel "[expr $line + 1].0" "[expr $line + 2].0"
   }
 
-  if {$anchor != -1} {
+  if {([llength $sel] == 0) || ($anchor == -1)} {
+    $wid mark set insert end
+  } else {
     $wid mark set insert "[expr $anchor + 1].0"
   }
 }
@@ -7314,7 +7485,7 @@ set tlb_last_hall {}
 set tlb_hist {}
 
 # This variable defines the maximum length of the search history list.
-set tlb_hist_maxlen 20
+set tlb_hist_maxlen 50
 
 # These variables contain search options which can be set by checkboxes.
 set tlb_case 1

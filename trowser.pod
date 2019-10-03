@@ -23,7 +23,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# $Id: trowser.pod,v 1.1 2007/10/07 15:03:55 tom Exp $
+# $Id: trowser.pod,v 1.2 2008/07/01 20:40:18 tom Exp $
 # ---------------------------------------------------------------------------
 
 =head1 NAME
@@ -67,12 +67,23 @@ search patterns: Firstly, you can search forwards or backwards to any
 sub-string or pattern you enter in the I<Find:> field. Secondly, you can
 repeat previous searches by opening the search history dialog and
 double-clicking on an entry, or by clicking I<Next> or I<Previous>.
-Third, you can search for patterns defined in the color highlight list
+Third, you can assign bookmarks to selected text lines and jump
+in-between those lines by clicking on them in the bookmark list
+dialog or via C<'+> and C<'-> key bindings (not in vim.) Fourth,
+you can search for patterns defined in the color highlight list
 by clicking on I<Next> or I<Previous> in the pattern list dialog.
-Forth, you can open the I<Search result list> (via the I<Search> menu
+Fifth, you can open the I<Search result list> (via the I<Search> menu
 or by clicking on I<List all> in any dialog or by entering C<ALT-a>)
 to display all text lines which match a set of patterns and click on an
 entry in this list to jump to the respective line in the main window.
+
+The search filter list is one of the main features of the trace
+browser, as it allows to consecutively build an arbitrary sub-set of
+text lines in the main window. You can not only use search patterns
+to add text, but also add manually selected text lines via the
+C<i> key binding or remove individual lines again.  Additionally you
+can also use bookmarks in the search result window. So you effectively
+can navigate the text on three levels.
 
 Both the bookmark and search result lists support prefixing all entries
 with a "frame number". This is useful when your input file does not have
@@ -90,7 +101,7 @@ For performance reasons most search-related commands are executed as
 background processes (actually implemented as idle events in Tcl/Tk.)
 For example, this applies to the initial color highlighting, global
 search highlighting, incremental search while editing search patterns
-and filling the search result list.  In most cases this activity is
+and filling the search result list.  Such background activity is
 indicated by display of a progress bar and switching the mouse cursor
 to a watch or hourglass image.  You still can use trowser as usual during
 this time though.  The background activity is automatically aborted or
@@ -201,10 +212,10 @@ case the cursor position remains unchanged (same as in vim)
 Search for the following character in the same line to the right or
 left respectively (same as in vim)
 
-=item C<;>, C<,> (semicolon or comma)
+=item C<;>, C<,> (semicolon, comma)
 
 Repeat a previous in-line search (C<f> or C<F>) in the same or opposite
-direction (same as in vim)
+direction respectively (same as in vim)
 
 =item C<''> (two apostrophs)
 
@@ -240,7 +251,8 @@ Search for the following pattern (same as in vim.)
 Similar to vim, the keyboard focus is moved from the main text into a
 small text entry field (command line in vim) Note the previous search
 pattern is always cleared when re-entering the entry field, but all
-previously used patterns are still available in the history. 
+previously used patterns are still available in the history which can
+be accessed with the cursor up/down keys like in vim.
 
 As soon as a search expression is typed into the field, an incremental
 search is started and matching lines are highlighted. The cursor in
@@ -263,8 +275,9 @@ respectively (same as in vim)
 
 =item C<&>
 
-Remove the highlighting of previous search matches (same as :nohlsearch
-in vim)  Note this does not disable highlighting in subsequent searches.
+Remove the highlighting of previous search matches (same as
+C<:nohlsearch> in vim)  Note this does not disable highlighting in
+subsequent searches.
 
 =item I<ALT->C<f>
 
@@ -320,7 +333,7 @@ text is selected.)
 
 =back
 
-Misc. commands:
+Misc. commands (none of these are in vim):
 
 =over 4
 
@@ -333,12 +346,16 @@ supported)
 =item I<i>
 
 Insert the current text line (or selection, if one currently exists) into
-the search result window (different from vim)
+the search result window.
 
 =item I<ALT->C<+>, I<ALT->C<->
 
 Increases or decreases the font size for the text content. Note the behaviour
-when reaching the maximum or minimum font size is not defined.
+when reaching the maximum or minimum font size is undefined.
+
+=item I<ALT->C<w>
+
+Toggle line-wrap for text in the main window.
 
 =back
 
@@ -418,12 +435,12 @@ Toggle the "match case" option, i.e. equivalent to clicking on I<Match case>
 
 =item I<Alt->C<e>
 
-Toggle the "Reg.Exp." option, i.e. equivalent to clicking on I<Match case>
-(not in vim)  When this option is enabled, special characters are parsed
-according to I<re_syntax> manual page; the syntax is almost identical to Perl
-with the exception of a few special characters (notably C<\m> and C<\M> to
+Toggle the regular expression search option, i.e. equivalent to clicking
+on button I<Reg.Exp.> (not in vim.)  When this option is enabled, special
+characters are parsed according to I<re_syntax> Tcl manual page; the syntax
+is almost identical to Perl with few exceptions (notably C<\m> and C<\M> to
 match beginning and end of words)  When the option is not enabled, no
-characters have a special meaning (i.e. even C<*>) and a simple sub-string
+characters have a special meaning (i.e. even "C<*>") and a simple sub-string
 search is started.
 
 Note: for performance reasons it's recommended to use case-sensitive
