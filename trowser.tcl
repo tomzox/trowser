@@ -133,9 +133,9 @@ proc CreateMainWindow {} {
   # frame #1: text widget and scrollbar
   frame .f1
   text .f1.t -width 1 -height 1 -wrap none -undo 0 \
-          -font $font_content -background $col_bg_content -foreground $col_fg_content \
-          -cursor top_left_arrow -relief flat -exportselection false \
-          -yscrollcommand {.f1.sb set}
+             -font $font_content -background $col_bg_content -foreground $col_fg_content \
+             -cursor top_left_arrow -relief flat -exportselection 1 \
+             -yscrollcommand {.f1.sb set}
   pack .f1.t -side left -fill both -expand 1
   scrollbar .f1.sb -orient vertical -command {.f1.t yview} -takefocus 0
   pack .f1.sb -side left -fill y
@@ -149,12 +149,15 @@ proc CreateMainWindow {} {
   .f1.t tag configure bookmark -lmargin1 0
   .f1.t tag configure sel -bgstipple gray50 -foreground {}
   .f1.t tag lower sel
+
   bindtags .f1.t {.f1.t TextReadOnly . all}
   # Ctrl+cursor and Ctrl-E/Y allow to shift the view up/down
   bind .f1.t <Control-Up> {YviewScroll -1; KeyClr; break}
   bind .f1.t <Control-Down> {YviewScroll 1; KeyClr; break}
   bind .f1.t <Control-e> {YviewScroll 1; KeyClr; break}
   bind .f1.t <Control-y> {YviewScroll -1; KeyClr; break}
+  bind .f1.t <Control-d> {YviewScrollHalf 1; KeyClr; break}
+  bind .f1.t <Control-u> {YviewScrollHalf -1; KeyClr; break}
   bind .f1.t <Control-Left> {XviewScroll -1; KeyClr; break}
   bind .f1.t <Control-Right> {XviewScroll 1; KeyClr; break}
   bind .f1.t <Control-f> {event generate %W <Key-Next>; KeyClr; break}
@@ -162,8 +165,10 @@ proc CreateMainWindow {} {
   bind .f1.t <Key-H> {CursorSetLine top; KeyClr; break}
   bind .f1.t <Key-M> {CursorSetLine center; KeyClr; break}
   bind .f1.t <Key-L> {CursorSetLine bottom; KeyClr; break}
+  bind .f1.t <Key-space> {event generate %W <Key-Right>; KeyClr; break}
+  bind .f1.t <Key-BackSpace> {event generate %W <Key-Left>; KeyClr; break}
   # goto line or column
-  bind .f1.t <G> {Mark_JumpPos; .f1.t mark set insert end; .f1.t see insert; KeyClr; break}
+  bind .f1.t <G> {CursorPosStore; .f1.t mark set insert end; .f1.t see insert; KeyClr; break}
   bind .f1.t <Key-dollar> {.f1.t mark set insert "insert lineend"; .f1.t see insert; KeyClr; break}
   bind .f1.t <Control-g> {DisplayLineNumer; KeyClr; break}
   bind .f1.t <Key-Home> {if {%s == 0} {CursorSetColumn left; KeyClr; break}}
@@ -201,7 +206,7 @@ proc CreateMainWindow {} {
   checkbutton .f2.bh -text "Highlight all" -variable tlb_hall -command SearchHighlightSettingChange -underline 0
   checkbutton .f2.cb -text "Match case" -variable tlb_case -command SearchHighlightSettingChange
   checkbutton .f2.re -text "Reg.Exp." -variable tlb_regexp -command SearchHighlightSettingChange
-  pack .f2.l .f2.e .f2.bn .f2.bp .f2.bh .f2.cb .f2.re -side left -anchor w
+  pack .f2.l .f2.e .f2.bn .f2.bp .f2.bh .f2.cb .f2.re -side left -anchor w -padx 1
   pack configure .f2.e -fill x -expand 1
   pack .f2 -side top -fill x
 
@@ -262,6 +267,8 @@ proc HighlightInit {} {
     toplevel .hipro -takefocus 0 -relief sunken -borderwidth 2
     wm transient .hipro .
     wm geometry .hipro "+[expr [winfo rootx .f1.t] + 1]+[expr [winfo rooty .f1.t] + 1]"
+    wm title .hipro "Highlighting progress"
+    wm resizable .hipro 0 0
 
     canvas .hipro.c -width 100 -height 10 -highlightthickness 0 -takefocus 0
     pack .hipro.c
@@ -517,15 +524,19 @@ proc Search {is_fwd is_changed {start_pos {}}} {
     set search_opt [Search_GetOptions $tlb_regexp $tlb_case $tlb_last_dir]
     if {$start_pos eq {}} {
       set start_pos [Search_GetBase $is_fwd 0]
-      Mark_JumpPos
+      CursorPosStore
     }
     if $is_fwd {
-      set search_range [list $start_pos end]
+      set search_range [list $start_pos [.f1.t index end]]
     } else {
-      set search_range [list $start_pos "0.0"]
+      set search_range [list $start_pos "1.0"]
     }
 
-    set pos [eval .f1.t search $search_opt -count match_len -- {$tlb_find} $search_range]
+    if {$start_pos ne [lindex $search_range 1]} {
+      set pos [eval .f1.t search $search_opt -count match_len -- {$tlb_find} $search_range]
+    } else {
+      set pos ""
+    }
     if {($pos ne "") || $is_changed} {
       if {!$tlb_hall || ($tlb_last_hall ne $tlb_find)} {
         SearchHighlightClear
@@ -581,7 +592,7 @@ proc SearchIncrement {} {
 
       if {![info exists tlb_inc_base]} {
         set tlb_inc_base [Search_GetBase $tlb_last_dir 1]
-        Mark_JumpPos
+        CursorPosStore
       }
 
       set found [Search $tlb_last_dir 1 $tlb_inc_base]
@@ -678,17 +689,19 @@ proc Search_GetOptions {is_re match_case {is_fwd -1}} {
 proc SearchNext {is_fwd} {
   global tlb_find
 
+  ClearStatusLine search
+
   if {$tlb_find ne ""} {
     set found [Search $is_fwd 0]
     if {$found == 0} {
       if $is_fwd {
-        DisplayStatusLine warn "No match until end of file"
+        DisplayStatusLine search warn "No match until end of file"
       } else {
-        DisplayStatusLine warn "No match until start of file"
+        DisplayStatusLine search warn "No match until start of file"
       }
     }
   } else {
-    DisplayStatusLine warn "No pattern defined for search repeat"
+    DisplayStatusLine search warn "No pattern defined for search repeat"
   }
 }
 
@@ -942,7 +955,7 @@ proc Search_CompleteLeft {} {
 # backwards direction respectively.
 #
 proc SearchWord {is_fwd} {
-  global tlb_find tlb_last_dir
+  global tlb_find tlb_regexp
 
   if {[.f1.t bbox insert] ne ""} {
     set pos [.f1.t index insert]
@@ -950,12 +963,21 @@ proc SearchWord {is_fwd} {
       set dump [ExtractText $pos [list $pos lineend]]
 
       if {[regexp {^[\w\-]+} $dump word]} {
+        # complete word to the left
         set dump [ExtractText [list $pos linestart] $pos]
         if {[regexp {\w+$} $dump word2]} {
           set word "$word2$word"
         }
+        set word [Search_EscapeSpecialChars $word]
 
-        set tlb_find [Search_EscapeSpecialChars $word]
+        # match on word boundaries
+        if $tlb_regexp {
+          set nword {}
+          append nword {\m} $word {\M}
+          set word $nword
+        }
+
+        set tlb_find $word
         Search_AddHistory $tlb_find
 
         Search $is_fwd 1
@@ -1005,16 +1027,16 @@ proc Search_RemoveFromHistory {} {
 # This function creates a small overlay which displays a temporary status
 # message.
 #
-proc DisplayStatusLine {type msg} {
-  global col_bg_content tid_status_line
+proc DisplayStatusLine {topic type msg} {
+  global col_bg_content tid_status_line status_line_topic
 
   set old_focus [focus -displayof .]
   if {[info commands .stline] eq ""} {
     toplevel .stline -background $col_bg_content -relief ridge -borderwidth 2 \
                      -highlightthickness 0 -takefocus 0
-    wm overrideredirect .stline 1
     wm group .stline .
-    wm resizable . 0 0
+    wm overrideredirect .stline 1
+    wm resizable .stline 0 0
 
     switch $type {
       error {set col {#ff6b6b}}
@@ -1035,9 +1057,25 @@ proc DisplayStatusLine {type msg} {
 
   after cancel $tid_status_line
   set tid_status_line [after 4000 {destroy .stline}]
+  set status_line_topic $topic
 
   if {$old_focus ne ""} {
     focus -force $old_focus
+  }
+}
+
+
+#
+# This function removes the status message display if it's currently visible
+# and displays a message on the given topic.
+#
+proc ClearStatusLine {topic} {
+  global tid_status_line status_line_topic
+
+  if {[info exists status_line_topic] && ($topic eq $status_line_topic)} {
+    unset -nocomplain status_line_topic
+    after cancel $tid_status_line
+    catch {destroy .stline}
   }
 }
 
@@ -1057,7 +1095,7 @@ proc DisplayLineNumer {} {
       scan $pos "%d.%d" end_line char
       incr end_line -1
 
-      DisplayStatusLine msg "$cur_filename: line $line of $end_line lines"
+      DisplayStatusLine line_query msg "$cur_filename: line $line of $end_line lines"
     }
   }
 }
@@ -1229,10 +1267,28 @@ proc YviewScroll {delta} {
 
 
 #
+# This function scrolls the view vertically by half the screen height
+# in the given direction.
+#
+proc YviewScrollHalf {dir} {
+  global font_normal
+
+  set fh [font metrics $font_normal -linespace]
+  if {$fh > 0} {
+    set wh [expr int(([winfo height .f1.t] + $fh/2) / $fh)]
+
+    YviewScroll [expr int($wh/2 * $dir)]
+  }
+}
+
+
+#
 # This function moves the cursor into a given line in the current view.
 #
 proc CursorSetLine {where} {
   global font_normal
+
+  CursorPosStore
 
   if {$where eq "top"} {
     .f1.t mark set insert {@1,1}
@@ -1253,12 +1309,61 @@ proc CursorSetLine {where} {
 
 
 #
+# This function moves the cursor onto the next or previous word.
+# (Same as "w", "W", "b" and "B" in vim)
+#
+proc CursorMoveWord {is_fwd spc_only to_end} {
+  set pos [.f1.t index insert]
+  if {$pos ne ""} {
+    if $is_fwd {
+      set dump [ExtractText $pos [list $pos lineend]]
+      if $spc_only {
+        if $to_end {
+          set match [regexp {^\s*\S*} $dump word]
+        } else {
+          set match [regexp {^\S*\s*} $dump word]
+        }
+      } else {
+        if $to_end {
+          set match [regexp {^\W*\w*} $dump word]
+        } else {
+          set match [regexp {^\w*\W*} $dump word]
+        }
+      }
+      if {$match && (([string length $word] < [string length $dump]) || $to_end)} {
+        .f1.t mark set insert [list insert + [string length $word] chars]
+      } else {
+        .f1.t mark set insert [list insert linestart + 1 lines]
+      }
+    } else {
+      set dump [ExtractText [list $pos linestart] $pos]
+      if $spc_only {
+        set match [regexp {\S+\s*$} $dump word]
+      } else {
+        set match [regexp {(\w+|\w+\W+)$} $dump word]
+      }
+      if $match {
+        .f1.t mark set insert [list insert - [string length $word] chars]
+      } else {
+        .f1.t mark set insert [list insert - 1 lines lineend]
+      }
+    }
+    .f1.t see insert
+  }
+}
+
+
+#
 # Helper function to extrace a range of characters from the content.
 #
 proc ExtractText {pos1 pos2} {
   set dump {}
-  foreach {key val idx} [.f1.t dump -text $pos1 $pos2] {
-    append dump $val
+  foreach {key val idx} [.f1.t dump -text -image $pos1 $pos2] {
+    if {$key eq "text"} {
+      append dump $val
+    } elseif {$key eq "image"} {
+      append dump " "
+    }
   }
   return $dump
 }
@@ -1268,7 +1373,7 @@ proc ExtractText {pos1 pos2} {
 # This function stores the current cusor position and view before making
 # a "large jump", i.e. performing a search or goto command.
 #
-proc Mark_JumpPos {} {
+proc CursorPosStore {} {
   global last_jump_orig
 
   set last_jump_orig [.f1.t index insert]
@@ -1277,8 +1382,9 @@ proc Mark_JumpPos {} {
 
 #
 # This function is bound to key presses in the main window. It's called
-# when none of the single-key bindings match. It's used to handle complex
-# key press event sequences.
+# when none of the single-key bindings match. It's intended to handle
+# complex key sequences, but also has to handle single key bindings for
+# keys which can be part of sequences (e.g. "b" due to "zb")
 #
 proc KeyCmd {char} {
   global last_key_char last_jump_orig
@@ -1286,20 +1392,30 @@ proc KeyCmd {char} {
   set result 0
   if {$char ne ""} {
     if {$last_key_char eq "'"} {
+      # single quote char: jump to marker or bookmark
       if {$char eq "'"} {
         set tmp $last_jump_orig
-        Mark_JumpPos
+        CursorPosStore
         .f1.t mark set insert $tmp
         .f1.t see insert
-      } elseif {($last_key_char eq "0") || ($last_key_char eq "^")} {
-        .f1.t mark set insert "insert linestart"
-      } elseif {$last_key_char eq "$"} {
-        .f1.t mark set insert "insert lineend"
+      } elseif {$char eq "^"} {
+        CursorPosStore
+        .f1.t mark set insert 1.0
+        .f1.t see insert
+      } elseif {$char eq "$"} {
+        CursorPosStore
+        .f1.t mark set insert end
+        .f1.t see insert
+      } elseif {$char eq "+"} {
+        Mark_JumpNext 1
+      } elseif {$char eq "-"} {
+        Mark_JumpNext 0
       }
       set last_key_char {}
       set result 1
 
     } elseif {$last_key_char eq "z"} {
+      # "z" sequence: position current view
       if {$char eq "-"} {
         YviewSet bottom 0
       } elseif {$char eq "b"} {
@@ -1308,15 +1424,17 @@ proc KeyCmd {char} {
         YviewSet center 0
       } elseif {$char eq "z"} {
         YviewSet center 1
-      } elseif {$char eq "t"} {
-        YviewSet top 0
       } elseif {$char eq "return"} {
+        YviewSet top 0
+      } elseif {$char eq "t"} {
         YviewSet top 1
       }
       set last_key_char {}
       set result 1
 
     } else {
+      set last_key_char {}
+
       if {$char eq "0"} {
         CursorSetColumn left
         set result 1
@@ -1334,11 +1452,26 @@ proc KeyCmd {char} {
         .f1.t mark set insert [list insert linestart - 1 lines]
         .f1.t xview moveto 0
         .f1.t see insert
+        set result 1
 
       } elseif {$char eq "return"} {
         .f1.t mark set insert [list insert linestart + 1 lines]
         .f1.t xview moveto 0
         .f1.t see insert
+        set result 1
+
+      } elseif {$char eq "w"} {
+        CursorMoveWord 1 0 0; set result 1
+      } elseif {$char eq "e"} {
+        CursorMoveWord 1 0 1; set result 1
+      } elseif {$char eq "b"} {
+        CursorMoveWord 0 0 0; set result 1
+      } elseif {$char eq "W"} {
+        CursorMoveWord 1 1 0; set result 1
+      } elseif {$char eq "E"} {
+        CursorMoveWord 1 1 1; set result 1
+      } elseif {$char eq "B"} {
+        CursorMoveWord 0 1 0; set result 1
       }
     }
   }
@@ -1372,8 +1505,10 @@ proc KeyCmd_OpenDialog {type {txt {}}} {
     wm geometry .dlg_key "+[winfo rootx .f1.t]+[winfo rooty .f1.t]"
 
     if {$type eq "goto"} {
+      wm title .dlg_key "Goto"
       set cmd_text "Goto line:"
     } else {
+      wm title .dlg_key "Repeat / Goto"
       set cmd_text "Command:"
     }
     set keycmd_ent $txt
@@ -1387,16 +1522,25 @@ proc KeyCmd_OpenDialog {type {txt {}}} {
       bind .dlg_key.e <Return> {KeyCmd_ExecGoto; break}
     } else {
       # line goto key binding
-      bind .dlg_key.e <g> {KeyCmd_ExecGoto; break}
-      bind .dlg_key.e <G> {KeyCmd_ExecGoto; break}
+      bind .dlg_key.e <Key-g> {KeyCmd_ExecGoto; break}
+      bind .dlg_key.e <Shift-Key-G> {KeyCmd_ExecGoto; break}
       # cursor movement binding
       bind .dlg_key.e <Key-minus> {KeyCmd_ExecCursor 0; break}
       bind .dlg_key.e <Return> {KeyCmd_ExecCursor 1; break}
       bind .dlg_key.e <Key-bar> {KeyCmd_ExecColumn; break}
       # search key binding
-      bind .dlg_key.e <n> {KeyCmd_ExecSearch 1; break}
-      bind .dlg_key.e <N> {KeyCmd_ExecSearch 0; break}
-      bind .dlg_key.e <p> {KeyCmd_ExecSearch 0; break}
+      bind .dlg_key.e <Key-n> {KeyCmd_ExecSearch 1; break}
+      bind .dlg_key.e <Key-p> {KeyCmd_ExecSearch 0; break}
+      bind .dlg_key.e <Shift-Key-N> {KeyCmd_ExecSearch 0; break}
+      # cursor move
+      bind .dlg_key.e <Key-w> {KeyCmd_ExecCursorMove <Key-w>; break}
+      bind .dlg_key.e <Key-e> {KeyCmd_ExecCursorMove <Key-e>; break}
+      bind .dlg_key.e <Key-b> {KeyCmd_ExecCursorMove <Key-b>; break}
+      bind .dlg_key.e <Key-W> {KeyCmd_ExecCursorMove <Key-W>; break}
+      bind .dlg_key.e <Key-E> {KeyCmd_ExecCursorMove <Key-E>; break}
+      bind .dlg_key.e <Key-B> {KeyCmd_ExecCursorMove <Key-B>; break}
+      bind .dlg_key.e <Key-space> {KeyCmd_ExecCursorMove <Key-space>; break}
+      bind .dlg_key.e <Key-BackSpace> {KeyCmd_ExecCursorMove <Key-BackSpace>; break}
       # catch-all
       bind .dlg_key.e <KeyPress> {
         if {"%A" eq "|"} {
@@ -1441,6 +1585,8 @@ proc KeyCmd_ExecGoto {} {
   # check if the content is a valid line number
   set foo 0
   if {[catch {incr foo $keycmd_ent}] == 0} {
+    CursorPosStore
+
     # note: line range check not required, text widget does not complain
     if {$keycmd_ent >= 0} {
       .f1.t mark set insert "$keycmd_ent.0"
@@ -1495,7 +1641,40 @@ proc KeyCmd_ExecColumn {} {
 #
 # This function starts a search from within the command popup window.
 #
-proc KeyCmd_ExecSearch {dir} {
+proc KeyCmd_ExecSearch {is_fwd} {
+  global keycmd_ent tlb_find
+
+  # check if the content is a repeat count
+  set foo 0
+  if {[catch {incr foo $keycmd_ent}] == 0} {
+    KeyCmd_Leave
+    ClearStatusLine search
+
+    if {$tlb_find ne ""} {
+      set count 0
+      for {set idx 0} {$idx < $keycmd_ent} {incr idx} {
+        set found [Search $is_fwd 0]
+        if {$found == 0} {
+          if $is_fwd {set limit "end"} else {set limit "start"}
+          if {$count == 0} {
+            DisplayStatusLine search warn "No match until $limit of file"
+          } else {
+            DisplayStatusLine search warn "Only $count of $keycmd_ent matches until $limit of file"
+          }
+        }
+        incr count
+      }
+    } else {
+      DisplayStatusLine search warn "No pattern defined for search repeat"
+    }
+  }
+} 
+
+
+#
+# This function moves the cursort
+#
+proc KeyCmd_ExecCursorMove {key} {
   global keycmd_ent
 
   # check if the content is a repeat count
@@ -1503,10 +1682,10 @@ proc KeyCmd_ExecSearch {dir} {
   if {[catch {incr foo $keycmd_ent}] == 0} {
     KeyCmd_Leave
     for {set idx 0} {$idx < $keycmd_ent} {incr idx} {
-      Search $dir 0
+      event generate .f1.t $key
     }
   }
-} 
+}
 
 
 # ----------------------------------------------------------------------------
@@ -1574,12 +1753,48 @@ proc Mark_Toggle {line {txt {}}} {
 
 #
 # This function adds or removes a bookmark at the current cursor position.
+# The function is used to set bookmarks via key bindings.
 #
 proc Mark_ToggleAtInsert {} {
-  if {[.f1.t bbox insert] ne ""} {
-    set pos [.f1.t index insert]
+  set pos [.f1.t index insert]
+  if {$pos ne ""} {
     scan $pos "%d.%d" line char
     Mark_Toggle $line
+  }
+}
+
+
+#
+# This function moves the cursor onto the next bookmark in the given
+# direction.
+#
+proc Mark_JumpNext {is_fwd} {
+  global mark_list
+
+  set pos [.f1.t index insert]
+  if {$pos ne ""} {
+    scan $pos "%d.%d" line char
+    if $is_fwd {
+      foreach mark_line [lsort -integer [array names mark_list]] {
+        if {$mark_line > $line} {
+          set goto $mark_line
+          break
+        }
+      }
+    } else {
+      foreach mark_line [lsort -integer -decreasing [array names mark_list]] {
+        if {$mark_line < $line} {
+          set goto $mark_line
+          break
+        }
+      }
+    }
+    if {[info exists goto]} {
+      CursorPosStore
+      .f1.t mark set insert "${goto}.0"
+      .f1.t see insert
+      .f2.e xview moveto 0
+    }
   }
 }
 
@@ -1788,6 +2003,8 @@ proc Mark_OfferSave {} {
         toplevel .minfo
         wm transient .minfo .
         wm geometry .minfo "+[expr [winfo rootx .] + 100]+[expr [winfo rooty .] + 100]"
+        wm title .minfo "Bookmarks saved"
+
         button  .minfo.b -bitmap info -relief flat
         pack .minfo.b -side left -padx 10 -pady 20
         label .minfo.t -text "Bookmarks have been saved..."
@@ -2108,6 +2325,8 @@ proc MarkList_OpenRename {idx} {
       catch {destroy .mren}
       toplevel .mren
       wm transient .mren .dlg_mark
+      wm title .mren "Enter bookmark text"
+      wm resizable .mren 0 0
 
       set xcoo [expr [lindex $coo 0] + [winfo rootx .dlg_mark.l] - 3]
       set ycoo [expr [lindex $coo 1] + [winfo rooty .dlg_mark.l] - 3]
@@ -2185,6 +2404,7 @@ proc Tags_OpenDialog {} {
     pack .dlg_tags.f1 -side top -fill both -expand 1
 
     bind .dlg_tags.f1.l <<ListboxSelect>> {TagsList_Selection; break}
+    bind .dlg_tags.f1.l <Double-Button-1> {TagsList_DoubleClick %x %y; break}
     bind .dlg_tags.f1.l <ButtonRelease-3> {TagsList_ContextMenu %x %y; break}
     bind .dlg_tags.f1.l <Key-n> {Tags_Search 1; break}
     bind .dlg_tags.f1.l <Key-N> {Tags_Search 0; break}
@@ -2245,6 +2465,20 @@ proc TagsList_ContextMenu {xcoo ycoo} {
     set rootx [expr [winfo rootx .dlg_tags] + $xcoo]
     set rooty [expr [winfo rooty .dlg_tags] + $ycoo]
     tk_popup .dlg_tags.ctxmen $rootx $rooty 0
+  }
+}
+
+
+#
+# This function is bound to double mouse button clicks onto an entry in
+# the highlight list. The function opens the markup editor dialog.
+#
+proc TagsList_DoubleClick {xcoo ycoo} {
+  global patlist
+
+  set idx [.dlg_tags.f1.l index "@$xcoo,$ycoo"]
+  if {([llength $idx] == 1) && ($idx < [llength $patlist])} {
+    Markup_OpenDialog $idx
   }
 }
 
@@ -2323,7 +2557,7 @@ proc Tags_Search {is_fwd} {
     }
   }
   if {$min_line > 0} {
-    Mark_JumpPos
+    CursorPosStore
     .f1.t mark set insert "$min_line.0"
     .f1.t see insert
     .f1.t tag remove sel 1.0 end
@@ -2503,6 +2737,7 @@ proc TagsList_AddSearch {parent} {
     .f1.t configure -cursor watch
     set opt [Search_GetOptions [lindex $w 1] [lindex $w 2]]
     HighlightAll [lindex $w 0] [lindex $w 4] $opt
+    SearchHighlightClear
 
     if [info exists dlg_tags_shown] {
       # insert the entry into the listbox
@@ -3347,9 +3582,9 @@ proc PaletteMenu_Popup {parent rootx rooty cmd col_def} {
 
   toplevel .colsel -highlightthickness 0
   wm title .colsel "Color selection menu"
-  wm group .colsel $parent
   wm transient .colsel $parent
   wm geometry .colsel "+$rootx+$rooty"
+  wm resizable .colsel 0 0
 
   canvas .colsel.c -width 1 -height 1 -background [.colsel cget -background] \
                    -cursor top_left_arrow -highlightthickness 0
@@ -3403,6 +3638,7 @@ proc OpenAboutDialog {} {
     wm title .about "About"
     wm group .about .
     wm transient .about .
+    wm resizable .about 1 1
 
     label .about.name -text "Trace Browser"
     pack .about.name -side top -pady 8
@@ -3493,7 +3729,7 @@ proc LoadFile {filename} {
     } else {
       wm title . "Trace browser"
     }
-    Mark_JumpPos
+    CursorPosStore
     HighlightInit
     Mark_ReadFileAuto
   }
@@ -3773,7 +4009,7 @@ set col_bg_find {#faee0a}
 set col_bg_findinc {#c8ff00}
 
 # These variables store the geometry of the main and dialog windows.
-set main_win_geom "640x480"
+set main_win_geom "684x480"
 set dlg_mark_size "500x250"
 set dlg_tags_size "400x300"
 
