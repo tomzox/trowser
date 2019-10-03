@@ -147,7 +147,7 @@ proc CreateMainWindow {} {
   .f1.t tag configure findinc -background $col_bg_findinc
   .f1.t tag configure margin -lmargin1 17
   .f1.t tag configure bookmark -lmargin1 0
-  .f1.t tag configure sel -bgstipple gray50
+  .f1.t tag configure sel -bgstipple gray50 -foreground {}
   .f1.t tag lower sel
   bindtags .f1.t {.f1.t TextReadOnly . all}
   # Ctrl+cursor and Ctrl-E/Y allow to shift the view up/down
@@ -163,11 +163,11 @@ proc CreateMainWindow {} {
   bind .f1.t <Key-M> {CursorSetLine center; KeyClr; break}
   bind .f1.t <Key-L> {CursorSetLine bottom; KeyClr; break}
   # goto line or column
-  bind .f1.t <G> {.f1.t mark set insert end; .f1.t see insert; KeyClr; break}
+  bind .f1.t <G> {Mark_JumpPos; .f1.t mark set insert end; .f1.t see insert; KeyClr; break}
   bind .f1.t <Key-dollar> {.f1.t mark set insert "insert lineend"; .f1.t see insert; KeyClr; break}
   bind .f1.t <Control-g> {DisplayLineNumer; KeyClr; break}
-  bind .f1.t <Key-Home> {CursorSetColumn left; KeyClr; break}
-  bind .f1.t <Key-End> {CursorSetColumn right; KeyClr; break}
+  bind .f1.t <Key-Home> {if {%s == 0} {CursorSetColumn left; KeyClr; break}}
+  bind .f1.t <Key-End> {if {%s == 0} {CursorSetColumn right; KeyClr; break}}
   # search with "/", "?"; repeat search with n/N
   bind .f1.t <Key-slash> {set tlb_last_dir 1; focus .f2.e; KeyClr; break}
   bind .f1.t <Key-question> {set tlb_last_dir 0; focus .f2.e; KeyClr; break}
@@ -182,7 +182,7 @@ proc CreateMainWindow {} {
   bind .f1.t <Alt-Key-p> {SearchNext 0; KeyClr; break}
   bind .f1.t <Alt-Key-h> {SearchHighlightOnOff; KeyClr; break}
   # bookmarks
-  bind .f1.t <Double-Button-1> {Mark_ToggleAtInsert; KeyClr; break}
+  bind .f1.t <Double-Button-1> {if {%s == 0} {Mark_ToggleAtInsert; KeyClr; break}}
   bind .f1.t <Key-m> {Mark_ToggleAtInsert; KeyClr; break}
   # misc & catch-all
   bind .f1.t <Control-plus> {ChangeFontSize 1; KeyClr}
@@ -1554,6 +1554,13 @@ proc Mark_Toggle {line {txt {}}} {
     }
     .f1.t image create "$line.0" -image $img_marker -padx 5
     .f1.t tag add bookmark "$line.0" "$line.1"
+
+    # extend highlighting tags to the inserted bookmark char
+    foreach {key val idx} [.f1.t dump -tag "$line.1"] {
+      if {$key eq "tagon"} {
+        .f1.t tag add $val "$line.0" $idx
+      }
+    }
     MarkList_Add $line
 
   } else {
@@ -1653,8 +1660,8 @@ proc Mark_SaveFile {filename} {
 
   if {[catch {set file [open $filename w]} cerr] == 0} {
     if {[catch {
-      foreach {line txt} [array get mark_list] {
-        puts $file "$line $txt"
+      foreach line [lsort -integer [array names mark_list]] {
+        puts $file "$line $mark_list($line)"
       }
       close $file
       set mark_list_modified 0
@@ -2550,8 +2557,9 @@ proc TagsList_CopyFromSearch {pat_idx} {
     UpdateRcAfterIdle
 
     # update tag in the main window
-    set cfg [HighlightConfigure $w]
-    eval [linsert $cfg 0 .f1.t tag configure [lindex $w 4]]
+    .f1.t tag remove [lindex $w 4] 1.0 end
+    set opt [Search_GetOptions [lindex $w 1] [lindex $w 2]]
+    HighlightAll [lindex $w 0] [lindex $w 4] $opt
 
     TagsList_Fill
     .dlg_tags.f1.l see $pat_idx
