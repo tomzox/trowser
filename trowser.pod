@@ -23,7 +23,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# $Id: trowser.pod,v 1.4 2009/03/06 20:12:07 tom Exp $
+# $Id: trowser.pod,v 1.5 2009/03/11 20:24:49 tom Exp $
 # ---------------------------------------------------------------------------
 
 =head1 NAME
@@ -228,8 +228,10 @@ direction respectively (same as in vim)
 =item C<''> (two apostrophes)
 
 Moves the cursor to the position before the latest jump (same as
-in vim and less)  Note any cursor movement or search operation which
-may alter the cursor line position is considered a jump.
+in vim and less.)  A "jump" is one of the following commands:
+C<'>, C<G>, C</>, C<?>, C<n>, C<N>, C<L>, C<M> and C<H> (same as
+in vim.)  Note movements controlled via the GUI, such as the
+bookmark list or search result list, do not modify the jump list.
 
 =item C<'+>, C<'->
 
@@ -238,6 +240,14 @@ Moves the cursor to the next or previous bookmark (not in vim)
 =item C<'^>, C<'$>
 
 Moves the cursor to the start or end of file (same as in less; not in vim)
+
+=item C<^o>, C<^i>
+
+Moves the cursor to the next older (or newer respectively) position in
+the jump list (same as in vim; note C<TAB> which is identical to C<^i>
+in vim has a different meaning here.) See C<''> for a list of commands
+which are considered jumps and add pre-jump cursor positions to the
+list.
 
 =item C<1>, C<2>, ... C<9>
 
@@ -315,6 +325,12 @@ where the current search pattern matches (not in vim)
 
 Open the search result window and fill it with all text lines which match
 the current search pattern (not in vim)
+
+=item I<ALT->C<N>, I<ALT->C<P>
+
+Open the search result window and fill it with all text lines below or
+above the current cursor position respectively which match the current
+search pattern (not in vim)
 
 =back
 
@@ -447,7 +463,15 @@ to the search history. Keyboard focus remains in the search entry field.
 =item I<Alt->C<a>
 
 Open the search result window and fill it with all text lines which match
-the current search pattern (not in vim)
+the current search pattern (not in vim)  Additionally, keyboard focus is
+moved back into the main window.
+
+=item I<ALT->C<N>, I<ALT->C<P>
+
+Open the search result window and fill it with all text lines below or
+above the current cursor position respectively which match the current
+search pattern (not in vim)  Additionally, the keyboard focus is moved
+back into the main window.
 
 =item I<Alt->C<c>
 
