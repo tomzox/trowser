@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.32 2009/03/17 20:23:32 tom Exp $
+# $Id: trowser.tcl,v 1.33 2009/03/18 21:06:49 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -4127,7 +4127,7 @@ proc SearchList_RemoveSelection {} {
       lappend dlg_srch_undo [list -1 $line_list]
       set dlg_srch_redo {}
 
-      TextSel_SetSelection dlg_srch_sel {}
+      TextSel_SetSelection dlg_srch_sel {} 0
     }
   }
 }
@@ -4159,7 +4159,7 @@ proc SearchList_SearchNext {is_fwd} {
       scan $found "%d" line
       set idx [lsearch -exact -integer -sorted -increasing $dlg_srch_lines $line]
       if {$idx >= 0} {
-        TextSel_SetSelection dlg_srch_sel $idx
+        TextSel_SetSelection dlg_srch_sel $idx 0
         break
       }
     } else {
@@ -4290,7 +4290,7 @@ proc SearchList_Undo {} {
                                             [lindex $cmd 0] [lindex $cmd 1] -1 0]]
       }
     } else {
-      DisplayStatusLine search warn "Already at oldest change in search list"
+      DisplayStatusLine search error "Already at oldest change in search list"
     }
   }
 }
@@ -4316,7 +4316,7 @@ proc SearchList_Redo {} {
                                             [lindex $cmd 0] [lindex $cmd 1] 1 0]]
       }
     } else {
-      DisplayStatusLine search warn "Already at newest change in search list"
+      DisplayStatusLine search error "Already at newest change in search list"
     }
   }
 }
@@ -4337,7 +4337,7 @@ proc SearchList_BgUndoRedoLoop {op line_list mode off} {
 
   } elseif [info exists dlg_srch_shown] {
     set anchor [SearchList_GetViewAnchor]
-    set line_frag [lrange $line_list $off [expr {$off + 399}]]
+    set line_frag [lrange $line_list $off [expr {$off + 400 - 1}]]
     incr off 400
 
     SearchList_InvertCmd $op $line_frag $mode
@@ -4777,6 +4777,8 @@ proc SearchList_SearchProgress {ratio} {
 proc SearchList_SearchAbort {{do_warn 1}} {
   global tid_search_list dlg_srch_undo dlg_srch_redo
 
+  set cancel_new 0
+
   if {$tid_search_list ne ""} {
     if {$do_warn} {
       PreemptBgTasks
@@ -4794,17 +4796,23 @@ proc SearchList_SearchAbort {{do_warn 1}} {
       pack   .srch_abrt.f1 -side top
 
       frame  .srch_abrt.f3
-      button .srch_abrt.f3.cancel -text "Cancel" -command {set ::vwait_search_complete 0}
-      button .srch_abrt.f3.ok -text "Ok" -default active -command {set ::vwait_search_complete 1}
+      button .srch_abrt.f3.cancel -text "Cancel" -command {set vwait_search_complete "cancel_new"}
+      button .srch_abrt.f3.ok -text "Ok" -default active -command {set vwait_search_complete "abort_cur"}
       pack   .srch_abrt.f3.cancel .srch_abrt.f3.ok -side left -padx 10 -pady 5
       pack   .srch_abrt.f3 -side top
 
       bindtags .srch_abrt.f1.icon {.srch_abrt all}
       bind   .srch_abrt <Destroy> {destroy .srch_abrt}
-      bind   .srch_abrt <Return> {set ::vwait_search_complete 1}
-      # closing the message popup is equivalent to "cancel"
-      bind   .srch_abrt.f1 <Destroy> {if {$::vwait_search_complete == -1} {
-                                        set ::vwait_search_complete 0}}
+      bind   .srch_abrt <Escape> {set vwait_search_complete "cancel_new"}
+      bind   .srch_abrt <Return> {set vwait_search_complete "abort_cur"}
+      # closing the message popup while the bg task is still busy is equivalent to "cancel"
+      # (note the variable must be modified in any case so that vwait returns)
+      bind   .srch_abrt.f1 <Destroy> {if {$vwait_search_complete eq "wait"} {
+                                        if {$tid_search_list ne ""} {
+                                          set vwait_search_complete "cancel_new"
+                                        } else {
+                                          set vwait_search_complete "obsolete"
+                                     }}}
       # clicks into other windows (routed here due to grab) raise the popup window
       bind   .srch_abrt <Button-1> {raise .srch_abrt}
       bind   .srch_abrt <Button-3> {raise .srch_abrt}
@@ -4814,16 +4822,13 @@ proc SearchList_SearchAbort {{do_warn 1}} {
       ResumeBgTasks
 
       # block here until the user responds or the background task finishes
-      set ::vwait_search_complete -1
+      set ::vwait_search_complete "wait"
       vwait ::vwait_search_complete
       catch {destroy .srch_abrt}
 
-      set cancel [expr {$::vwait_search_complete == 0}]
+      set cancel_new [expr {$::vwait_search_complete eq "cancel_new"}]
       unset -nocomplain ::vwait_search_complete
 
-      if {$cancel} {
-        return 0
-      }
     } else {
       catch {destroy .srch_abrt}
     }
@@ -4831,7 +4836,7 @@ proc SearchList_SearchAbort {{do_warn 1}} {
     catch {destroy .srch_abrt}
   }
 
-  if {$tid_search_list ne ""} {
+  if {!$cancel_new && ($tid_search_list ne "")} {
     SearchList_BgSearch_FinalizeUndoList dlg_srch_undo
     SearchList_BgSearch_FinalizeUndoList dlg_srch_redo
 
@@ -4845,7 +4850,7 @@ proc SearchList_SearchAbort {{do_warn 1}} {
 
     DisplayStatusLine search warn "Search list operation was aborted"
   }
-  return 1
+  return [expr {!$cancel_new}]
 }
 
 
@@ -4888,10 +4893,10 @@ proc SearchList_SeeViewAnchor {info} {
       ([set idx [lsearch -exact -integer -sorted -increasing $dlg_srch_lines $anchor]] >= 0)} {
     .dlg_srch.f1.l see "[expr {$idx + 1}].0"
     if {[lindex $info 0]} {
-      TextSel_SetSelection dlg_srch_sel $idx
+      TextSel_SetSelection dlg_srch_sel $idx 0
     }
   } else {
-    TextSel_SetSelection dlg_srch_sel {}
+    TextSel_SetSelection dlg_srch_sel {} 0
   }
 }
 
@@ -4960,20 +4965,22 @@ proc SearchList_AddMainSelection {} {
       set idx_list {}
       for {set line $line_1} {$line <= $line_2} {incr line} {
         set idx [SearchList_GetLineIdx $line]
-        set pos "[expr {$idx + 1}].0"
         if {[lindex $dlg_srch_lines $idx] != $line} {
-          set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
+          incr idx [llength $line_list]
+          set pos "[expr {$idx + 1}].0"
           SearchList_InsertLine $line $pos
           lappend line_list $line
           lappend idx_list $idx
         }
-        .dlg_srch.f1.l see $pos
       }
 
       if {[llength $line_list] > 0} {
+        set dlg_srch_lines [lsort -integer -increasing [concat $dlg_srch_lines $line_list]]
         lappend dlg_srch_undo [list 1 $line_list]
         set dlg_srch_redo {}
+
         TextSel_SetSelection dlg_srch_sel $idx_list 0
+        .dlg_srch.f1.l see "[lindex $idx_list 0].0"
       }
     }
   }
@@ -5114,7 +5121,7 @@ proc SearchList_MatchView {line} {
       if {[lindex $dlg_srch_lines $idx] == $line} {
         TextSel_SetSelection dlg_srch_sel $idx 0
       } else {
-        TextSel_SetSelection dlg_srch_sel {}
+        TextSel_SetSelection dlg_srch_sel {} 0
       }
     } else {
       .dlg_srch.f1.l see end
