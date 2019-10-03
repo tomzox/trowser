@@ -112,7 +112,7 @@ proc CreateMainWindow {} {
   .menubar add cascade -label "Help" -menu .menubar.help -underline 0
   menu .menubar.ctrl -tearoff 0
   .menubar.ctrl add command -label "Open file..." -command MenuCmd_OpenFile
-  .menubar.ctrl add command -label "Reload current file" -command MenuCmd_Reload
+  .menubar.ctrl add command -label "Reload current file" -state disabled -command MenuCmd_Reload
   .menubar.ctrl add separator
   .menubar.ctrl add command -label "Read bookmarks from file..." -command Mark_ReadFileFrom
   .menubar.ctrl add command -label "Save bookmarks to file..." -command Mark_SaveFileAs
@@ -177,9 +177,10 @@ proc CreateMainWindow {} {
   KeyCmdBind "zs" {XviewSet left}
   KeyCmdBind "ze" {XviewSet right}
   # moving the cursor
-  KeyCmdBind "G" {CursorPosStore; .f1.t mark set insert end; .f1.t see insert}
-  KeyCmdBind "gg" {CursorPosStore; .f1.t mark set insert 1.0; .f1.t see insert}
+  KeyCmdBind "G" {CursorPosStore; .f1.t mark set insert "end -1 lines linestart"; CursorMoveLine 0}
+  KeyCmdBind "gg" {CursorPosStore; .f1.t mark set insert 1.0; CursorMoveLine 0}
   KeyCmdBind "0" {CursorSetColumn left}
+  KeyCmdBind "^" {CursorSetColumn left; CursorMoveLine 0}
   KeyCmdBind "$" {CursorSetColumn right}
   bind .f1.t <Control-g> {DisplayLineNumer; KeyClr; break}
   bind .f1.t <Key-Home> {if {%s == 0} {CursorSetColumn left; KeyClr; break}}
@@ -187,6 +188,10 @@ proc CreateMainWindow {} {
   KeyCmdBind "Return" {CursorMoveLine 1}
   KeyCmdBind "+" {CursorMoveLine 1}
   KeyCmdBind "-" {CursorMoveLine -1}
+  KeyCmdBind "h" {event generate .f1.t <Left>}
+  KeyCmdBind "l" {event generate .f1.t <Right>}
+  KeyCmdBind "k" {event generate .f1.t <Up>}
+  KeyCmdBind "j" {event generate .f1.t <Down>}
   KeyCmdBind "H" {CursorSetLine top}
   KeyCmdBind "M" {CursorSetLine center}
   KeyCmdBind "L" {CursorSetLine bottom}
@@ -254,7 +259,8 @@ proc CreateMainWindow {} {
 
   wm protocol . WM_DELETE_WINDOW UserQuit
   wm geometry . $main_win_geom
-  bind .f1.t <Configure> {TestCaseList_Resize %W . .f1.t main_win_geom}
+  wm positionfrom . user
+  bind .f1.t <Configure> {ToplevelResized %W . .f1.t main_win_geom}
 }
 
 
@@ -1167,7 +1173,10 @@ proc DisplayLineNumer {} {
       scan $pos "%d.%d" end_line char
       incr end_line -1
 
-      DisplayStatusLine line_query msg "$cur_filename: line $line of $end_line lines"
+      set name $cur_filename
+      if {$name eq ""} {set name "STDIN"}
+
+      DisplayStatusLine line_query msg "$name: line $line of $end_line lines"
     }
   }
 }
@@ -1176,17 +1185,18 @@ proc DisplayLineNumer {} {
 #
 # This function is bound to configure events on dialog windows, i.e. called
 # when the window size or stacking changes. The function stores the new size
-# so that the same size can be used when the window is closed and re-opened.
+# and position so that the same geometry is automatically applied when the
+# window is closed and re-opened.
 #
 # Note: this event is installed on the toplevel window, but also called for
 # all its childs when they are resized (due to the bindtag mechanism.) This
 # is the reason for passing widget and compare parameters.
 #
-proc TestCaseList_Resize {wid top cmp var} {
+proc ToplevelResized {wid top cmp var} {
   upvar {#0} $var size
 
   if {$wid eq $cmp} {
-    set new_size "[winfo width $top]x[winfo height $top]"
+    set new_size [wm geometry $top]
 
     if {![info exists size] || ($new_size ne $size)} {
       set size $new_size
@@ -1328,7 +1338,7 @@ proc CursorSetLine {where} {
     .f1.t mark set insert "@1,[expr [winfo height .f1.t] / 2]"
 
   } elseif {$where eq "bottom"} {
-    .f1.t mark set insert "@1,[winfo height .f1.t]"
+    .f1.t mark set insert "@1,[winfo height .f1.t] linestart"
     # move cursor to the last fully visible line to avoid scrolling
     set fh [font metrics $font_content -linespace]
     set pos_new [.f1.t bbox insert]
@@ -1568,11 +1578,11 @@ proc KeyCmd {char} {
       } elseif {$char eq "^"} {
         CursorPosStore
         .f1.t mark set insert 1.0
-        .f1.t see insert
+        CursorMoveLine 0
       } elseif {$char eq "$"} {
         CursorPosStore
-        .f1.t mark set insert end
-        .f1.t see insert
+        .f1.t mark set insert "end -1 lines linestart"
+        CursorMoveLine 0
       } elseif {$char eq "+"} {
         Mark_JumpNext 1
       } elseif {$char eq "-"} {
@@ -1738,7 +1748,8 @@ proc KeyCmd_ExecGoto {} {
       .f1.t mark set insert "$keycmd_ent.0"
     } else {
       set keycmd_ent [expr 1 - $keycmd_ent]
-      catch {.f1.t mark set insert "end - $keycmd_ent lines"}
+      catch {.f1.t mark set insert "end - $keycmd_ent lines linestart"}
+      CursorMoveLine 0
     }
     .f1.t see insert
     KeyCmd_Leave
@@ -2084,26 +2095,28 @@ proc Mark_ReadFileAuto {} {
 #
 proc Mark_DefaultFile {trace_name} {
   set bok_name ""
-  # must use catch around call to "mtime"
-  catch {
-    set cur_mtime [file mtime $trace_name]
-  }
-  if [info exists cur_mtime] {
-    set name "${trace_name}.bok"
+  if {$trace_name ne ""} {
+    # must use catch around call to "mtime"
     catch {
-      if {[file readable $name]} {
-        if {[file mtime $name] >= $cur_mtime} {
-          set bok_name $name
-        } else {
-          puts stderr "$::argv0: warning: bookmark file $name is older than content - not loaded"
+      set cur_mtime [file mtime $trace_name]
+    }
+    if [info exists cur_mtime] {
+      set name "${trace_name}.bok"
+      catch {
+        if {[file readable $name]} {
+          if {[file mtime $name] >= $cur_mtime} {
+            set bok_name $name
+          } else {
+            puts stderr "$::argv0: warning: bookmark file $name is older than content - not loaded"
+          }
         }
       }
-    }
-    if {$bok_name eq ""} {
-      if {[regsub {\.[^\.]+$} $trace_name {.bok} name] && ($name ne $trace_name)} {
-        catch {
-          if {[file readable $name] && ([file mtime $name] >= $cur_mtime)} {
-            set bok_name $name
+      if {$bok_name eq ""} {
+        if {[regsub {\.[^\.]+$} $trace_name {.bok} name] && ($name ne $trace_name)} {
+          catch {
+            if {[file readable $name] && ([file mtime $name] >= $cur_mtime)} {
+              set bok_name $name
+            }
           }
         }
       }
@@ -2121,7 +2134,11 @@ proc Mark_SaveFileAs {} {
   global mark_list cur_filename
 
   if {[array size mark_list] > 0} {
-    set def_name "${cur_filename}.bok"
+    if {$cur_filename ne ""} {
+      set def_name "${cur_filename}.bok"
+    } else {
+      set def_name ""
+    }
     set filename [tk_getSaveFile -parent . -filetypes {{Bookmarks {*.bok}} {all {*.*}}} \
                                  -title "Select bookmark file" \
                                  -initialfile [file tail $def_name] \
@@ -2431,9 +2448,10 @@ proc MarkList_OpenDialog {} {
 
     set dlg_mark_shown 1
     bind .dlg_mark.l <Destroy> {+ MarkList_Quit 1}
-    bind .dlg_mark <Configure> {TestCaseList_Resize %W .dlg_mark .dlg_mark dlg_mark_size}
+    bind .dlg_mark <Configure> {ToplevelResized %W .dlg_mark .dlg_mark dlg_mark_size}
     wm protocol .dlg_mark WM_DELETE_WINDOW {MarkList_Quit 0}
     wm geometry .dlg_mark $dlg_mark_size
+    wm positionfrom .dlg_mark user
 
     MarkList_Fill
 
@@ -2576,8 +2594,9 @@ proc Tags_OpenDialog {} {
 
     set dlg_tags_shown 1
     bind .dlg_tags.f1.l <Destroy> {+ unset -nocomplain dlg_tags_shown}
-    bind .dlg_tags <Configure> {TestCaseList_Resize %W .dlg_tags .dlg_tags dlg_tags_size}
+    bind .dlg_tags <Configure> {ToplevelResized %W .dlg_tags .dlg_tags dlg_tags_size}
     wm geometry .dlg_tags $dlg_tags_size
+    wm positionfrom .dlg_tags user
 
     TagsList_Fill
 
@@ -3847,165 +3866,387 @@ THIS PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT ANY 
 
 
 # ----------------------------------------------------------------------------
+#
+# This function opens the "load from pipe" status dialog.
+#
 proc OpenLoadPipeDialog {stop} {
-  global dlg_load_shown dlg_load_file_limit
-  global load_file_limit load_file_sum
+  global font_normal dlg_load_shown dlg_load_file_limit
+  global load_buf_size load_buf_fill load_file_sum load_file_mode load_file_close
 
   if {![info exists dlg_load_shown]} {
     toplevel .dlg_load
     wm title .dlg_load "Loading from STDIN..."
     wm group .dlg_load .
     wm transient .dlg_load .
+    set xcoo [expr [winfo rootx .f1.t] + 50]
+    set ycoo [expr [winfo rooty .f1.t] + 50]
+    wm geometry .dlg_load "+${xcoo}+${ycoo}"
 
-    label .dlg_load.name -text "Loaded data:"
-    pack .dlg_load.name -side top -pady 8
-    label .dlg_load.sum -textvariable load_file_sum
-    pack .dlg_load.sum -side top -pady 8
+    frame .dlg_load.f1
+    set row 0
+    label .dlg_load.f1.lab_total -text "Loaded data:"
+    grid  .dlg_load.f1.lab_total -sticky w -column 0 -row $row
+    label .dlg_load.f1.val_total -textvariable load_file_sum -font $font_normal
+    grid  .dlg_load.f1.val_total -sticky w -column 1 -row $row -columnspan 2
+    incr row
+    label .dlg_load.f1.lab_bufil -text "Buffered data:"
+    grid  .dlg_load.f1.lab_bufil -sticky w -column 0 -row $row
+    label .dlg_load.f1.val_bufil -textvariable load_buf_fill -font $font_normal
+    grid  .dlg_load.f1.val_bufil -sticky w -column 1 -row $row -columnspan 2
+    incr row
 
-    set dlg_load_file_limit [expr $load_file_limit/(1024*1024)]
-    scale .dlg_load.maxl -from 1 -to 999 -orient horizontal -label "Load limit:" \
-                         -command {LoadPipe_SetLimit} -variable dlg_load_file_limit
-    pack .dlg_load.maxl -side top
+    set dlg_load_file_limit [expr $load_buf_size/(1024*1024)]
+    label .dlg_load.f1.lab_bufsz -text "Buffer size:"
+    grid  .dlg_load.f1.lab_bufsz -sticky w -column 0 -row $row
+    spinbox .dlg_load.f1.val_bufsz -from 1 -to 999 -width 4 -textvariable dlg_load_file_limit
+    grid  .dlg_load.f1.val_bufsz -sticky w -column 1 -row $row -columnspan 2
+    incr row
 
-    radiobutton .dlg_load.ohead -text "head" -variable dlg_load_opt -value "head"
-    radiobutton .dlg_load.otail -text "tail" -variable dlg_load_opt -value "tail"
-    pack .dlg_load.ohead .dlg_load.otail -side top
-    pack .dlg_load.maxl -side top
+    label .dlg_load.f1.lab_mode -text "Mode:"
+    grid  .dlg_load.f1.lab_mode -sticky w -column 0 -row $row
+    radiobutton .dlg_load.f1.ohead -text "head" -variable load_file_mode -value 0
+    grid  .dlg_load.f1.ohead -sticky w -column 1 -row $row
+    radiobutton .dlg_load.f1.otail -text "tail" -variable load_file_mode -value 1
+    grid  .dlg_load.f1.otail -sticky w -column 2 -row $row
+    pack .dlg_load.f1 -side top -padx 5 -pady 5
+    incr row
+
+    label .dlg_load.f1.lab_close -text "Close file:"
+    grid  .dlg_load.f1.lab_close -sticky w -column 0 -row $row
+    checkbutton .dlg_load.f1.val_close -variable load_file_close -text "close after read"
+    grid  .dlg_load.f1.val_close -sticky w -column 1 -row $row -columnspan 2
+    incr row
 
     frame .dlg_load.cmd
     button .dlg_load.cmd.stop
-    button .dlg_load.cmd.ok -text "Continue"
+    button .dlg_load.cmd.ok -text "Ok"
     pack .dlg_load.cmd.stop .dlg_load.cmd.ok -side left -padx 10
     pack .dlg_load.cmd -side top -pady 5
 
     set dlg_load_shown 1
     bind .dlg_load.cmd <Destroy> {unset -nocomplain dlg_load_shown}
     wm protocol .dlg_load WM_DELETE_WINDOW {}
-    grab .dlg_load
   }
   if $stop {
     LoadPipe_CmdStop
   } else {
-    LoadPipe_CmdContinue
+    LoadPipe_CmdContinue 0
   }
 }
 
-proc LoadPipe_SetLimit {val} {
-  global load_file_limit
-  set load_file_limit [expr 1024*1024*$val]
-}
 
-proc LoadPipe_CmdContinue {} {
-  .dlg_load.cmd.stop configure -text "Stop" -command LoadPipe_CmdStop
-  .dlg_load.cmd.ok configure -state disabled
-  fileevent stdin readable LoadDateFromPipe
-}
-
-proc LoadPipe_CmdStop {} {
-  fileevent stdin readable {}
-  .dlg_load.cmd.stop configure -text "Abort" -command LoadPipe_CmdAbort
-  .dlg_load.cmd.ok configure -state normal -command LoadPipe_CmdContinue
-}
-
+#
+# This function is bound to the "Abort" button in the "Load from pipe"
+# dialog (note this button replaces "Stop" while loading is ongoing.)
+# The function stops loading and closes the dialog. Note: data that
+# already has been loaded is kept and displayed.
+#
 proc LoadPipe_CmdAbort {} {
   global load_file_complete
   set load_file_complete ""
   destroy .dlg_load
 }
 
-proc LoadDateFromPipe {} {
-  global load_file_complete load_file_limit load_file_sum
+
+#
+# This function is bound to the "Stop" button in the "Load from pipe"
+# dialog (note this button replaces "Abort" while loading is ongoing.)
+# The function temporarily suspends loading to allow the user to change
+# settings or abort loading.
+#
+proc LoadPipe_CmdStop {} {
+  # remove the read event handler to suspend loading
+  fileevent stdin readable {}
+
+  # switch buttons in the dialog
+  .dlg_load.cmd.stop configure -text "Abort" -command LoadPipe_CmdAbort
+  .dlg_load.cmd.ok configure -state normal -command {LoadPipe_CmdContinue 1}
+
+  # allow the user to modify settings in the dialog
+  grab .dlg_load
+}
+
+
+#
+# This function is bound to the "Ok" button in the "Load from pipe"
+#
+proc LoadPipe_CmdContinue {is_user} {
+  global load_file_mode load_buf_fill load_buf_size
+  global load_file_complete
+  global dlg_load_file_limit
+
+  # apply possible change of buffer limit by the user
+  if {[catch {set val [expr 1024*1024*$dlg_load_file_limit]} cerr] == 0} {
+    if {$val != $load_buf_size} {
+      set load_buf_size $val
+      UpdateRcAfterIdle
+    }
+  } elseif $is_user {
+    after idle {tk_messageBox -type ok -icon error -message "Buffer size is not a number: \"$dlg_load_file_limit\""}
+    return
+  }
+
+  if {$is_user && ($load_file_mode == 0) && ($load_buf_fill >= $load_buf_size)} {
+    # "head" mode confirmed by user and buffer is full -> close the dialog
+    set load_file_complete ""
+    destroy .dlg_load
+  } else {
+    .dlg_load.cmd.stop configure -text "Stop" -command LoadPipe_CmdStop
+    .dlg_load.cmd.ok configure -state disabled
+
+    # install the read handler again to resume loading data
+    fileevent stdin readable LoadDataFromPipe
+
+    # prohibit modifications of settings; allow the "Stop" button only
+    grab .dlg_load.cmd.stop
+  }
+}
+
+
+#
+# This function discards data in the load buffer queue if the length
+# limit is exceeded.  The buffer queue is an array of character strings
+# (each string the result of a "read" command.)  The function is called
+# after each read in tail mode, so it must be efficient (i.e. esp. avoid
+# copying large buffers.)
+#
+proc LoadPipe_LimitData {exact} {
+  global load_buf_size load_buf_fill load_file_sum load_file_mode
+  global load_file_data
+
+  # tail mode: delete oldest data / head mode: delete newest data
+  if {$load_file_mode == 0} {
+    set lidx end
+  } else {
+    set lidx 0
+  }
+
+  # calculate how much data must be discarded
+  set rest [expr $load_buf_fill - $load_buf_size]
+
+  # unhook complete data buffers from the queue
+  while {($rest > 0) &&
+         ([llength $load_file_data] > 0) &&
+         ([string length [lindex $load_file_data $lidx]] <= $rest)} {
+
+    set len [string length [lindex $load_file_data $lidx]]
+    set rest [expr $rest - $len]
+    set load_buf_fill [expr $load_buf_fill - $len]
+    set load_file_data [lreplace $load_file_data $lidx $lidx]
+  }
+
+  # truncate the last data buffer in the queue (only if exact limit is requested)
+  if {($rest > 0) && $exact && ([llength $load_file_data] > 0)} {
+    set len [string length [lindex $load_file_data $lidx]]
+    set data [lindex $load_file_data $lidx]
+    if {$load_file_mode == 0} {
+      set data [string replace $data [expr $len - $rest] end]
+    } else {
+      set data [string replace [lindex $load_file_data 0] 0 [expr $rest - 1]]
+    }
+    lset load_file_data 0 $data
+    set load_buf_fill [expr $load_buf_fill - $rest]
+  }
+}
+
+
+#
+# This function is installed as handler for read events on STDIN
+# when reading text data via a pipe.
+#
+proc LoadDataFromPipe {} {
+  global load_buf_size load_buf_fill load_file_sum load_file_mode
+  global load_file_complete load_file_data load_file_close
 
   if {[catch {
+    # limit read length to buffer size ("head" mode only)
     set size 100000
-    if {$load_file_sum + $size > $load_file_limit} {
-      set size [expr $load_file_limit - $load_file_sum]
+    if {($load_file_mode == 0) && ($load_buf_fill + $size > $load_buf_size)} {
+      set size [expr $load_buf_size - $load_buf_fill]
     }
     if {$size > 0} {
       set data [read stdin $size]
-      .f1.t insert end $data
-      if {[string length $data] == 0} {
-        set load_file_complete ""
-        fileevent stdin readable {}
-      }
-      incr load_file_sum [string length $data]
-      puts "READ $load_file_sum"
-    } else {puts ZERO}
+      set len [string length $data]
+      if {$len > 0} {
+        incr load_file_sum $len
+        incr load_buf_fill $len
+        # data chunk is added to an array (i.e. not a single char string) for efficiency
+        lappend load_file_data $data
 
+        # discard oldest data when buffer size limit is exceeded ("tail" mode only)
+        if {($load_file_mode != 0) && ($load_buf_fill > $load_buf_size)} {
+          LoadPipe_LimitData 0
+        }
+      } else {
+        # end-of-file reached -> stop loading
+        set load_file_complete ""
+        set load_file_close 1
+        fileevent stdin readable {}
+        catch {destroy .dlg_load}
+      }
+    }
   } cerr] != 0} {
+    # I/O error
     fileevent stdin readable {}
     set load_file_complete $cerr
+    catch {destroy .dlg_load}
   }
 
-  if {![info exists load_file_complete] && ($load_file_sum >= $load_file_limit)} {
+  if {![info exists load_file_complete] &&
+      ($load_file_mode == 0) && ($load_buf_fill >= $load_buf_size)} {
     OpenLoadPipeDialog 1
   }
 }
 
+
 #
-# This function loads a trace from a file or stdin (i.e. filename "-")
+# This function loads a text file from STDIN. A status dialog is opened
+# if loading takes longer than a few seconds or if the current buffer
+# size is exceeded.  Afterwards color highlighting is initiated.
+#
+proc LoadPipe {} {
+  global cur_filename load_file_complete load_file_data
+  global load_buf_size load_buf_fill load_file_sum load_file_mode load_file_close
+
+  set cur_filename ""
+  if {![info exists load_file_mode]}  {
+    set load_file_mode 0
+    set load_file_close 1
+    set load_file_sum [expr wide(0)]
+  }
+  set load_file_data {}
+  set load_buf_fill 0
+  unset -nocomplain load_file_complete
+
+  set tid_load_dlg [after 1000 OpenLoadPipeDialog 0]
+  .f1.t configure -cursor watch
+
+  # install an event handler to read the data asynchronously
+  fconfigure stdin -blocking 0
+  fileevent stdin readable LoadDataFromPipe
+
+  # block here until all data has been read
+  vwait load_file_complete
+
+  if {$load_file_complete eq ""} {
+    # success (no read error, although EOF may have been reached)
+    # limit content length to the exact maximum (e.g. in case the user changed sizes)
+    LoadPipe_LimitData 1
+
+    # insert the data into the text widget
+    foreach data $load_file_data {
+      .f1.t insert end $data
+    }
+    if $load_file_close {
+      catch {close stdin}
+    }
+  } else {
+    tk_messageBox -type ok -icon error -message "Read error on STDIN: $load_file_complete"
+    catch {close stdin}
+  }
+  after cancel $tid_load_dlg
+  .f1.t configure -cursor top_left_arrow
+
+  unset load_file_complete load_file_data load_buf_fill
+  InitContent
+}
+
+
+#
+# This function loads a text file into the text widget.
 # Afterwards color highlighting is initiated.
 #
 proc LoadFile {filename} {
-  global cur_filename load_size_limit
-  global load_file_complete load_file_limit load_file_sum
+  global cur_filename load_buf_size
 
-  if {$filename eq "-"} {
-    set cur_filename ""
-    set load_file_limit 20000000
-    set load_file_sum 0
-    set tid_load_dlg [after 1000 OpenLoadPipeDialog 0]
-    fconfigure stdin -blocking 0
-    fileevent stdin readable LoadDateFromPipe
-    vwait load_file_complete
-    if {$load_file_complete eq ""} {
-      .f1.t see end
-      set result 1
-    } else {
-      tk_messageBox -type ok -icon error -message "Read error on STDIN: $load_file_complete"
-      set result 0
+  set cur_filename $filename
+
+  if {[catch {
+    set file [open $filename r]
+
+    # apply file length limit
+    file stat $filename sta
+    if {$sta(size) > $load_buf_size} {
+      seek $file [expr 0 - $load_buf_size] end
     }
-    after cancel $tid_load_dlg
+
+    # insert the data into the text widget
+    .f1.t insert end [read $file]
+
+    close $file
+  } cerr] != 0} {
+    tk_messageBox -type ok -icon error -message "Failed to load \"$filename\": $cerr"
+  }
+
+  InitContent
+}
+
+
+#
+# This function initializes the text widget and control state for a
+# newly loaded text.
+#
+proc InitContent {} {
+  global tid_search_inc tid_search_hall tid_high_init
+  global cur_filename dlg_mark_shown
+
+  after cancel $tid_high_init
+  after cancel $tid_search_inc
+  after cancel $tid_search_hall
+
+  # window title and main menu
+  if {$cur_filename ne ""} {
+    wm title . "$cur_filename - Trace browser"
+    if [info exists dlg_mark_shown] {
+      wm title .dlg_mark "Bookmark list [$cur_filename]"
+    }
+    .menubar.ctrl entryconfigure 1 -state normal -label "Reload current file"
   } else {
-    if {[catch {
-      set file [open $filename r]
-      # TODO apply file length limit
-      file stat $filename sta
-      if {$sta(size) > $load_size_limit} {
-        seek $file [expr 0 - $load_size_limit] end
-      }
-      .f1.t insert end [read $file]
-      .f1.t see end
-      close $file
-      set cur_filename $filename
-      set result 1
-    } cerr] != 0} {
-      tk_messageBox -type ok -icon error -message "Failed to load \"$filename\": $cerr"
-      set result 0
-    }
-  }
-
-  if $result {
-    global tid_search_inc tid_search_hall tid_high_init
-    global dlg_mark_shown
-
-    after cancel $tid_high_init
-    after cancel $tid_search_inc
-    after cancel $tid_search_hall
-
-    if {$cur_filename ne ""} {
-      wm title . "$cur_filename - Trace browser"
-      if [info exists dlg_mark_shown] {
-        wm title .dlg_mark "Bookmark list [$cur_filename]"
-      }
-      .menubar.ctrl entryconfigure "Reload*" -state normal
+    .menubar.ctrl entryconfigure 1 -label "Continue loading STDIN..."
+    if {[file channels stdin] ne ""} {
+      .menubar.ctrl entryconfigure 1 -state normal
     } else {
-      wm title . "Trace browser"
+      .menubar.ctrl entryconfigure 1 -state disabled
     }
-    CursorPosStore
-    HighlightInit
-    Mark_ReadFileAuto
+    wm title . "Trace browser"
   }
+
+  # set cursor to the end of file
+  .f1.t mark set insert "end -1 lines linestart"
+  CursorMoveLine 0
+  CursorPosStore
+  # read bookmarks from the default file
+  Mark_ReadFileAuto
+  # start color highlighting in the background
+  HighlightInit
+}
+
+
+#
+# This procedure discards all text content and aborts all ongoing
+# activity and timers. The function is called before new data is
+# loaded.
+#
+proc DiscardContent {} {
+  global patlist mark_list mark_list_modified
+
+  # the following is a work-around for a performance issue in the text widget:
+  # deleting text with large numbers of tags is extremely slow, so we clear the tags first
+  set tag_idx 0
+  foreach w $patlist {
+    .f1.t tag delete [lindex $w 4]
+    incr tag_idx
+  }
+  # discard the current trace content
+  .f1.t delete 1.0 end
+  # re-create the color tags
+  HighlightCreateTags
+
+  SearchReset
+
+  array unset mark_list
+  set mark_list_modified 0
+  MarkList_Fill
 }
 
 
@@ -4016,7 +4257,13 @@ proc MenuCmd_Reload {} {
   global cur_filename
 
   if {$cur_filename ne ""} {
+    DiscardContent
     after idle [list LoadFile $cur_filename]
+  } else {
+    if {[file channels stdin] ne ""} {
+      DiscardContent
+      after idle [list LoadPipe]
+    }
   }
 }
 
@@ -4027,31 +4274,12 @@ proc MenuCmd_Reload {} {
 # contents are discarded and all bookmarks are cleared.
 #
 proc MenuCmd_OpenFile {} {
-  global patlist
-
   # offer to save old bookmarks before discarding them below
   Mark_OfferSave
 
   set filename [tk_getOpenFile -parent . -filetypes {{"trace" {out.*}} {all {*.*}}}]
   if {$filename ne ""} {
-    # the following is a work-around for a performance issue in the text widget:
-    # deleting text with large numbers of tags is extremely slow, so we clear the tags first
-    set tag_idx 0
-    foreach w $patlist {
-      .f1.t tag delete [lindex $w 4]
-      incr tag_idx
-    }
-    # discard the current trace content
-    .f1.t delete 1.0 end
-    # re-create the color tags
-    HighlightCreateTags
-
-    global mark_list mark_list_modified
-    array unset mark_list
-    set mark_list_modified 0
-    MarkList_Fill
-    SearchReset
-
+    DiscardContent
     after idle [list LoadFile $filename]
   }
 }
@@ -4074,7 +4302,7 @@ proc UserQuit {} {
 proc LoadRcFile {isDefault} {
   global tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
   global dlg_mark_size dlg_tags_size main_win_geom
-  global patlist col_palette font_content load_size_limit
+  global patlist col_palette font_content load_buf_size
   global rcfile_version myrcfile
 
   set error 0
@@ -4118,7 +4346,7 @@ proc UpdateRcFile {} {
   global argv0 myrcfile rcfile_compat rcfile_version
   global tid_update_rc_sec tid_update_rc_min
   global dlg_mark_size dlg_tags_size main_win_geom
-  global patlist col_palette font_content load_size_limit
+  global patlist col_palette font_content load_buf_size
   global tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
 
   after cancel $tid_update_rc_sec
@@ -4177,7 +4405,7 @@ proc UpdateRcFile {} {
     puts $rcfile [list set font_content $font_content]
 
     # misc
-    puts $rcfile [list set load_size_limit $load_size_limit]
+    puts $rcfile [list set load_buf_size $load_buf_size]
 
     close $rcfile
 
@@ -4263,7 +4491,7 @@ array set mark_list {}
 set mark_list_modified 0
 
 # This variable contains the limit for file load
-set load_size_limit 2000000
+set load_buf_size 2000000
 
 # These variables hold IDs of timers (i.e. scripts delayed by "after")
 # They are used to cancel the scripts when necessary
@@ -4370,7 +4598,11 @@ HighlightCreateTags
 update
 
 if {$argc == 1} {
-  LoadFile [lindex $argv 0]
+  if {[lindex $argv 0] eq "-"} {
+    LoadPipe
+  } else {
+    LoadFile [lindex $argv 0]
+  }
 } else {
   puts stderr "Usage: $argv0 <file>"
 }
