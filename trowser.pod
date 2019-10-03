@@ -1,0 +1,591 @@
+# ---------------------------------------------------------------------------
+# trowser manual page (in Perl's "plain old documentation" format)
+#
+# Use this command to generate the trowser.1 manual page:
+#
+# pod2man -section 1 -center "Trace Browser" -release x.y trowser.pod \
+#   > trowser.1
+#
+# ---------------------------------------------------------------------------
+#
+# Copyright (C) 2007 Tom Zoerner. All rights reserved.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# $Id: trowser.pod,v 1.1 2007/10/07 15:03:55 tom Exp $
+# ---------------------------------------------------------------------------
+
+=head1 NAME
+
+B<trowser> - Browser for line-oriented text files with color highlighting
+
+=head1 SYNOPSIS
+
+B<trowser> [{-t|-h} limit] [-r path] {file|-}
+
+B<trowser> -help
+
+=head1 DESCRIPTION
+
+B<trowser> is a graphical browser for large line-oriented text files
+(e.g. debug trace files - hence the name) written in Tcl/Tk.  It's meant as
+an alternative to "less".  Compared to less, trowser adds color highlighting,
+a persistent search history, graphical bookmarking, separate search result
+(i.e. filter) windows and flexible skipping of input from pipes to STDIN.
+
+B<trowser> has a graphical interface, but is designed to allow browsing via
+the keyboard at least to the same extent as less. Key bindings and the cursor
+positioning concept are derived from vim.
+
+Note in this context "line-oriented" denotes that each line of text is
+considered a data unit.  Color highlighting (including search matches)
+will always apply the highlight to a complete line of text.
+
+When you start trowser for the first time, you'll have to create highlight
+patterns for your type of file.  To do this, first enter a search pattern
+and verify that it matches the intended lines. Then open the
+I<Edit highlight patterns> dialog in the I<Search> menu, press the right
+mouse button to open the context menu and select I<Add current search>.
+You can change the highlight color or select a different kind of mark-up
+by double-clicking on the new entry in the dialog, or by selecting
+I<Edit markup> in the context menu.  To define new colors, click on
+I<Edit color palette> at the bottom of the markup editor dialog.
+
+There are several ways to quickly navigate in the file to lines matching
+search patterns: Firstly, you can search forwards or backwards to any
+sub-string or pattern you enter in the I<Find:> field. Secondly, you can
+repeat previous searches by opening the search history dialog and
+double-clicking on an entry, or by clicking I<Next> or I<Previous>.
+Third, you can search for patterns defined in the color highlight list
+by clicking on I<Next> or I<Previous> in the pattern list dialog.
+Forth, you can open the I<Search result list> (via the I<Search> menu
+or by clicking on I<List all> in any dialog or by entering C<ALT-a>)
+to display all text lines which match a set of patterns and click on an
+entry in this list to jump to the respective line in the main window.
+
+Both the bookmark and search result lists support prefixing all entries
+with a "frame number". This is useful when your input file does not have
+timestamp prefixes on each line. In this case trowser can search for a
+preceding timestamp and automatically prefix bookmarked lines with this
+number.  Additionally trowser allows to fetch a "frame number" which is
+not printed in the same line as the frame interval start line. In this
+case trowser searches the next frame start lines in forward and backward
+direction and then inside of that range for a line containing the frame
+number value.  Note for the search result list this feature is disabled
+by default for performance reasons. It must be enabled in the dialog's
+I<Options> menu.
+
+For performance reasons most search-related commands are executed as
+background processes (actually implemented as idle events in Tcl/Tk.)
+For example, this applies to the initial color highlighting, global
+search highlighting, incremental search while editing search patterns
+and filling the search result list.  In most cases this activity is
+indicated by display of a progress bar and switching the mouse cursor
+to a watch or hourglass image.  You still can use trowser as usual during
+this time though.  The background activity is automatically aborted or
+restarted when a conflicting command is entered (e.g. when the search
+pattern is modified during global search highlighting.)
+
+
+=head1 KEY BINDINGS
+
+Generally, keyboard focus can be moved between control elements
+(e.g. buttons, checkboxes and text containers) using the I<TAB> or
+I<Shift-TAB>.  The widget with the keyboard focus is marked by a
+black border.  After start-up, keyboard focus is in the main text
+window.  Functions which are bound to mouse clicks on buttons etc.
+can be activated via the keyboard using the I<Space> bar. Many
+functions can also be activated via shortcuts: Press the I<ALT> key
+plus the character which is underlines in the button description
+(e.g. Press C<ALT-c> to open the I<Control> menu, or C<ALT-a> to
+simulate a mouse-click on the I<All> button at the bottom of the
+main window.)
+
+In the following descriptions, C<^X> means I<Control-X>, i.e. holding the
+Control key pressed while pressing the C<X> key. I<ALT> refers to the key
+to the left of the I<Space> bar.  Enclosing quotes must be typed.
+
+=head2 Key Bindings in the Main Window
+
+The commands in this section can be used when the keyboard focus is in
+the main window.
+
+Commands to move the cursor or change the view:
+
+=over 4
+
+=item I<Up>, I<Down>, I<Left>, I<Right>
+
+Move the cursor in the respective direction. When the cursor hits
+the end of the visible area (i.e. the view), the text is scrolled
+vertically by a line or horizontally by a character (same as in vim,
+except for the smoother horizontal scrolling)
+
+=item I<Control-Up>, I<Control-Down>, I<Control-Left>, I<Control-Right>
+
+Scroll the view by a line or character in the respective direction
+(not in vim)
+
+=item C<h>, C<l>, C<k>, C<j>
+
+Move the cursor left, right, up or down (same as in vi and vim)
+
+=item I<Return>, C<+>, C<->
+
+Move the cursor to the start of the following or preceding line
+(to be exact: the first non-blank character) (same as in vim)
+
+=item I<Space>, I<BackSpace>
+
+Move the cursor to the next or preceding character (same as in vim)
+
+=item I<Home>, I<End>, C<0>, C<$>, C<^>
+
+Move the cursor to the first or last character of the current line
+(same as in vim)
+
+=item I<Control-Home>, I<Control-End>, C<G>, C<gg>
+
+Move the cursor to the start or end of the file (same as in vim)
+
+=item C<H>, C<M>, C<L>
+
+Move the cursor to the start of the line at the top, middle or
+bottom of the view (same as in vim)
+
+=item C<w>, C<e>, C<b>, C<W>, C<E>, C<B>, C<ge>, C<gE>
+
+Move the cursor to the start or end of the next or preceding word
+(same as in vim)
+
+=item C<^e>, C<^y>, C<^d>, C<^u>, C<^f>, C<^b>
+
+Scroll the screen by a single line, half a screen or a full screen
+forwards or backwards (same as in vim)
+
+=item C<z>I<Return>, C<z.>, C<z->
+
+Adjusts the view vertically so that the current line is at the top,
+middle or bottom of the screen and places the cursor on the first
+non-blank character (same as in vim)  The horizontal view is set
+to start at the left border.
+
+=item C<zt>, C<zz>, C<zb>
+
+Adjusts the view so that the current line is at the top, middle or
+bottom of the screen; the cursor position is unchanged (same as in vim)
+
+=item C<zl>, C<zh>, C<zL>, C<zH>
+
+Move the view horizontally to the left or right (same as in vim)
+
+=item C<zs>, C<ze>
+
+Scroll the view horizontally so that the current cursor column is placed
+at the left or the right side of the screen (as far as possible); in any
+case the cursor position remains unchanged (same as in vim)
+
+=item C<f>, C<F>
+
+Search for the following character in the same line to the right or
+left respectively (same as in vim)
+
+=item C<;>, C<,> (semicolon or comma)
+
+Repeat a previous in-line search (C<f> or C<F>) in the same or opposite
+direction (same as in vim)
+
+=item C<''> (two apostrophs)
+
+Moves the cursor to the position before the latest jump (same as
+in vim and less)  Note any cursor movement or search operation which
+may alter the cursor line position is considered a jump.
+
+=item C<'+>, C<'->
+
+Moves the cursor to the next or previous bookmark (not in vim)
+
+=item C<'^>, C<'$>
+
+Moves the cursor to the start or end of file (same as in less; not in vim)
+
+=item C<1>, C<2>, ... C<9>
+
+A number without leading zeroes can be used to repeat the subsequent
+key command or place the cursor on a given line or column (same as in vim)
+For example: C<1G> places the cursor in the first line of the file;
+C<10|> places the cursor in the tenth column of the current line
+(line and column numbering starts at 1)
+
+=back
+
+Searching and repeating:
+
+=over 4
+
+=item C</>, C<?>
+
+Search for the following pattern (same as in vim.)
+Similar to vim, the keyboard focus is moved from the main text into a
+small text entry field (command line in vim) Note the previous search
+pattern is always cleared when re-entering the entry field, but all
+previously used patterns are still available in the history. 
+
+As soon as a search expression is typed into the field, an incremental
+search is started and matching lines are highlighted. The cursor in
+the main text isn't actually moved there until the search is completed
+by pressing C<Return>.  The search can be aborted by C<^C> or C<Escape>.
+For more details see L<Key bindings in the search entry field>.
+
+=item C<n>, C<N>
+
+Repeats the previous search in forward or backwards direction
+respectively (similar to vim - however in contrary to vim C<n>
+always searches forward and C<N> always backwards because the
+standard vim behaviour of remembering and reversing the search
+direction with C<N> is very confusing.)
+
+=item S< >C<*>, C<#>
+
+Searches for the word under the cursor in forward or backwards direction
+respectively (same as in vim)
+
+=item C<&>
+
+Remove the highlighting of previous search matches (same as :nohlsearch
+in vim)  Note this does not disable highlighting in subsequent searches.
+
+=item I<ALT->C<f>
+
+Moves the focus in the search search entry field.  This is equivalent to
+C</> or C<?> but without changing the search direction (not in vim)
+This is equivalent to clicking into the "Find:" entry field with the
+mouse button.
+
+=item I<ALT->C<n>, I<ALT->C<p>
+
+Repeat a previous search, equivalent to C<n> and C<N> (not in vim)
+
+=item I<ALT->C<h>
+
+Enable the "Highlight all" option, i.e. highlight all lines in the text
+where the current search pattern matches (not in vim)
+
+=item I<ALT->C<a>
+
+Open the search result window and fill it with all text lines which match
+the current search pattern (not in vim)
+
+=back
+
+The following commands can be used to change the selection.
+
+Note that selected text is automatically exported and can be pasted
+into other applications.
+
+=over 4
+
+=item I<Shift-Left>, I<Shift-Right>, I<Shift-Up>, I<Shift-Down>
+
+Starts or extends the selection in the respective direction (not in vim)
+Note that trowser only supports the character-wise selection mode (like
+C<v> in vim)
+
+=item I<Shift-Home>, I<Shift-End>
+
+Starts or extends the selection from the current cursor position to the
+start or end of the current line (not in vim)
+
+=item I<Control-Shift-Home>, I<Control-Shift-End>
+
+Starts or extends the selection from the current cursor position to the
+start or end of the file (not in vim)
+
+=item ^c
+
+Copies the currently selected text to the clipboard.  (Note that this
+command is actually superfluous as the text is copied as soon as some
+text is selected.)
+
+=back
+
+Misc. commands:
+
+=over 4
+
+=item C<m>
+
+This key, or double-clicking into a text line, toggles a bookmark in the
+respective line (different from vim; note setting named bookmarks is not
+supported)
+
+=item I<i>
+
+Insert the current text line (or selection, if one currently exists) into
+the search result window (different from vim)
+
+=item I<ALT->C<+>, I<ALT->C<->
+
+Increases or decreases the font size for the text content. Note the behaviour
+when reaching the maximum or minimum font size is not defined.
+
+=back
+
+=head2 Key Bindings in the Search Entry Field
+
+The following commands can be used when the keyboard focus is in the
+B<search entry field> at the bottom of the main window:
+
+=over 4
+
+=item I<Return>
+
+Store the current pattern in the search history and return focus to the main
+window with the cursor on the next match (same as vim)   Note the cursor is
+already moved when entering the text, including highlighting of adjacent
+matches.  Note this command is equivalent to leaving the search field by
+clicking with the mouse outside or switching keyboard focus via I<TAB> or
+I<Shift-TAB>.
+
+=item I<Escape>, C<^c>
+
+Abort the current search, i.e. return focus to the main window and place the
+cursor on the previous position (same as in vim)
+
+=item C<^a>, C<^e>
+
+Move the insertion cursor to the start or end of the search text entry field
+(not in vim.)  Note: movement and selection via cursor keys works in the same
+way as described for the main text.
+
+=item C<^n>, C<^N>
+
+Jump to the next match on the current pattern. Note this does not affect the
+fall-back cursor position, i.e. when the search is aborted or the pattern is
+changed, the cursor returns to the original start position (not in vim)
+
+=item I<Up>, I<Down>
+
+Copies the previous or next pattern in the search history into the entry
+field. If the entry field already contains some text, the search is
+restoricted to patterns with the same prefix.
+
+=item C<^d>, C<^D>
+
+Complete the search text with the text to the right or left of the current
+match in the main text (i.e. right or left of the text marked with green
+background color.)
+
+=item C<^x>
+
+Remove the currently used pattern in the search history, if the current
+pattern was copied by use of I<Up> or I<Down>
+
+=item C<^h>
+
+Add the current search pattern as new color highlight pattern.
+
+=item C<^H>
+
+Opens the search history dialog.
+
+=item I<Alt->C<n>, I<Alt->C<p>
+
+Same as pressing the I<Next> or I<Previous> buttons respectively, i.e. search
+for the current pattern in forward or backwards direction and add the pattern
+to the search history. Keyboard focus remains in the search entry field.
+
+=item I<Alt->C<a>
+
+Open the search result window and fill it with all text lines which match
+the current search pattern (not in vim)
+
+=item I<Alt->C<c>
+
+Toggle the "match case" option, i.e. equivalent to clicking on I<Match case>
+(not in vim)
+
+=item I<Alt->C<e>
+
+Toggle the "Reg.Exp." option, i.e. equivalent to clicking on I<Match case>
+(not in vim)  When this option is enabled, special characters are parsed
+according to I<re_syntax> manual page; the syntax is almost identical to Perl
+with the exception of a few special characters (notably C<\m> and C<\M> to
+match beginning and end of words)  When the option is not enabled, no
+characters have a special meaning (i.e. even C<*>) and a simple sub-string
+search is started.
+
+Note: for performance reasons it's recommended to use case-sensitive
+sub-string searches for color highlighting, especially if you have many
+patterns. This is usually faster than combining multiple patterns
+with C<|> in a regular expression.
+
+=back
+
+=head2 Key Bindings in Dialogs
+
+The following commands can be used to manipulate the selection cursor
+in all dialogs which display lists (i.e. search result list,
+search history, bookmarks, highlight pattern editor)  Note there's
+no distinction between selection and cursor in these dialogs. This
+means you cannot move the selection cursor from line A to D using
+the keyboard without temporarily selectiing lines B and C in-between.
+
+Of course you can also manipulate the selection via the mouse in the
+usual ways, i.e. clicking on single entries, or dragging the mouse
+to select multiple elements, or pressing the mouse while holding
+Control or Shift keys pressed to add or remove single elements or
+extend the selection respectively.
+
+=over 4
+
+=item I<Up>, I<Down>
+
+Move the selection cursor one line up or down respectively, scrolling
+the view if necessary.  If no line is selected yet, the cursor is
+placed on the first or last line; if the previously selected line is
+still in the visible area, the cursor is placed there instead.
+
+=item I<Home>, I<End>
+
+Move the selection cursor on the first or last item in the list.
+
+=item I<Shift-Up>, I<Shift-Down>, I<Shift-Home>, I<Shift-End>
+
+Extend or reduce the selection in the given direction, or to the
+start or end of the list.
+
+=item I<Page-Up>, I<Page-Down>
+
+Scroll the view up or down by a page. These commands remove the
+selection cursor.
+
+=back
+
+=head1 OPTIONS
+
+The following command line options are available:
+
+=over 4
+
+=item B<-h> I<limit>, B<--head=limit>
+
+This option specifies the maximum number of bytes read from the start
+of the input file or stream, i.e. any following text is silently
+ignored.
+
+The limit value is remembered in the configuration file and used in
+the next invocation unless overridden.  When neither B<-h> or B<-t> are
+specified and data is loaded from a stream via STDIN, a small dialog
+window pops up when the buffer limit is exceeded. This allows the user
+to select between head and tail modes manually.
+
+=item B<-t> I<limit>, B<--tail=limit>
+
+This option specifies the maximum number of bytes to be read into the
+display buffer.  If the input is a file which is larger then the given
+buffer limit, text at the beginning of the file is skipped. If the
+input is a stream, all data is read into a temporary queue until
+the end-of-stream is reached; then the last I<limit> number of bytes
+which were read from the stream are loaded into the display buffer.
+
+The limit value is remembered in the configuration file and used in
+the next invocation unless overridden.
+
+=item B<-r> I<path>, B<--rcfile=path>
+
+This option can be used to specify an alternate configuration file.
+When this option is not present, the configuration file is stored in
+the home directory, see L<FILES>.
+
+=back
+
+=head1 ENVIRONMENT
+
+B<trowser> only evaluates the standard variables B<DISPLAY> (X11 display
+address) and B<HOME> (home directory, for storing the configuration file.)
+
+=head1 FILES
+
+=over 4
+
+=item B<$HOME/.trowserc>
+
+Configuration file where all personal settings are stored. Per default
+this is created in your home directory, but a different path and file
+name can be specified with the B<--rcfile> option (see L<"OPTIONS">).
+
+=head1 CEVEATS
+
+Currently only one pattern list for color highlighting is supported.
+Hence different highlighting for different file types can only be done
+by chosing different configuration files when starting trowser
+(see the I<--rcfile> option.)
+
+Not all vim navigation commands are implemented yet; Command repetition
+is supported only for a small sub-set of commands; Some commands behave
+slightly differently from vim (most notably the bookmark related commands.)
+vim's range and selection commands are not supported at all.
+
+Search repetition by pressing "Next" or "Previous" or the search history
+dialog is currently not interruptable and may take quite a while if the
+next match is several MB away. (This can be avoided by repeating the
+search via the entry field's internal search history, i.e. C</> and I<Up>)
+
+File store and load dialogs do not maintain a history of previously
+used files or directories. (This is so because it's expected that these
+features will not be used very often.)
+
+The pipe load and search result list dialogs are not designed very
+well yet (i.e. even more so than the other dialogs). Suggestions for
+improvements are welcome.
+
+Some configuration options cannot be modified via the GUI and require
+to manually edit the configuration file.
+
+=head1 SEE ALSO
+
+L<vim(1)>,
+L<less(1)>,
+L<head(1)>,
+L<tail(1)>,
+L<egrep(1)>,
+L<wish(1)>,
+L<tclsh(1)>,
+L<re_syntax(3tcl)>,
+L<perlre(1)>
+
+=head1 AUTHOR
+
+Written by Tom Zoerner <tomzo@sourceforge.net>
+
+The official homepage is L<http://www.nefkom.net/tomzo/prj/trowser/>
+
+=head1 COPYRIGHT
+
+Copyright 2007 Tom Zoerner. All rights reserved.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but B<without any warranty>; without even the implied warranty of
+B<merchantability> or B<fitness for a particular purpose>.  See the
+I<GNU General Public License> for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
