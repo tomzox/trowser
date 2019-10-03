@@ -15,13 +15,13 @@ will always apply the highlight to the complete text line.
 
 ## Screenshots
 
-[![thumbnail main window][images/screenthumb-main.png]][images/screenshot-main.png]
-[![thumbnail highlighting][images/screenthumb-highlight.png]][images/screenshot-highlight.png]
-[![thumbnail searching][images/screenthumb-search.png]][images/screenshot-search.png]
-[![thumbnail bookmarks][images/screenthumb-bookmarks.png]][images/screenshot-bookmarks.png]
-[![thumbnail loading from pipe][images/screenthumb-pipe.png]][images/screenshot-pipe.png]
+<IMG ALIGN="center" SRC="images/screenthumb-main.png" ALT="thumbnail main window" BORDER="10">
+<IMG ALIGN="center" SRC="images/screenthumb-highlight.png" ALT="thumbnail highlighting" BORDER="10">
+<IMG ALIGN="center" SRC="images/screenthumb-search.png" ALT="thumbnail searching" BORDER="10">
+<IMG ALIGN="center" SRC="images/screenthumb-bookmarks.png" ALT="thumbnail bookmarks" BORDER="10">
+<IMG ALIGN="center" SRC="images/screenthumb-pipe.png" ALT="thumbnail loading from pipe" BORDER="10">
 
-The screenshots (click on them to get a larger version) show some of the main features:
+The screenshots (see images sub-directory for larger versions) show some of the main features:
 
 <UL>
 <LI>The first screenshot shows the main window with a text which has color
@@ -40,7 +40,7 @@ with a blue dot in the first screenshot);
 input stream exceeds the buffer size to allow skipping excessive input data.
 </UL>
 
-For details and options please refer to the [manual page](manual.pod)
+For details and options please refer to the [manual page](trowser.pod)
 
 ## Rationale
 
