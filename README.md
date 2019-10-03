@@ -15,11 +15,7 @@ will always apply the highlight to the complete text line.
 
 ## Screenshots
 
-<IMG ALIGN="center" SRC="images/screenthumb-main.png" ALT="thumbnail main window" BORDER="10">
-<IMG ALIGN="center" SRC="images/screenthumb-highlight.png" ALT="thumbnail highlighting" BORDER="10">
-<IMG ALIGN="center" SRC="images/screenthumb-search.png" ALT="thumbnail searching" BORDER="10">
-<IMG ALIGN="center" SRC="images/screenthumb-bookmarks.png" ALT="thumbnail bookmarks" BORDER="10">
-<IMG ALIGN="center" SRC="images/screenthumb-pipe.png" ALT="thumbnail loading from pipe" BORDER="10">
+<IMG ALIGN="center" SRC="images/screenthumb-main.png" ALT="thumbnail main window" BORDER="10"> <IMG ALIGN="center" SRC="images/screenthumb-highlight.png" ALT="thumbnail highlighting" BORDER="10"> <IMG ALIGN="center" SRC="images/screenthumb-search.png" ALT="thumbnail searching" BORDER="10"> <IMG ALIGN="center" SRC="images/screenthumb-bookmarks.png" ALT="thumbnail bookmarks" BORDER="10"> <IMG ALIGN="center" SRC="images/screenthumb-pipe.png" ALT="thumbnail loading from pipe" BORDER="10">
 
 The screenshots (see images sub-directory for larger versions) show some of the main features:
 
