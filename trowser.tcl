@@ -338,7 +338,11 @@ proc CursorSetLine {where} {
 # is shown.
 #
 proc HighlightInit {} {
-  global patlist
+  global patlist tid_high_init
+
+  if {[info commands .hipro] ne ""} {
+    destroy .hipro
+  }
 
   if {[llength $patlist] > 0} {
     toplevel .hipro -takefocus 0 -relief sunken -borderwidth 2
@@ -358,12 +362,15 @@ proc HighlightInit {} {
       .f1.t tag configure $tagnam -background [lindex $w 1] -foreground [lindex $w 2]
       .f1.t tag lower $tagnam
       incr tagidx
+
+      HighlightVisible $pat $tagnam {}
     }
 
     .f1.t tag add margin 1.0 end
 
     # trigger highlighting for the 1st and following patterns
-    after 10 HighlightInitBg 0 $cid
+    set tid_high_init [after 10 HighlightInitBg 0 $cid]
+    .f1.t configure -cursor watch
   }
 }
 
@@ -374,7 +381,7 @@ proc HighlightInit {} {
 # up by means of a 10ms timer.
 #
 proc HighlightInitBg {tagidx cid} {
-  global patlist
+  global patlist tid_high_init
 
   if {$tagidx < [llength $patlist]} {
     set w [lindex $patlist $tagidx]
@@ -386,13 +393,14 @@ proc HighlightInitBg {tagidx cid} {
 
     # trigger next tag right away - or allow user interaction
     incr tagidx
-    after 10 HighlightInitBg $tagidx $cid
+    set tid_high_init [after 10 HighlightInitBg $tagidx $cid]
 
     # update the progress bar
     catch {.hipro.c coords $cid 0 0 [expr int(100*$tagidx/[llength $patlist])] 12}
 
   } else {
     catch {destroy .hipro}
+    .f1.t configure -cursor top_left_arrow
   }
 }
 
@@ -405,6 +413,26 @@ proc HighlightAll {pat tagnam opt} {
   set pos [.f1.t index end]
   scan $pos "%d.%d" max_line char
   set line 1
+  while {($line < $max_line) &&
+         ([set pos [eval .f1.t search $opt -- {$pat} "$line.0" end]] ne {})} {
+    scan $pos "%d.%d" line char
+    .f1.t tag add $tagnam "$line.0" "[expr $line + 1].0"
+    incr line
+  }
+}
+
+
+#
+# This function searches for all text lines which contain the given
+# sub-string and marks these lines with the given tag.
+#
+proc HighlightVisible {pat tagnam opt} {
+  set start_pos [.f1.t index {@1,1}]
+  set end_pos [.f1.t index "@[expr [winfo width .f1.t] - 1],[expr [winfo height .f1.t] - 1]"]
+  scan $start_pos "%d.%d" line char
+  scan $end_pos "%d.%d" max_line char
+  #puts "visible $start_pos...$end_pos: $pat $opt"
+
   while {($line < $max_line) &&
          ([set pos [eval .f1.t search $opt -- {$pat} "$line.0" end]] ne {})} {
     scan $pos "%d.%d" line char
@@ -451,8 +479,7 @@ proc Search {is_fwd is_changed {start_pos {}}} {
       .f1.t tag add find "$tlb_find_line.0" "[expr $tlb_find_line + 1].0"
     }
     if $tlb_hall {
-      after cancel SearchHighlightUpdate
-      after 500 SearchHighlightUpdate
+      SearchHighlightUpdate 1200
     }
 
   } else {
@@ -488,7 +515,7 @@ proc Search_GetBase {is_fwd is_init} {
     if $is_fwd {
       .f1.t mark set insert {@1,1}
     } else {
-      .f1.t mark set insert "@[expr [winfo width .t.f1] - 1],[expr [winfo height .t.f1] - 1]"
+      .f1.t mark set insert "@[expr [winfo width .f1.t] - 1],[expr [winfo height .f1.t] - 1]"
     }
     set start_pos insert
   } else {
@@ -553,9 +580,12 @@ proc SearchReset {} {
 # triggers an incremental search.
 #
 proc SearchVarTrace {name1 name2 op} {
-  after cancel SearchHighlightUpdate
-  after cancel SearchIncrement
-  after 10 SearchIncrement
+  global tid_search_inc tid_search_hall
+
+  after cancel $tid_search_inc
+  after cancel $tid_search_hall
+
+  set tid_search_inc [after 10 SearchIncrement]
 }
 
 
@@ -632,7 +662,9 @@ proc SearchIncLeave {} {
 # during regular search reset.
 #
 proc SearchHighlightClear {} {
-  global tlb_last_hall
+  global tlb_last_hall tid_search_hall
+
+  after cancel $tid_search_hall
 
   .f1.t tag remove find 1.0 end
   .f1.t tag remove findinc 1.0 end
@@ -641,22 +673,46 @@ proc SearchHighlightClear {} {
 
 
 #
+# This helper function is invoked by a timer and starts highlighting
+#
+proc SearchHighlightStart {pattern opt} {
+  global tlb_last_hall
+
+  .f1.t configure -cursor watch
+  update
+  # note: catch is required after "update" because the user may have destroyed the window
+  catch {
+    set tlb_last_hall $pattern
+    HighlightAll $pattern find $opt
+
+    .f1.t configure -cursor top_left_arrow
+  }
+}
+
+
+#
 # This function triggers color highlighting of all lines of text which match
 # the current search string.  The function is called when global highlighting
-# is en-/disabled and when the search string is modified.  In the latter case
-# the highlighting is delayed by a timer because the operation can take quite
-# a while and should not disturb the user while entering text in the search
-# entry field.
+# is en-/disabled and when the search string is modified.  (In the latter case
+# the highlighting is delayed by a timer by the caller because the operation
+# can take quite a while and should not disturb the user while entering text
+# in the search entry field.)
 #
-proc SearchHighlightUpdate {} {
+proc SearchHighlightUpdate {{delay 10}} {
   global tlb_find tlb_regexp tlb_hall tlb_last_hall
+  global tid_search_hall
 
   if {$tlb_find ne ""} {
     if $tlb_hall {
+      after cancel $tid_search_hall
+
       if {$tlb_last_hall ne $tlb_find} {
         if [SearchExprCheck] {
-          set tlb_last_hall $tlb_find
-          HighlightAll $tlb_find find [Search_GetOptions 0]
+          set opt [Search_GetOptions 0]
+
+          HighlightVisible $tlb_find find $opt
+
+          set tid_search_hall [after $delay SearchHighlightStart $tlb_find $opt]
         }
       }
     } else {
@@ -1601,7 +1657,11 @@ proc LoadStream {} {
     .f1.t insert end $data
   }
   .f1.t see end
-  update
+
+  global tid_search_inc tid_search_hall tid_high_init
+  after cancel $tid_high_init
+  after cancel $tid_search_inc
+  after cancel $tid_search_hall
   HighlightInit
   Mark_JumpPos
 }
@@ -1622,6 +1682,10 @@ proc LoadFile {filename} {
   .f1.t see end
   close $file
 
+  global tid_search_inc tid_search_hall tid_high_init
+  after cancel $tid_high_init
+  after cancel $tid_search_inc
+  after cancel $tid_search_hall
   HighlightInit
   Mark_JumpPos
 }
@@ -1820,6 +1884,12 @@ set last_jump_orig {}
 
 # This hash array stores the bookmark list. It's indices are text line numbers.
 array set mark_list {}
+
+# These variables hold IDs of timers (i.e. scripts delayed by "after")
+# They are used to cancel the scripts when necessary
+set tid_search_inc {}
+set tid_search_hall {}
+set tid_high_init {}
 
 # This list stores text patterns and associated colors for color-highlighting
 # in the main text window. Each list entry is again a list:
