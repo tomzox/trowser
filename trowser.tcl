@@ -3,7 +3,7 @@
 exec wish "$0" -- "$@"
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2009 Tom Zoerner
+# Copyright (C) 2007-2010 Tom Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.36 2010/04/26 10:23:02 tom Exp $
+# $Id: trowser.tcl,v 1.37 2010/09/08 10:34:00 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -2690,12 +2690,12 @@ proc ParseFrameTickNo {pos {cache_ref {}}} {
       # FN of this line is already known
       return $fn_cache($pos)
     } elseif {[info exists fn_cache(-1)]} {
-      set info $fn_cache(-1)
+      set prev_rslt $fn_cache(-1)
       scan [.f1.t index $pos] "%d" line
-      if {($line >= [lindex $info 0]) && ($line < [lindex $info 1])} {
+      if {($line >= [lindex $prev_rslt 0]) && ($line < [lindex $prev_rslt 1])} {
         # line is within the range of the most recently parsed frame
-        set fn_cache($pos) [lindex $info 2]
-        return [lindex $info 2]
+        set fn_cache($pos) [list [lindex $prev_rslt 2] [lindex $prev_rslt 3]]
+        return [list [lindex $prev_rslt 2] [lindex $prev_rslt 3]]
       }
     }
   }
@@ -2706,23 +2706,37 @@ proc ParseFrameTickNo {pos {cache_ref {}}} {
       # determine frame number by searching forwards and backwards for frame boundaries
       # marked by a frame separator pattern; then within these boundaries search for FN
       set prefix ""
+      set tick_no 0
       set pos1 [.f1.t search -regexp -backwards -- $tick_pat_sep [list $pos lineend] 1.0]
+      if {$pos1 ne ""} {
+        set dump [ExtractText $pos1 [list $pos1 lineend]]
+        regexp -- {([1-9][0-9]*)} $dump foo tick_no
+      } else {
+        set pos1 "1.0"
+      }
       set pos2 [.f1.t search -regexp -forwards -- $tick_pat_sep [list $pos lineend] end]
-      if {$pos1 eq ""} {set pos1 "1.0"}
       if {$pos2 eq ""} {set pos2 end}
       set pos3 [.f1.t search -regexp -count match_len -- $tick_pat_num $pos1 $pos2]
+      set fn_off 0
+      if {($pos3 eq "") && ($pos2 eq "end")} {
+        # line frame contains no TDMA FN: use last one +1
+        set pos2 $pos1
+        set pos1 [.f1.t search -regexp -backwards -- $tick_pat_sep $pos1 1.0]
+        set pos3 [.f1.t search -regexp -count match_len -- $tick_pat_num $pos1 $pos2]
+        set fn_off 1
+      }
       if {$pos3 ne ""} {
         set dump [ExtractText $pos3 [list $pos3 + $match_len chars]]
         if {[regexp -- $tick_pat_num $dump foo fn]} {
-          set prefix $fn
+          set prefix "$tick_no $fn"
 
           if {$cache_ref ne ""} {
             # add result to the cache
-            set fn_cache($pos) $fn
+            set fn_cache($pos) [list $tick_no $fn]
             # add a special entry to the cache remembering the extent of the current frame
             scan [.f1.t index $pos1] "%d" line1
             scan [.f1.t index $pos2] "%d" line2
-            set fn_cache(-1) [list $line1 $line2 $fn]
+            set fn_cache(-1) [list $line1 $line2 $tick_no $fn]
           }
         }
       }
@@ -2736,7 +2750,7 @@ proc ParseFrameTickNo {pos {cache_ref {}}} {
           set prefix $fn
 
           if {$cache_ref ne ""} {
-            set fn_cache($pos) $fn
+            set fn_cache($pos) [list $tick_no $fn]
           }
         }
       }
@@ -2761,10 +2775,10 @@ proc Mark_Toggle {line {txt {}}} {
 
   if {![info exists mark_list($line)]} {
     if {$txt eq ""} {
-      set tickno [ParseFrameTickNo insert]
+      set fn_prefix [ParseFrameTickNo insert]
       set txt [ExtractText "$line.0" "$line.0 lineend"]
       set txt [string trim $txt]
-      set mark_list($line) "$tick_str_prefix$tickno $txt"
+      set mark_list($line) "$tick_str_prefix$fn_prefix $txt"
     } else {
       set mark_list($line) $txt
     }
@@ -3867,8 +3881,8 @@ proc SearchHistory_GetLen {} {
 proc SearchList_Open {raise_win} {
   global font_content col_bg_content col_fg_content cur_filename
   global dlg_srch_shown dlg_srch_geom dlg_srch_sel dlg_srch_lines dlg_srch_fn_cache
-  global dlg_srch_highlight dlg_srch_show_fn dlg_srch_fn_delta dlg_srch_fn_root
-  global dlg_srch_undo dlg_srch_redo
+  global dlg_srch_show_fn dlg_srch_show_tick dlg_srch_tick_delta dlg_srch_tick_root
+  global dlg_srch_highlight dlg_srch_undo dlg_srch_redo
 
   PreemptBgTasks
   if {![info exists dlg_srch_shown]} {
@@ -3913,11 +3927,12 @@ proc SearchList_Open {raise_win} {
     .dlg_srch.menubar.search add separator
     .dlg_srch.menubar.search add command -label "Clear search highlight" -command {SearchHighlightClear} -accelerator "&"
     menu .dlg_srch.menubar.options -tearoff 0 -postcommand MenuPosted
-    .dlg_srch.menubar.options add checkbutton -label "Show frame number" -command SearchList_ToggleTickNo -variable dlg_srch_show_fn -accelerator "ALT-f"
-    .dlg_srch.menubar.options add checkbutton -label "Show frame no. delta" -command SearchList_ToggleTickNo -variable dlg_srch_fn_delta -accelerator "ALT-d"
+    .dlg_srch.menubar.options add checkbutton -label "Show frame number" -command SearchList_ToggleFrameNo -variable dlg_srch_show_fn -accelerator "ALT-f"
+    .dlg_srch.menubar.options add checkbutton -label "Show tick number" -command SearchList_ToggleFrameNo -variable dlg_srch_show_tick -accelerator "ALT-t"
+    .dlg_srch.menubar.options add checkbutton -label "Show tick num. delta" -command SearchList_ToggleFrameNo -variable dlg_srch_tick_delta -accelerator "ALT-d"
     .dlg_srch.menubar.options add checkbutton -label "Highlight search" -command SearchList_ToggleHighlight -variable dlg_srch_highlight -accelerator "ALT-h"
     .dlg_srch.menubar.options add separator
-    .dlg_srch.menubar.options add command -label "Select line as origin for FN delta" -command SearchList_SetFnRoot -accelerator "ALT-0"
+    .dlg_srch.menubar.options add command -label "Select line as origin for tick delta" -command SearchList_SetFnRoot -accelerator "ALT-0"
 
     frame .dlg_srch.f1
     text .dlg_srch.f1.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
@@ -3949,8 +3964,9 @@ proc SearchList_Open {raise_win} {
     bind .dlg_srch.f1.l <space> {SearchList_SelectionChange [TextSel_GetSelection dlg_srch_sel]}
     bind .dlg_srch.f1.l <Escape> {SearchList_SearchAbort 0}
     bind .dlg_srch.f1.l <Alt-Key-h> {set dlg_srch_highlight [expr {!$dlg_srch_highlight}]; SearchList_ToggleHighlight; break}
-    bind .dlg_srch.f1.l <Alt-Key-f> {set dlg_srch_show_fn [expr {!$dlg_srch_show_fn}]; SearchList_ToggleTickNo; break}
-    bind .dlg_srch.f1.l <Alt-Key-d> {set dlg_srch_fn_delta [expr {!$dlg_srch_fn_delta}]; SearchList_ToggleTickNo; break}
+    bind .dlg_srch.f1.l <Alt-Key-f> {set dlg_srch_show_fn [expr {!$dlg_srch_show_fn}]; SearchList_ToggleFrameNo; break}
+    bind .dlg_srch.f1.l <Alt-Key-t> {set dlg_srch_show_tick [expr {!$dlg_srch_show_tick}]; SearchList_ToggleFrameNo; break}
+    bind .dlg_srch.f1.l <Alt-Key-d> {set dlg_srch_tick_delta [expr {!$dlg_srch_tick_delta}]; SearchList_ToggleFrameNo; break}
     bind .dlg_srch.f1.l <Alt-Key-0> {SearchList_SetFnRoot; break}
     bind .dlg_srch.f1.l <Alt-Key-n> {SearchNext 1; break}
     bind .dlg_srch.f1.l <Alt-Key-p> {SearchNext 0; break}
@@ -3969,7 +3985,8 @@ proc SearchList_Open {raise_win} {
 
     # reset options to default values
     set dlg_srch_show_fn 0
-    set dlg_srch_fn_delta 0
+    set dlg_srch_show_tick 0
+    set dlg_srch_tick_delta 0
     set dlg_srch_highlight 0
 
     SearchList_Init
@@ -4025,14 +4042,14 @@ proc SearchList_Clear {} {
 # The function is used when the window is newly opened or a new file is loaded.
 #
 proc SearchList_Init {} {
-  global dlg_srch_shown dlg_srch_lines dlg_srch_fn_cache dlg_srch_fn_root
+  global dlg_srch_shown dlg_srch_lines dlg_srch_fn_cache dlg_srch_tick_root
   global dlg_srch_undo dlg_srch_redo
 
   if {[info exists dlg_srch_shown]} {
     set dlg_srch_lines {}
     set dlg_srch_undo {}
     set dlg_srch_redo {}
-    set dlg_srch_fn_root -1
+    set dlg_srch_tick_root -1
     array unset dlg_srch_fn_cache
   }
 }
@@ -4070,7 +4087,7 @@ proc SearchList_MenuPosted {} {
 proc SearchList_ContextMenu {xcoo ycoo} {
   global tlb_find
   global dlg_srch_sel dlg_srch_lines
-  global dlg_srch_show_fn dlg_srch_fn_delta dlg_srch_fn_root
+  global dlg_srch_show_fn dlg_srch_show_tick dlg_srch_tick_delta dlg_srch_tick_root
   global tick_pat_sep tick_pat_num tick_str_prefix dlg_srch_fn_cache
 
   TextSel_ContextSelection dlg_srch_sel $xcoo $ycoo
@@ -4095,7 +4112,7 @@ proc SearchList_ContextMenu {xcoo ycoo} {
     set fn [ParseFrameTickNo "$line.0" dlg_srch_fn_cache]
     if {$fn ne ""} {
       if {$c > 0} {.dlg_srch.ctxmen add separator}
-      .dlg_srch.ctxmen add command -label "Select line as origin for FN delta" \
+      .dlg_srch.ctxmen add command -label "Select line as origin for tick delta" \
                                    -command SearchList_SetFnRoot
       set c 1
     }
@@ -4201,24 +4218,24 @@ proc SearchList_SearchNext {is_fwd} {
 # This function is bound to the "Show frame number" checkbutton which toggles
 # the display of frame numbers in front of each line on/off.
 #
-proc SearchList_ToggleTickNo {} {
+proc SearchList_ToggleFrameNo {} {
   global dlg_srch_sel dlg_srch_lines dlg_srch_fn_cache tick_pat_sep tick_pat_num
-  global dlg_srch_show_fn dlg_srch_fn_delta dlg_srch_fn_root
+  global dlg_srch_show_fn dlg_srch_show_tick dlg_srch_tick_delta dlg_srch_tick_root
 
   if {($tick_pat_sep ne "") || ($tick_pat_num ne "")} {
     if {[SearchList_SearchAbort]} {
-      if {$dlg_srch_fn_delta && ($dlg_srch_fn_root == -1)} {
+      if {$dlg_srch_tick_delta && ($dlg_srch_tick_root == -1)} {
         set sel [TextSel_GetSelection dlg_srch_sel]
         if {[llength $sel] > 0} {
           set line [lindex $dlg_srch_lines [lindex $sel 0]]
           set fn [ParseFrameTickNo "$line.0" dlg_srch_fn_cache]
-          if {$fn ne ""} {
-            set dlg_srch_fn_root $fn
+          if {[llength $fn] != 0} {
+            set dlg_srch_tick_root [lindex $fn 0]
           } else {
             DisplayStatusLine search warn "Failed to extract a frame number from the selected line"
           }
         } else {
-          DisplayStatusLine search warn "Please select a line as origin for FN deltas"
+          DisplayStatusLine search warn "Please select a line as origin for tick deltas"
         }
       }
 
@@ -4227,7 +4244,7 @@ proc SearchList_ToggleTickNo {} {
 
   } else {
     DisplayStatusLine search error "No patterns defined in the RC file for parsing frame numbers"
-    set dlg_srch_fn_delta 0
+    set dlg_srch_tick_delta 0
     set dlg_srch_show_fn 0
   }
 }
@@ -4241,7 +4258,7 @@ proc SearchList_ToggleTickNo {} {
 #
 proc SearchList_SetFnRoot {} {
   global dlg_srch_sel dlg_srch_lines dlg_srch_fn_cache tick_pat_sep tick_pat_num
-  global dlg_srch_fn_delta dlg_srch_fn_root
+  global dlg_srch_show_fn dlg_srch_show_tick dlg_srch_tick_delta dlg_srch_tick_root
 
   if {($tick_pat_sep ne "") || ($tick_pat_num ne "")} {
     if {[SearchList_SearchAbort]} {
@@ -4250,16 +4267,16 @@ proc SearchList_SetFnRoot {} {
         set line [lindex $dlg_srch_lines [lindex $sel 0]]
         # extract the frame number from the text in the main window around the referenced line
         set fn [ParseFrameTickNo "$line.0" dlg_srch_fn_cache]
-        if {$fn ne ""} {
-          set dlg_srch_fn_delta 1
-          set dlg_srch_fn_root $fn
+        if {[llength $fn] != 0} {
+          set dlg_srch_tick_delta 1
+          set dlg_srch_tick_root [lindex $fn 0]
           SearchList_Refill
 
         } else {
-          DisplayStatusLine search error "Select a line as origin for FN deltas"
+          DisplayStatusLine search error "Select a line as origin for tick deltas"
         }
       } else {
-        DisplayStatusLine search error "Select a line as origin for FN deltas"
+        DisplayStatusLine search error "Select a line as origin for tick deltas"
       }
     }
   } else {
@@ -5201,7 +5218,8 @@ proc SearchList_ToggleMark {} {
 # bookmark marker) from the main window into the the search filter dialog.
 #
 proc SearchList_InsertLine {txt_line ins_pos} {
-  global dlg_srch_fn_cache dlg_srch_show_fn dlg_srch_fn_delta dlg_srch_fn_root
+  global dlg_srch_show_fn dlg_srch_show_tick dlg_srch_tick_delta dlg_srch_tick_root
+  global dlg_srch_fn_cache
   global tick_str_prefix img_marker mark_list
 
   # copy text content and tags out of the main window
@@ -5209,18 +5227,29 @@ proc SearchList_InsertLine {txt_line ins_pos} {
   set dump [ExtractText [list $pos linestart] [list $pos lineend]]
   set tag_list [lsearch -all -inline -glob [.f1.t tag names $pos] "tag*"]
 
-  if {$dlg_srch_fn_delta || $dlg_srch_show_fn} {
+  if {$dlg_srch_tick_delta || $dlg_srch_show_fn} {
     set fn [ParseFrameTickNo $pos dlg_srch_fn_cache]
-    if {[catch {expr {$fn + 0}}]} {
-      set fn 0
+    if {[llength $fn] > 0} {
+      set tick_no [lindex $fn 0]
+      if {[catch {expr {$tick_no + 0}}]} {
+        set tick_no 0
+      }
+    } else {
+      set tick_no 0
     }
-    if {$dlg_srch_fn_delta && $dlg_srch_show_fn} {
-      set prefix "   $tick_str_prefix$fn:[expr {$fn - $dlg_srch_fn_root}] "
-    } elseif $dlg_srch_show_fn {
-      set prefix "   $tick_str_prefix$fn "
-    } elseif $dlg_srch_fn_delta {
-      set prefix "   $tick_str_prefix[expr {$fn - $dlg_srch_fn_root}] "
+    set prefix "   "
+    if {$dlg_srch_tick_delta} {
+      append prefix [expr {$tick_no - $dlg_srch_tick_root}]
     }
+    if {$dlg_srch_show_tick} {
+      if {$prefix ne ""} {append prefix ":"}
+      append prefix $tick_no
+    }
+    if {$dlg_srch_show_fn} {
+      if {$prefix ne ""} {append prefix ":"}
+      append prefix $tick_str_prefix [lindex $fn 1]
+    }
+    append prefix " "
   } else {
     set prefix "   "
   }
@@ -7067,7 +7096,7 @@ proc OpenAboutDialog {} {
     label .about.name -text "Trace Browser"
     pack .about.name -side top -pady 8
 
-    label .about.copyr1 -text "Copyright (C) 2007-2009 Tom Zoerner" -font $font_normal
+    label .about.copyr1 -text "Copyright (C) 2007-2010 Tom Zoerner" -font $font_normal
     pack .about.copyr1 -side top
 
     message .about.m -font $font_normal -text {
@@ -8085,6 +8114,7 @@ proc DiscardContent {} {
   set mark_list_modified 0
   MarkList_Fill
 
+  SearchList_Clear
   SearchList_Init
 }
 
@@ -8831,7 +8861,7 @@ set load_buf_size 2000000
 
 # define RC file version limit for forwards compatibility
 set rcfile_compat 0x01000000
-set rcfile_version 0x01030000
+set rcfile_version 0x01030002
 set myrcfile "~/.trowserc"
 
 #
