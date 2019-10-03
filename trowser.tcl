@@ -132,10 +132,9 @@ proc CreateMainWindow {} {
 
   # frame #1: text widget and scrollbar
   frame .f1
-  text .f1.t -width 1 -height 1 -wrap none -undo 0 \
+  text .f1.t -width 1 -height 1 -wrap none -yscrollcommand {.f1.sb set} \
              -font $font_content -background $col_bg_content -foreground $col_fg_content \
-             -cursor top_left_arrow -relief flat -exportselection 1 \
-             -yscrollcommand {.f1.sb set}
+             -cursor top_left_arrow -relief flat -exportselection 1
   pack .f1.t -side left -fill both -expand 1
   scrollbar .f1.sb -orient vertical -command {.f1.t yview} -takefocus 0
   pack .f1.sb -side left -fill y
@@ -310,7 +309,8 @@ proc HighlightInit {} {
     .f1.t tag add margin 1.0 end
 
     foreach w $patlist {
-      HighlightVisible [lindex $w 0] [lindex $w 4] {}
+      set opt [Search_GetOptions [lindex $w 1] [lindex $w 2]]
+      HighlightVisible [lindex $w 0] [lindex $w 4] $opt
     }
 
     # trigger highlighting for the 1st and following patterns
@@ -487,7 +487,7 @@ proc SearchHighlightUpdate {} {
       after cancel $tid_search_hall
 
       if {$tlb_last_hall ne $tlb_find} {
-        if [SearchExprCheck] {
+        if [SearchExprCheck 1] {
           set opt [Search_GetOptions $tlb_regexp $tlb_case]
 
           HighlightVisible $tlb_find find $opt
@@ -544,6 +544,42 @@ proc SearchHighlightSettingChange {} {
 
 
 #
+# [UNUSED] Model for a function which breaks up the search to allow for
+# interrupts by keyboard or mouse events.  The caller would have to take
+# care to set a grab and avoid recursive searches
+#
+proc SearchInterruptible {pat is_fwd opt start len_var} {
+  global bg_search_pos bg_search_len
+  upvar $len_var match_len
+
+  if $is_fwd {
+    set end [.f1.t index end]
+  } else {
+    set end "1.0"
+  }
+  set pos ""
+  while {($pos eq "") && ($start ne $end)} {
+    if {$is_fwd} {
+      set next [.f1.t index [list $start + 5000 lines lineend]]
+    } else {
+      set next [.f1.t index [list $start - 5000 lines linestart]]
+    }
+    unset -nocomplain bg_search_pos
+    set cmd [concat .f1.t search $opt -count bg_search_len -- [list $pat] $start $next]
+    set tid [after idle set bg_search_pos "\[eval" [list $cmd] "\]"]
+    vwait bg_search_pos
+    set pos $bg_search_pos
+    set start $next
+  }
+  if [info exists bg_search_len] {
+    set match_len $bg_search_len
+  }
+  unset -nocomplain bg_search_pos bg_search_len
+  return $pos
+}
+
+
+#
 # This is the main search function which is invoked when the user
 # enters text in the "find" entry field or repeats a previous search.
 #
@@ -551,7 +587,7 @@ proc Search {is_fwd is_changed {start_pos {}}} {
   global tlb_find tlb_hall tlb_case tlb_regexp tlb_last_hall tlb_last_dir
 
   set found 0
-  if {($tlb_find ne "") && [SearchExprCheck]} {
+  if {($tlb_find ne "") && [SearchExprCheck 1]} {
 
     set tlb_last_dir $is_fwd
     set search_opt [Search_GetOptions $tlb_regexp $tlb_case $tlb_last_dir]
@@ -570,6 +606,9 @@ proc Search {is_fwd is_changed {start_pos {}}} {
     } else {
       set pos ""
     }
+    #alternative
+    #set pos [SearchInterruptible $tlb_find $is_fwd $search_opt $start_pos match_len]
+
     if {($pos ne "") || $is_changed} {
       if {!$tlb_hall || ($tlb_last_hall ne $tlb_find)} {
         SearchHighlightClear
@@ -620,8 +659,7 @@ proc SearchIncrement {} {
   global tlb_find tlb_last_dir tlb_inc_base tlb_hist tlb_hist_pos tlb_hist_base
 
   if {[focus -displayof .] eq ".f2.e"} {
-    if {($tlb_find ne {}) &&
-        ([catch {regexp -- $tlb_find ""}] == 0)} {
+    if {($tlb_find ne {}) && [SearchExprCheck 0]} {
 
       if {![info exists tlb_inc_base]} {
         set tlb_inc_base [Search_GetBase $tlb_last_dir 1]
@@ -633,6 +671,14 @@ proc SearchIncrement {} {
       if {($found == 0) && [info exists tlb_inc_base]} {
         .f1.t mark set insert $tlb_inc_base
         .f1.t see insert
+
+        if $tlb_last_dir {
+          DisplayStatusLine search warn "No match until end of file"
+        } else {
+          DisplayStatusLine search warn "No match until start of file"
+        }
+      } else {
+        ClearStatusLine search
       }
 
       if {[info exists tlb_hist_pos] &&
@@ -641,6 +687,12 @@ proc SearchIncrement {} {
       }
     } else {
       SearchReset
+
+      if {$tlb_find ne {}} {
+        DisplayStatusLine search error "Incomplete or invalid reg.exp."
+      } else {
+        ClearStatusLine search
+      }
     }
   }
 }
@@ -649,13 +701,17 @@ proc SearchIncrement {} {
 #
 # This function checks if the search pattern syntax is valid
 #
-proc SearchExprCheck {} {
+proc SearchExprCheck {display} {
   global tlb_find tlb_regexp
 
   if {$tlb_regexp && [catch {regexp -- $tlb_find ""} cerr]} {
-    set str $tlb_find
-    tk_messageBox -icon error -type ok -parent . \
-                  -message "Search has invalid regular expression: $cerr"
+    if $display {
+      set pos [string last ":" $cerr]
+      if {$pos >= 0} {
+        set cerr [string trim [string range $cerr [expr $pos + 1] end]]
+      }
+      DisplayStatusLine search error "Syntax error in search expression: $cerr"
+    }
     return 0
   } else {
     return 1
@@ -734,7 +790,7 @@ proc SearchNext {is_fwd} {
       }
     }
   } else {
-    DisplayStatusLine search warn "No pattern defined for search repeat"
+    DisplayStatusLine search error "No pattern defined for search repeat"
   }
 }
 
@@ -755,6 +811,7 @@ proc SearchReset {} {
     .f1.t see insert
     unset tlb_inc_base
   }
+  ClearStatusLine search
 }
 
 
@@ -769,6 +826,8 @@ proc SearchInit {} {
     set tlb_find_focus 1
     set tlb_find {}
     unset -nocomplain tlb_hist_pos tlb_hist_base
+
+    ClearStatusLine search
   }
 }
 
@@ -791,7 +850,9 @@ proc SearchLeave {} {
   }
 
   if $tlb_hall {
-    SearchHighlightUpdate
+    if [SearchExprCheck 0] {
+      SearchHighlightUpdate
+    }
   }
 }
 
@@ -820,7 +881,7 @@ proc SearchAbort {} {
 proc SearchReturn {} {
   global tlb_find
 
-  if [SearchExprCheck] {
+  if [SearchExprCheck 1] {
     # note this implicitly triggers the leave event
     focus .f1.t
   }
@@ -935,7 +996,7 @@ proc Search_Complete {} {
       } else {
         set opt {--}
       }
-      if [SearchExprCheck] {
+      if [SearchExprCheck 1] {
         if {[regexp $opt "^${tlb_find}" $dump word]} {
           set off [string length $word]
         }
@@ -992,9 +1053,11 @@ proc SearchWord {is_fwd} {
 
   set pos [.f1.t index insert]
   if {$pos ne ""} {
-    set dump [ExtractText $pos [list $pos lineend]]
 
+    # extract word to the right starting at the cursor position
+    set dump [ExtractText $pos [list $pos lineend]]
     if {[regexp {^[\w\-]+} $dump word]} {
+
       # complete word to the left
       set dump [ExtractText [list $pos linestart] $pos]
       if {[regexp {\w+$} $dump word2]} {
@@ -1002,7 +1065,7 @@ proc SearchWord {is_fwd} {
       }
       set word [Search_EscapeSpecialChars $word]
 
-      # match on word boundaries
+      # add regexp to match on word boundaries
       if $tlb_regexp {
         set nword {}
         append nword {\m} $word {\M}
@@ -1012,7 +1075,16 @@ proc SearchWord {is_fwd} {
       set tlb_find $word
       Search_AddHistory $tlb_find
 
-      Search $is_fwd 1
+      ClearStatusLine search
+      set found [Search $is_fwd 1]
+
+      if {$found == 0} {
+        if $is_fwd {
+          DisplayStatusLine search warn "No match until end of file"
+        } else {
+          DisplayStatusLine search warn "No match until start of file"
+        }
+      }
     }
   }
 }
@@ -1034,7 +1106,7 @@ proc SearchCharInLine {char dir} {
       set char $last_inline_char
       set dir [expr $dir * $last_inline_dir]
     } else {
-      DisplayStatusLine search_inline warn "No previous in-line character search"
+      DisplayStatusLine search_inline error "No previous in-line character search"
       return
     }
   }
@@ -1108,19 +1180,19 @@ proc Search_RemoveFromHistory {} {
 proc DisplayStatusLine {topic type msg} {
   global col_bg_content tid_status_line status_line_topic
 
+  switch $type {
+    error {set col {#ff6b6b}}
+    warn {set col {#ffcc5d}}
+    default {set col $col_bg_content}
+  }
   set old_focus [focus -displayof .]
+
   if {[info commands .stline] eq ""} {
     toplevel .stline -background $col_bg_content -relief ridge -borderwidth 2 \
                      -highlightthickness 0 -takefocus 0
     wm group .stline .
     wm overrideredirect .stline 1
     wm resizable .stline 0 0
-
-    switch $type {
-      error {set col {#ff6b6b}}
-      warn {set col {#ffcc5d}}
-      default {set col $col_bg_content}
-    }
 
     label .stline.l -text $msg -background $col
     pack .stline.l -side left
@@ -1130,7 +1202,7 @@ proc DisplayStatusLine {topic type msg} {
 
   } else {
     raise .stline
-    .stline.l configure -text $msg
+    .stline.l configure -text $msg -background $col
   }
 
   after cancel $tid_status_line
@@ -1254,13 +1326,13 @@ proc YviewSet {where col} {
     set wh [winfo height .f1.t]
 
     if {$where eq "top"} {
-      set delta [expr [lindex $pos 1] / $fh]
+      set delta [expr int([lindex $pos 1] / $fh)]
 
     } elseif {$where eq "center"} {
-      set delta [expr 0 - (($wh/2 - [lindex $pos 1] + [lindex $pos 3]/2) / $fh)]
+      set delta [expr 0 - int(($wh/2 - [lindex $pos 1] + [lindex $pos 3]/2) / $fh)]
 
     } elseif {$where eq "bottom"} {
-      set delta [expr 0 - (($wh - [lindex $pos 1] - [lindex $pos 3]) / $fh)]
+      set delta [expr 0 - int(($wh - [lindex $pos 1] - [lindex $pos 3]) / $fh)]
 
     } else {
       set delta 0
@@ -1335,7 +1407,7 @@ proc CursorSetLine {where} {
     .f1.t mark set insert {@1,1}
 
   } elseif {$where eq "center"} {
-    .f1.t mark set insert "@1,[expr [winfo height .f1.t] / 2]"
+    .f1.t mark set insert "@1,[expr int([winfo height .f1.t] / 2])"
 
   } elseif {$where eq "bottom"} {
     .f1.t mark set insert "@1,[winfo height .f1.t] linestart"
@@ -1395,7 +1467,7 @@ proc XviewScroll {how delta dir} {
 
     # check if cursor is fully visible
     if {([llength $pos_new] != 4) || ([lindex $pos_new 2] == 0)} {
-      set ycoo [expr [lindex $pos_old 1] + ([lindex $pos_old 3] / 2)]
+      set ycoo [expr [lindex $pos_old 1] + int([lindex $pos_old 3] / 2)]
       if {$dir < 0} {
         .f1.t mark set insert "@[winfo width .f1.t],$ycoo"
       } else {
@@ -1433,14 +1505,14 @@ proc XviewSet {where} {
   set w [winfo width .f1.t]
   if {($coo ne "") && ($w != 0)} {
     set fract_visible [expr [lindex $xpos 1] - [lindex $xpos 0]]
-    set fract_insert [expr (2.0 + [lindex $coo 0] + [lindex $coo 2]) / $w]
+    set fract_insert [expr double(2 + [lindex $coo 0] + [lindex $coo 2]) / $w]
 
     if {$where eq "left"} {
       set off [expr [lindex $xpos 0] + ($fract_insert * $fract_visible)]
-      if {$off > 1} {set off 1}
+      if {$off > 1.0} {set off 1.0}
     } else {
       set off [expr [lindex $xpos 0] - ((1 - $fract_insert) * $fract_visible)]
-      if {$off < 0} {set off 0}
+      if {$off < 0.0} {set off 0.0}
     }
     .f1.t xview moveto $off
     .f1.t see insert
@@ -1588,7 +1660,7 @@ proc KeyCmd {char} {
       } elseif {$char eq "-"} {
         Mark_JumpNext 0
       } else {
-        DisplayStatusLine keycmd warn "Undefined key sequence \"'$char\""
+        DisplayStatusLine keycmd error "Undefined key sequence \"'$char\""
       }
       set last_key_char {}
       set result 1
@@ -1599,7 +1671,7 @@ proc KeyCmd {char} {
       if [info exists key_hash($char)] {
         uplevel {#0} $key_hash($char)
       } else {
-        DisplayStatusLine keycmd warn "Undefined key sequence \"$char\""
+        DisplayStatusLine keycmd error "Undefined key sequence \"$char\""
       }
       set last_key_char {}
       set result 1
@@ -1822,7 +1894,7 @@ proc KeyCmd_ExecSearch {is_fwd} {
         incr count
       }
     } else {
-      DisplayStatusLine search warn "No pattern defined for search repeat"
+      DisplayStatusLine search error "No pattern defined for search repeat"
     }
   }
 } 
@@ -3576,7 +3648,7 @@ proc Palette_OpenDialog {} {
     wm title .dlg_cols "Color palette"
     wm group .dlg_cols .
 
-    label .dlg_cols.lab_hd -text "Pre-define a color palette for quick selection\nwhen changing colors. Use the context menu\nto modify the palette:" \
+    label .dlg_cols.lab_hd -text "Pre-define a color palette for quick selection\nwhen changing colors. Use the context menu\nor drag-and-drop to modify the palette:" \
                            -font $font_normal -justify left
     pack .dlg_cols.lab_hd -side top -anchor w -pady 5 -padx 5
 
@@ -3755,8 +3827,8 @@ proc Palette_MoveColorEnd {idx cid xcoo ycoo} {
   set sz 20
   incr xcoo -2
   incr ycoo -2
-  if {$xcoo < 0} {set col_idx 0} else {set col_idx [expr $xcoo / $sz]}
-  if {$ycoo < 0} {set row_idx 0} else {set row_idx [expr $ycoo / $sz]}
+  if {$xcoo < 0} {set col_idx 0} else {set col_idx [expr int($xcoo / $sz)]}
+  if {$ycoo < 0} {set row_idx 0} else {set row_idx [expr int($ycoo / $sz)]}
 
   set new_idx [expr ($row_idx * 10) + $col_idx]
   set col [lindex $dlg_cols_palette $idx]
@@ -3910,7 +3982,7 @@ proc OpenLoadPipeDialog {stop} {
     grid  .dlg_load.f1.val_bufil -sticky w -column 1 -row $row -columnspan 2
     incr row
 
-    set dlg_load_file_limit [expr $load_buf_size/(1024*1024)]
+    set dlg_load_file_limit [expr int(($load_buf_size+(1024*1024-1))/(1024*1024))]
     label .dlg_load.f1.lab_bufsz -text "Buffer size:"
     grid  .dlg_load.f1.lab_bufsz -sticky w -column 0 -row $row
     frame .dlg_load.f1.f11
@@ -4130,10 +4202,14 @@ proc LoadPipe {} {
   set cur_filename ""
   if {![info exists load_file_mode]}  {
     set load_file_mode 0
+  }
+  if {![info exists load_file_close]} {
     set load_file_close 1
-    if {[catch {set load_file_sum [expr wide(0)]}] != 0} {
-       # backwards compatibility to older Tcl versions without 64-bit support
-       set load_file_sum 0
+  }
+  if {![info exists load_file_sum]} {
+    if {[catch "set load_file_sum [expr wide(0)]"] != 0} {
+      # backwards compatibility to older Tcl versions without 64-bit support
+      set load_file_sum 0
     }
   }
   set load_file_data {}
@@ -4325,7 +4401,7 @@ proc UserQuit {} {
 proc LoadRcFile {isDefault} {
   global tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
   global dlg_mark_geom dlg_tags_geom main_win_geom
-  global patlist col_palette font_content load_buf_size
+  global patlist col_palette font_content load_buf_size load_buf_size_opt
   global rcfile_version myrcfile
 
   set error 0
@@ -4359,6 +4435,11 @@ proc LoadRcFile {isDefault} {
       }
     }
     close $rcfile
+  }
+
+  # override config var with command line options
+  if [info exists load_buf_size_opt] {
+    set load_buf_size $load_buf_size_opt
   }
 }
 
@@ -4457,6 +4538,87 @@ proc UpdateRcAfterIdle {} {
 
   if {$tid_update_rc_min eq ""} {
     set tid_update_rc_min [after 60000 UpdateRcFile]
+  }
+}
+
+
+#
+# This function is called when the program is started with -help to list all
+# possible command line options.
+#
+proc PrintUsage {argvn reason} {
+  global argv0
+
+  if {$argvn ne ""} {
+    puts stderr "$argv0: $reason: $argvn"
+  }
+  puts stderr "Usage: $argv0 \[options\] {file|-}"
+  puts stderr "The following options are available:"
+  puts stderr "  -help:\t\tPrints this message"
+  puts stderr "  -head:\t\tLoad start of file if buffer size is exceeded"
+  puts stderr "  -tail:\t\tLoad end of file if buffer size is exceeded"
+  puts stderr "  -size <bytes>:\tSize of text buffer in characters"
+  puts stderr "  -rcfile <path>:\tUse alternate config file (default: ~/.l1trowserc)"
+
+  exit
+}
+
+
+#
+# This function parses and evaluates the command line arguments.
+#
+proc ParseArgv {} {
+  global argv load_file_mode load_buf_size_opt myrcfile
+
+  set file_seen 0
+  for {set arg_idx 0} {$arg_idx < [llength $argv]} {incr arg_idx} {
+    set arg [lindex $argv $arg_idx]
+
+    if {[string match "-?*" $arg]} {
+      switch -exact -- $arg {
+        -tail {
+          set load_file_mode 1
+        }
+        -head {
+          set load_file_mode 0
+        }
+        -len -
+        -size {
+          if {$arg_idx + 1 < [llength $argv]} {
+            incr arg_idx
+            set load_buf_size_opt [lindex $argv $arg_idx]
+            if {([catch {expr $load_buf_size_opt <= 0}] != 0) || ($load_buf_size_opt <= 0)} {
+              PrintUsage -size "buffer size must be a positive number"
+            }
+          } else {
+            PrintUsage $arg "requires an argument"
+          }
+        }
+        -rcfile {
+          if {$arg_idx + 1 < [llength $argv]} {
+            incr arg_idx
+            set myrcfile [lindex $argv $arg_idx]
+          } else {
+            PrintUsage $arg "requires an argument"
+          }
+        }
+        -help -
+        default {
+          PrintUsage {} {}
+        }
+      }
+    } else {
+      if {$arg_idx + 1 == [llength $argv]} {
+        set file_seen 1
+      } else {
+        incr arg_idx
+        PrintUsage [lindex $argv $arg_idx] "only one file name expected"
+      }
+    }
+  }
+  if {!$file_seen} {
+    puts stderr "File name missing (use \"-\" for stdin)"
+    PrintUsage {} {}
   }
 }
 
@@ -4614,21 +4776,17 @@ if {[catch {tk appname "trowser"}]} {
   puts stderr "Tk initialization failed"
   exit
 }
+ParseArgv
 LoadRcFile 1
 InitResources
 CreateMainWindow
 HighlightCreateTags
+update
 
-if {$argc == 1} {
-  update
-  if {[lindex $argv 0] eq "-"} {
-    LoadPipe
-  } else {
-    LoadFile [lindex $argv 0]
-  }
+if {[lindex $argv end] eq "-"} {
+  LoadPipe
 } else {
-  puts stderr "Usage: $argv0 <file>"
-  exit
+  LoadFile [lindex $argv end]
 }
 
 # done - all following actions are event-driven
