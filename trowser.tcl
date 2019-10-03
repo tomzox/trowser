@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.31 2009/03/17 18:18:59 tom Exp $
+# $Id: trowser.tcl,v 1.32 2009/03/17 20:23:32 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -5665,6 +5665,7 @@ proc TagList_ContextPopulate {wid show_all} {
   set sel_cnt [llength $sel]
 
   set state_find [expr {($tlb_find eq "") ? "disabled" : "normal"}]
+  set state_find_sel_1 [expr {(($tlb_find eq "")||($sel_cnt != 1)) ? "disabled" : "normal"}]
   set state_sel_1 [expr {($sel_cnt != 1) ? "disabled" : "normal"}]
   set state_sel_n0 [expr {($sel_cnt == 0) ? "disabled" : "normal"}]
 
@@ -5674,7 +5675,7 @@ proc TagList_ContextPopulate {wid show_all} {
     $wid add command -label "Edit markup..." -command [list Markup_OpenDialog $sel] -state $state_sel_1
     $wid add separator
     $wid add command -label "Copy to search field" -command [list TagList_CopyToSearch $sel] -state $state_sel_1
-    $wid add command -label "Update from search field" -command [list TagList_CopyFromSearch $sel] -state $state_find
+    $wid add command -label "Update from search field" -command [list TagList_CopyFromSearch $sel] -state $state_find_sel_1
   }
   $wid add command -label "Add current search" -command {TagList_AddSearch .dlg_tags} -state $state_find
   if {($state_sel_n0 eq "normal") || $show_all} {
@@ -5940,18 +5941,20 @@ proc TagList_Fill {} {
 proc TagList_PopupColorPalette {pat_idx is_fg} {
   global patlist
 
-  .dlg_tags.f1.l see "[expr {$pat_idx + 1}].0"
+  if {([llength $pat_idx] == 1) && ($pat_idx < [llength $patlist])} {
+    .dlg_tags.f1.l see "[expr {$pat_idx + 1}].0"
 
-  set cool [.dlg_tags.f1.l dlineinfo "[expr {$pat_idx + 1}].0"]
-  set rootx [expr {[winfo rootx .dlg_tags] + [lindex $cool 0]}]
-  set rooty [expr {[winfo rooty .dlg_tags] + [lindex $cool 1]}]
+    set cool [.dlg_tags.f1.l dlineinfo "[expr {$pat_idx + 1}].0"]
+    set rootx [expr {[winfo rootx .dlg_tags] + [lindex $cool 0]}]
+    set rooty [expr {[winfo rooty .dlg_tags] + [lindex $cool 1]}]
 
-  set w [lindex $patlist $pat_idx]
-  set col_idx [expr {$is_fg ? 7 : 6}]
-  set def_col [lindex $w $col_idx]
+    set w [lindex $patlist $pat_idx]
+    set col_idx [expr {$is_fg ? 7 : 6}]
+    set def_col [lindex $w $col_idx]
 
-  PaletteMenu_Popup .dlg_tags $rootx $rooty \
-                    [list TagList_UpdateColor $pat_idx $is_fg] [lindex $w $col_idx]
+    PaletteMenu_Popup .dlg_tags $rootx $rooty \
+                      [list TagList_UpdateColor $pat_idx $is_fg] [lindex $w $col_idx]
+  }
 }
 
 
@@ -5964,21 +5967,23 @@ proc TagList_PopupColorPalette {pat_idx is_fg} {
 proc TagList_UpdateColor {pat_idx is_fg col} {
   global patlist dlg_tags_sel
 
-  set w [lindex $patlist $pat_idx]
-  set col_idx [expr {$is_fg ? 7 : 6}]
+  if {([llength $pat_idx] == 1) && ($pat_idx < [llength $patlist])} {
+    set w [lindex $patlist $pat_idx]
+    set col_idx [expr {$is_fg ? 7 : 6}]
 
-  set w [lreplace $w $col_idx $col_idx $col]
-  if {[catch {.dlg_tags.f1.l tag configure [lindex $w 4] -background [lindex $w 6] -foreground [lindex $w 7]}] == 0} {
-    # clear selection so that the color becomes visible
-    TextSel_SetSelection dlg_tags_sel {}
+    set w [lreplace $w $col_idx $col_idx $col]
+    if {[catch {.dlg_tags.f1.l tag configure [lindex $w 4] -background [lindex $w 6] -foreground [lindex $w 7]}] == 0} {
+      # clear selection so that the color becomes visible
+      TextSel_SetSelection dlg_tags_sel {}
 
-    set patlist [lreplace $patlist $pat_idx $pat_idx $w]
-    UpdateRcAfterIdle
+      set patlist [lreplace $patlist $pat_idx $pat_idx $w]
+      UpdateRcAfterIdle
 
-    .f1.t tag configure [lindex $w 4] -background [lindex $w 6] -foreground [lindex $w 7]
+      .f1.t tag configure [lindex $w 4] -background [lindex $w 6] -foreground [lindex $w 7]
 
-    SearchList_CreateHighlightTags
-    MarkList_CreateHighlightTags
+      SearchList_CreateHighlightTags
+      MarkList_CreateHighlightTags
+    }
   }
 }
 
@@ -6063,17 +6068,19 @@ proc TagList_CopyToSearch {pat_idx} {
   global patlist
   global tlb_find_focus tlb_find tlb_regexp tlb_case
 
-  set w [lindex $patlist $pat_idx]
+  if {([llength $pat_idx] == 1) && ($pat_idx < [llength $patlist])} {
+    set w [lindex $patlist $pat_idx]
 
-  # force focus into find entry field & suppress "Enter" event
-  SearchInit
-  set tlb_find_focus 1
-  focus .f2.e
+    # force focus into find entry field & suppress "Enter" event
+    SearchInit
+    set tlb_find_focus 1
+    focus .f2.e
 
-  SearchHighlightClear
-  set tlb_find [lindex $w 0]
-  set tlb_regexp [lindex $w 1]
-  set tlb_case [lindex $w 2]
+    SearchHighlightClear
+    set tlb_find [lindex $w 0]
+    set tlb_regexp [lindex $w 1]
+    set tlb_case [lindex $w 2]
+  }
 }
 
 
@@ -6085,23 +6092,25 @@ proc TagList_CopyFromSearch {pat_idx} {
   global tlb_find_focus tlb_find tlb_regexp tlb_case
   global patlist
 
-  set answer [tk_messageBox -type okcancel -icon question -parent .dlg_tags \
-                -message "Please confirm overwriting the search pattern for this entry? This cannot be undone"]
-  if {$answer eq "ok"} {
-    set w [lindex $patlist $pat_idx]
-    set w [lreplace $w 0 2 $tlb_find $tlb_regexp $tlb_case]
-    set patlist [lreplace $patlist $pat_idx $pat_idx $w]
-    UpdateRcAfterIdle
+  if {([llength $pat_idx] == 1) && ($pat_idx < [llength $patlist])} {
+    set answer [tk_messageBox -type okcancel -icon question -parent .dlg_tags \
+                  -message "Please confirm overwriting the search pattern for this entry? This cannot be undone"]
+    if {$answer eq "ok"} {
+      set w [lindex $patlist $pat_idx]
+      set w [lreplace $w 0 2 $tlb_find $tlb_regexp $tlb_case]
+      set patlist [lreplace $patlist $pat_idx $pat_idx $w]
+      UpdateRcAfterIdle
 
-    # apply the tag to the text content
-    .f1.t tag remove [lindex $w 4] 1.0 end
-    set opt [Search_GetOptions [lindex $w 0] [lindex $w 1] [lindex $w 2]]
-    HighlightAll [lindex $w 0] [lindex $w 4] $opt
+      # apply the tag to the text content
+      .f1.t tag remove [lindex $w 4] 1.0 end
+      set opt [Search_GetOptions [lindex $w 0] [lindex $w 1] [lindex $w 2]]
+      HighlightAll [lindex $w 0] [lindex $w 4] $opt
 
-    TagList_DisplayDelete $pat_idx
-    TagList_DisplayInsert $pat_idx $pat_idx
-    TextSel_SetSelection dlg_tags_sel $pat_idx
-    .dlg_tags.f1.l see "[expr {$pat_idx + 1}].0"
+      TagList_DisplayDelete $pat_idx
+      TagList_DisplayInsert $pat_idx $pat_idx
+      TextSel_SetSelection dlg_tags_sel $pat_idx
+      .dlg_tags.f1.l see "[expr {$pat_idx + 1}].0"
+    }
   }
 }
 
@@ -6124,15 +6133,17 @@ proc TagList_Remove {pat_sel} {
     if {$answer eq "yes"} {
 
       foreach idx [lsort -integer -decreasing -unique $pat_sel] {
-        set w [lindex $patlist $idx]
-        set patlist [lreplace $patlist $idx $idx]
+        if {$idx < [llength $patlist]} {
+          set w [lindex $patlist $idx]
+          set patlist [lreplace $patlist $idx $idx]
 
-        # remove the highlight in the main window
-        .f1.t tag delete [lindex $w 4]
+          # remove the highlight in the main window
+          .f1.t tag delete [lindex $w 4]
 
-        # remove the highlight in other dialogs, if currently open
-        SearchList_DeleteTag [lindex $w 4]
-        MarkList_DeleteTag [lindex $w 4]
+          # remove the highlight in other dialogs, if currently open
+          SearchList_DeleteTag [lindex $w 4]
+          MarkList_DeleteTag [lindex $w 4]
+        }
       }
       UpdateRcAfterIdle
 
@@ -6327,6 +6338,9 @@ proc Markup_OpenDialog {pat_idx} {
   global font_normal font_bold font_content col_bg_content col_fg_content
   global fmt_selection dlg_fmt_shown dlg_fmt
   global patlist col_palette
+
+  # fail-safety
+  if {([llength $pat_idx] != 1) || ($pat_idx >= [llength $patlist])} return
 
   if {![info exists dlg_fmt_shown]} {
     toplevel .dlg_fmt
