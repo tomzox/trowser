@@ -1074,7 +1074,7 @@ proc Search_EscapeSpecialChars {word} {
   global tlb_regexp
 
   if $tlb_regexp {
-    set word [regsub -all {[^[:alnum:][:blank:]_\-\:\=\%\"\!\'\;\,\#\/\<\>]\@} $word {\\&}]
+    regsub -all {[^[:alnum:][:blank:]_\-\:\=\%\"\!\'\;\,\#\/\<\>]\@} $word {\\&} word
   }
   return $word
 }
@@ -1597,7 +1597,7 @@ proc KeyCmd {char} {
       ClearStatusLine keycmd
       set char "$last_key_char$char"
       if [info exists key_hash($char)] {
-        eval $key_hash($char)
+        uplevel {#0} $key_hash($char)
       } else {
         DisplayStatusLine keycmd warn "Undefined key sequence \"$char\""
       }
@@ -1618,7 +1618,7 @@ proc KeyCmd {char} {
       set last_key_char {}
 
       if [info exists key_hash($char)] {
-        eval $key_hash($char)
+        uplevel {#0} $key_hash($char)
 
       } elseif {[regexp {[1-9]} $char]} {
         KeyCmd_OpenDialog any $char
@@ -1997,8 +1997,8 @@ proc Mark_ReadFile {filename} {
       set txt {}
       if {[regexp {^[[:space:]]#} $line]} {
         # skip comment in file
-      } elseif {[regexp {^(\d+)([[:space:]:.,;\-][[:space:]]*(.*))?$} $line foo num txt]} {
-        lappend bol $num $txt
+      } elseif {[regexp {^(\d+)([ \t\:\.\,\;\=\'\/](.*))?$} $line foo num foo2 txt]} {
+        lappend bol $num [string trim $txt]
       } else {
         tk_messageBox -icon error -type ok -parent . \
                       -message "Parse error in line $line_num: line is not starting with a digit: \"[string range $line 0 40]\"."
@@ -2011,9 +2011,24 @@ proc Mark_ReadFile {filename} {
 
     if {$line_num > 0} {
       set modif [expr $mark_list_modified || ([array size mark_list] != 0)]
+
+      set pos [.f1.t index end]
+      scan [lindex $pos 0] "%d.%d" max_line foo
+      set warned 0
+
       foreach {line txt} $bol {
-        if {![info exists mark_list($line)]} {
-          Mark_Toggle $line $txt
+        if {($line < 0) || ($line > $max_line)} {
+          if {$warned == 0} {
+            set answer [tk_messageBox -icon warning -type okcancel -parent . \
+                          -message "Invalid line number $line in bookmarks file \"$filename\" (should be in range 0...$max_line)"]
+            if {$answer eq "cancel"} {
+              break
+            }
+          }
+        } else {
+          if {![info exists mark_list($line)]} {
+            Mark_Toggle $line $txt
+          }
         }
       }
       set mark_list_modified $modif
@@ -2418,7 +2433,7 @@ proc MarkList_ContextMenu {xcoo ycoo} {
 #
 proc MarkList_OpenDialog {} {
   global font_content col_bg_content col_fg_content
-  global cur_filename dlg_mark_shown dlg_mark_size
+  global cur_filename dlg_mark_shown dlg_mark_geom
 
   if {![info exists dlg_mark_shown]} {
     toplevel .dlg_mark
@@ -2448,9 +2463,9 @@ proc MarkList_OpenDialog {} {
 
     set dlg_mark_shown 1
     bind .dlg_mark.l <Destroy> {+ MarkList_Quit 1}
-    bind .dlg_mark <Configure> {ToplevelResized %W .dlg_mark .dlg_mark dlg_mark_size}
+    bind .dlg_mark <Configure> {ToplevelResized %W .dlg_mark .dlg_mark dlg_mark_geom}
     wm protocol .dlg_mark WM_DELETE_WINDOW {MarkList_Quit 0}
-    wm geometry .dlg_mark $dlg_mark_size
+    wm geometry .dlg_mark $dlg_mark_geom
     wm positionfrom .dlg_mark user
 
     MarkList_Fill
@@ -2552,7 +2567,7 @@ proc MarkList_LeaveRename {} {
 #
 proc Tags_OpenDialog {} {
   global font_content col_bg_content col_fg_content
-  global dlg_tags_shown dlg_tags_size
+  global dlg_tags_shown dlg_tags_geom
 
   if {![info exists dlg_tags_shown]} {
     toplevel .dlg_tags
@@ -2594,8 +2609,8 @@ proc Tags_OpenDialog {} {
 
     set dlg_tags_shown 1
     bind .dlg_tags.f1.l <Destroy> {+ unset -nocomplain dlg_tags_shown}
-    bind .dlg_tags <Configure> {ToplevelResized %W .dlg_tags .dlg_tags dlg_tags_size}
-    wm geometry .dlg_tags $dlg_tags_size
+    bind .dlg_tags <Configure> {ToplevelResized %W .dlg_tags .dlg_tags dlg_tags_geom}
+    wm geometry .dlg_tags $dlg_tags_geom
     wm positionfrom .dlg_tags user
 
     TagsList_Fill
@@ -3867,7 +3882,7 @@ THIS PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT ANY 
 
 # ----------------------------------------------------------------------------
 #
-# This function opens the "load from pipe" status dialog.
+# This function opens the "Loadinf from STDIN" status dialog.
 #
 proc OpenLoadPipeDialog {stop} {
   global font_normal dlg_load_shown dlg_load_file_limit
@@ -3898,8 +3913,12 @@ proc OpenLoadPipeDialog {stop} {
     set dlg_load_file_limit [expr $load_buf_size/(1024*1024)]
     label .dlg_load.f1.lab_bufsz -text "Buffer size:"
     grid  .dlg_load.f1.lab_bufsz -sticky w -column 0 -row $row
-    spinbox .dlg_load.f1.val_bufsz -from 1 -to 999 -width 4 -textvariable dlg_load_file_limit
-    grid  .dlg_load.f1.val_bufsz -sticky w -column 1 -row $row -columnspan 2
+    frame .dlg_load.f1.f11
+    spinbox .dlg_load.f1.f11.val_bufsz -from 1 -to 999 -width 4 -textvariable dlg_load_file_limit
+    pack  .dlg_load.f1.f11.val_bufsz -side left
+    label .dlg_load.f1.f11.lab_bufmb -text {MByte} -font $font_normal
+    pack  .dlg_load.f1.f11.lab_bufmb -side left -pady 5
+    grid  .dlg_load.f1.f11 -sticky w -column 1 -row $row -columnspan 2
     incr row
 
     label .dlg_load.f1.lab_mode -text "Mode:"
@@ -4042,17 +4061,17 @@ proc LoadPipe_LimitData {exact} {
     if {$load_file_mode == 0} {
       set data [string replace $data [expr $len - $rest] end]
     } else {
-      set data [string replace [lindex $load_file_data 0] 0 [expr $rest - 1]]
+      set data [string replace $data 0 [expr $rest - 1]]
     }
-    lset load_file_data 0 $data
+    set load_file_data [lreplace $load_file_data $lidx $lidx $data]
     set load_buf_fill [expr $load_buf_fill - $rest]
   }
 }
 
 
 #
-# This function is installed as handler for read events on STDIN
-# when reading text data via a pipe.
+# This function is installed as handler for asynchronous read events
+# when reading text data from STDIN, i.e. via a pipe.
 #
 proc LoadDataFromPipe {} {
   global load_buf_size load_buf_fill load_file_sum load_file_mode
@@ -4102,7 +4121,7 @@ proc LoadDataFromPipe {} {
 #
 # This function loads a text file from STDIN. A status dialog is opened
 # if loading takes longer than a few seconds or if the current buffer
-# size is exceeded.  Afterwards color highlighting is initiated.
+# size is exceeded.
 #
 proc LoadPipe {} {
   global cur_filename load_file_complete load_file_data
@@ -4112,7 +4131,10 @@ proc LoadPipe {} {
   if {![info exists load_file_mode]}  {
     set load_file_mode 0
     set load_file_close 1
-    set load_file_sum [expr wide(0)]
+    if {[catch {set load_file_sum [expr wide(0)]}] != 0} {
+       # backwards compatibility to older Tcl versions without 64-bit support
+       set load_file_sum 0
+    }
   }
   set load_file_data {}
   set load_buf_fill 0
@@ -4148,13 +4170,14 @@ proc LoadPipe {} {
   .f1.t configure -cursor top_left_arrow
 
   unset load_file_complete load_file_data load_buf_fill
+
+  # finally initiate color highlighting etc.
   InitContent
 }
 
 
 #
-# This function loads a text file into the text widget.
-# Afterwards color highlighting is initiated.
+# This function loads a text file (or parts of it) into the text widget.
 #
 proc LoadFile {filename} {
   global cur_filename load_buf_size
@@ -4171,7 +4194,7 @@ proc LoadFile {filename} {
     }
 
     # insert the data into the text widget
-    .f1.t insert end [read $file]
+    .f1.t insert end [read $file $load_buf_size]
 
     close $file
   } cerr] != 0} {
@@ -4212,7 +4235,7 @@ proc InitContent {} {
   }
 
   # set cursor to the end of file
-  .f1.t mark set insert "end -1 lines linestart"
+  .f1.t mark set insert "end"
   CursorMoveLine 0
   CursorPosStore
   # read bookmarks from the default file
@@ -4301,7 +4324,7 @@ proc UserQuit {} {
 #
 proc LoadRcFile {isDefault} {
   global tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
-  global dlg_mark_size dlg_tags_size main_win_geom
+  global dlg_mark_geom dlg_tags_geom main_win_geom
   global patlist col_palette font_content load_buf_size
   global rcfile_version myrcfile
 
@@ -4345,7 +4368,7 @@ proc LoadRcFile {isDefault} {
 proc UpdateRcFile {} {
   global argv0 myrcfile rcfile_compat rcfile_version
   global tid_update_rc_sec tid_update_rc_min
-  global dlg_mark_size dlg_tags_size main_win_geom
+  global dlg_mark_geom dlg_tags_geom main_win_geom
   global patlist col_palette font_content load_buf_size
   global tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
 
@@ -4393,11 +4416,11 @@ proc UpdateRcFile {} {
     puts $rcfile [list set tlb_hist_maxlen $tlb_hist_maxlen]
 
     # dialog sizes
-    if [info exists dlg_mark_size] {
-      puts $rcfile [list set dlg_mark_size $dlg_mark_size]
+    if [info exists dlg_mark_geom] {
+      puts $rcfile [list set dlg_mark_geom $dlg_mark_geom]
     }
-    if [info exists dlg_tags_size] {
-      puts $rcfile [list set dlg_tags_size $dlg_tags_size]
+    if [info exists dlg_tags_geom] {
+      puts $rcfile [list set dlg_tags_geom $dlg_tags_geom]
     }
     puts $rcfile [list set main_win_geom $main_win_geom]
 
@@ -4511,8 +4534,8 @@ set col_bg_findinc {#c8ff00}
 
 # These variables store the geometry of the main and dialog windows.
 set main_win_geom "684x480"
-set dlg_mark_size "500x250"
-set dlg_tags_size "400x300"
+set dlg_mark_geom "500x250"
+set dlg_tags_geom "400x300"
 
 # This variable stores a list of pre-defined colors.
 set col_palette [list \
@@ -4595,9 +4618,9 @@ LoadRcFile 1
 InitResources
 CreateMainWindow
 HighlightCreateTags
-update
 
 if {$argc == 1} {
+  update
   if {[lindex $argv 0] eq "-"} {
     LoadPipe
   } else {
@@ -4605,6 +4628,7 @@ if {$argc == 1} {
   }
 } else {
   puts stderr "Usage: $argv0 <file>"
+  exit
 }
 
 # done - all following actions are event-driven
