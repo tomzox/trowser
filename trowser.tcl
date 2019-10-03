@@ -3,7 +3,7 @@
 exec wish "$0" -- "$@"
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2008 Tom Zoerner
+# Copyright (C) 2007-2009 Tom Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.25 2009/03/02 19:01:07 tom Exp $
+# $Id: trowser.tcl,v 1.26 2009/03/03 15:08:05 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -5989,7 +5989,7 @@ proc OpenAboutDialog {} {
     label .about.name -text "Trace Browser"
     pack .about.name -side top -pady 8
 
-    label .about.copyr1 -text "Copyright (C) 2007, 2008 Tom Zoerner" -font $font_normal
+    label .about.copyr1 -text "Copyright (C) 2007-2009 Tom Zoerner" -font $font_normal
     pack .about.copyr1 -side top
 
     message .about.m -font $font_normal -text {

@@ -8,7 +8,7 @@
 #
 # ---------------------------------------------------------------------------
 #
-# Copyright (C) 2007 Tom Zoerner. All rights reserved.
+# Copyright (C) 2007-2009 Tom Zoerner. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,7 +23,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# $Id: trowser.pod,v 1.2 2008/07/01 20:40:18 tom Exp $
+# $Id: trowser.pod,v 1.3 2009/03/03 15:08:36 tom Exp $
 # ---------------------------------------------------------------------------
 
 =head1 NAME
@@ -71,19 +71,25 @@ Third, you can assign bookmarks to selected text lines and jump
 in-between those lines by clicking on them in the bookmark list
 dialog or via C<'+> and C<'-> key bindings (not in vim.) Fourth,
 you can search for patterns defined in the color highlight list
-by clicking on I<Next> or I<Previous> in the pattern list dialog.
+by selecting a pattern in the list and then clicking on I<Next> or
+I<Previous> in the pattern list dialog.
 Fifth, you can open the I<Search result list> (via the I<Search> menu
 or by clicking on I<List all> in any dialog or by entering C<ALT-a>)
 to display all text lines which match a set of patterns and click on an
 entry in this list to jump to the respective line in the main window.
+Sixth, you can manually copy arbitrary lines from the main text window
+into the search result window via the C<'i'> key (not in vim.)
 
 The search filter list is one of the main features of the trace
 browser, as it allows to consecutively build an arbitrary sub-set of
-text lines in the main window. You can not only use search patterns
-to add text, but also add manually selected text lines via the
-C<i> key binding or remove individual lines again.  Additionally you
-can also use bookmarks in the search result window. So you effectively
-can navigate the text on three levels.
+text lines in the main window. You can not only use one or more search
+patterns to add text, but also add selected text lines from the main
+text window via the C<i> key binding and remove individual lines again,
+either manually or by use of a search pattern.  Additionally you can use
+bookmarks in the search result window. When searching in the main window,
+the search result list will scroll to show the same region of text. Thus
+you effectively can navigate the text on three levels: Bookmarks > Search
+list > Main text.
 
 Both the bookmark and search result lists support prefixing all entries
 with a "frame number". This is useful when your input file does not have
@@ -95,7 +101,8 @@ case trowser searches the next frame start lines in forward and backward
 direction and then inside of that range for a line containing the frame
 number value.  Note for the search result list this feature is disabled
 by default for performance reasons. It must be enabled in the dialog's
-I<Options> menu.
+I<Options> menu. The search patterns used to locate timestamps currently
+have to be inserted into the RC file manually.
 
 For performance reasons most search-related commands are executed as
 background processes (actually implemented as idle events in Tcl/Tk.)
@@ -409,14 +416,6 @@ background color.)
 Remove the currently used pattern in the search history, if the current
 pattern was copied by use of I<Up> or I<Down>
 
-=item C<^h>
-
-Add the current search pattern as new color highlight pattern.
-
-=item C<^H>
-
-Opens the search history dialog.
-
 =item I<Alt->C<n>, I<Alt->C<p>
 
 Same as pressing the I<Next> or I<Previous> buttons respectively, i.e. search
@@ -539,9 +538,15 @@ address) and B<HOME> (home directory, for storing the configuration file.)
 
 =item B<$HOME/.trowserc>
 
-Configuration file where all personal settings are stored. Per default
-this is created in your home directory, but a different path and file
-name can be specified with the B<--rcfile> option (see L<"OPTIONS">).
+Configuration file where all personal settings and the search history are
+stored. Per default this file is created in your home directory, but a
+different path and file name can be specified with the B<--rcfile> option
+(see L<"OPTIONS">).
+
+During updates to this file, trowser temporarily creates a file called
+C<.trowserc.XXXXX.tmp> in the home directory, where "XXXXX" is a random
+number. The old file is then replaced with this new file. This procedure
+will obviously fail if your home directory is not writable.
 
 =head1 CEVEATS
 
@@ -560,6 +565,14 @@ dialog is currently not interruptable and may take quite a while if the
 next match is several MB away. (This can be avoided by repeating the
 search via the entry field's internal search history, i.e. C</> and I<Up>)
 
+Searching with regular expressions is very slow in large files. This is
+unfortunately a property of the "text" Tk widget. Thus use of regular
+expressions for highlighting is not recommended.
+
+Some GUI activity (e.g. selecting a range on text with the mouse) will
+render active background tasks uninteruptable, i.e. the GUI will become
+unresponsive until the background task has completed.
+
 File store and load dialogs do not maintain a history of previously
 used files or directories. (This is so because it's expected that these
 features will not be used very often.)
@@ -569,7 +582,7 @@ well yet (i.e. even more so than the other dialogs). Suggestions for
 improvements are welcome.
 
 Some configuration options cannot be modified via the GUI and require
-to manually edit the configuration file.
+manually editing the configuration file.
 
 =head1 SEE ALSO
 
@@ -585,13 +598,13 @@ L<perlre(1)>
 
 =head1 AUTHOR
 
-Written by Tom Zoerner <tomzo@sourceforge.net>
+Written by Tom Zoerner L<mailto:tomzo@users.sourceforge.net>
 
 The official homepage is L<http://www.nefkom.net/tomzo/prj/trowser/>
 
 =head1 COPYRIGHT
 
-Copyright 2007 Tom Zoerner. All rights reserved.
+Copyright 2007-2009 Tom Zoerner. All rights reserved.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
