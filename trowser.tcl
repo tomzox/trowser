@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.35 2009/03/20 20:49:33 tom Exp $
+# $Id: trowser.tcl,v 1.36 2010/04/26 10:23:02 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -3795,7 +3795,8 @@ proc SearchHistory_SearchNext {is_fwd} {
 #
 # This function is bound to the "list all" button in the search history
 # dialog. The function opens the search result list window and starts a
-# search for the expression which is currently selected in the history list.
+# search for all expressions which are currently selected in the history
+# list (serializing multiple searches is handled by the search list dialog)
 #
 proc SearchHistory_SearchAll {direction} {
   global tlb_history
@@ -3808,9 +3809,9 @@ proc SearchHistory_SearchAll {direction} {
     set pat_list {}
     foreach idx $sel {
       set hl [lindex $tlb_history $idx]
-
       lappend pat_list [lrange $hl 0 2]
-
+    }
+    foreach hl $pat_list {
       Search_AddHistory [lindex $hl 0] [lindex $hl 1] [lindex $hl 2]
     }
 
@@ -3824,6 +3825,8 @@ proc SearchHistory_SearchAll {direction} {
 
 #
 # This function is a callback for selection changes in the search history dialog.
+# This is used to enable/disable command buttons which require a certain number
+# of selected items to work.
 #
 proc SearchHistory_SelectionChange {sel} {
   if {[llength $sel] == 1} {
@@ -3914,7 +3917,7 @@ proc SearchList_Open {raise_win} {
     .dlg_srch.menubar.options add checkbutton -label "Show frame no. delta" -command SearchList_ToggleTickNo -variable dlg_srch_fn_delta -accelerator "ALT-d"
     .dlg_srch.menubar.options add checkbutton -label "Highlight search" -command SearchList_ToggleHighlight -variable dlg_srch_highlight -accelerator "ALT-h"
     .dlg_srch.menubar.options add separator
-    .dlg_srch.menubar.options add command -label "Select line as origin for FN delta" -command SearchList_SetFnRoot -accelerator "ALT-o"
+    .dlg_srch.menubar.options add command -label "Select line as origin for FN delta" -command SearchList_SetFnRoot -accelerator "ALT-0"
 
     frame .dlg_srch.f1
     text .dlg_srch.f1.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
@@ -3948,7 +3951,7 @@ proc SearchList_Open {raise_win} {
     bind .dlg_srch.f1.l <Alt-Key-h> {set dlg_srch_highlight [expr {!$dlg_srch_highlight}]; SearchList_ToggleHighlight; break}
     bind .dlg_srch.f1.l <Alt-Key-f> {set dlg_srch_show_fn [expr {!$dlg_srch_show_fn}]; SearchList_ToggleTickNo; break}
     bind .dlg_srch.f1.l <Alt-Key-d> {set dlg_srch_fn_delta [expr {!$dlg_srch_fn_delta}]; SearchList_ToggleTickNo; break}
-    bind .dlg_srch.f1.l <Alt-Key-o> {SearchList_SetFnRoot; break}
+    bind .dlg_srch.f1.l <Alt-Key-0> {SearchList_SetFnRoot; break}
     bind .dlg_srch.f1.l <Alt-Key-n> {SearchNext 1; break}
     bind .dlg_srch.f1.l <Alt-Key-p> {SearchNext 0; break}
     bind .dlg_srch.f1.l <Alt-Key-a> {SearchAll 0 0; break}
@@ -4231,7 +4234,7 @@ proc SearchList_ToggleTickNo {} {
 
 
 #
-# This function is bound to ALT-o in the search result list and to the
+# This function is bound to ALT-0 in the search result list and to the
 # "Select root FN" context menu command. The function sets the currently
 # selected line as origin for frame number delta calculations and enables
 # frame number delta display, which requires a complete refresh of the list.
@@ -7676,7 +7679,9 @@ proc OpenLoadPipeDialog {stop} {
   global font_normal dlg_load_shown dlg_load_file_limit
   global load_buf_size load_buf_fill load_file_sum_str load_file_mode load_file_close
 
-  if {![info exists dlg_load_shown]} {
+  if {[info commands .] eq ""} {
+    exit 0
+  } elseif {![info exists dlg_load_shown]} {
     toplevel .dlg_load
     wm title .dlg_load "Loading from STDIN..."
     wm group .dlg_load .
@@ -7952,7 +7957,10 @@ proc LoadPipe {} {
   # block here until all data has been read
   vwait load_file_complete
 
-  if {$load_file_complete eq ""} {
+  if {[info commands .] eq ""} {
+    # main window was closed while waiting
+    exit 0
+  } elseif {$load_file_complete eq ""} {
     # success (no read error, although EOF may have been reached)
     # limit content length to the exact maximum (e.g. in case the user changed sizes)
     LoadPipe_LimitData 1
@@ -8210,6 +8218,7 @@ proc UserQuit {} {
   UpdateRcFile
   Mark_OfferSave
   destroy .
+  exit 0
 }
 
 
