@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.33 2009/03/18 21:06:49 tom Exp $
+# $Id: trowser.tcl,v 1.34 2009/03/19 20:39:10 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -5316,11 +5316,38 @@ proc SearchList_AdjustLineNums {top_l bottom_l} {
   global dlg_srch_sel dlg_srch_lines dlg_srch_undo dlg_srch_redo dlg_srch_fn_cache
 
   if {[info exists dlg_srch_lines]} {
-    set dlg_srch_lines [SearchList_RemoveLineFromList $dlg_srch_lines $top_l $bottom_l]
+    if {$bottom_l == 0} {
+      # delete from 1 ... $topl
+      set idx [SearchList_GetLineIdx $top_l]
+      if {($idx < [llength $dlg_srch_lines]) &&
+          ([lindex $dlg_srch_lines $idx] == $top_l)} {
+        incr idx -1
+      }
+      if {$idx > 0} {
+        .dlg_srch.f1.l delete 1.0 "[expr {$idx + 1}].0"
+        set tmpl {}
+        foreach line [lrange $dlg_srch_lines $idx end] {
+          lappend tmpl [expr {$line - $top_l + 1}]
+        }
+        set dlg_srch_lines $tmpl
+      }
+    } else {
+      # delete from $bottom_l ... end
+      set idx [SearchList_GetLineIdx $bottom_l]
+      if {$idx < [llength $dlg_srch_lines]} {
+        .dlg_srch.f1.l delete "[expr {$idx + 1}].0" end
+        set dlg_srch_lines [lrange $dlg_srch_lines 0 [expr {$idx - 1}]]
+      }
+    }
 
     set tmp2 {}
     foreach cmd $dlg_srch_undo {
-      set tmpl [SearchList_RemoveLineFromList [lindex $cmd 1] $top_l $bottom_l]
+      set tmpl {}
+      foreach line [lindex $cmd 1] {
+        if {($line >= $top_l) && (($line < $bottom_l) || ($bottom_l == 0))} {
+          lappend tmpl [expr {$line - $top_l + 1}]
+        }
+      }
       if {[llength $tmpl] > 0} {
         lappend tmp2 [list [lindex $cmd 0] $tmpl]
       }
@@ -5330,23 +5357,9 @@ proc SearchList_AdjustLineNums {top_l bottom_l} {
     set dlg_srch_redo {}
 
     array unset dlg_srch_fn_cache
-
-    SearchList_SearchAbort 0
-    SearchList_Refill
   }
 }
 
-# this helper function removes numbers in a given range from a list
-# and adjusts the line number
-proc SearchList_RemoveLineFromList {lines top_l bottom_l} {
-  set tmpl {}
-  foreach line $lines {
-    if {($line >= $top_l) && (($line < $bottom_l) || ($bottom_l == 0))} {
-      lappend tmpl [expr {$line - $top_l + 1}]
-    }
-  }
-  return $tmpl
-}
 
 #
 # This function stores all text lines in the search result window into a file.
@@ -7041,9 +7054,9 @@ proc OpenAboutDialog {} {
     pack .about.copyr1 -side top
 
     message .about.m -font $font_normal -text {
-This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License Version 3 as published by the Free Software Foundation at http://www.fsf.org/
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.  
 
-THIS PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT ANY WARRANTY; WITHOUT EVEN THE IMPLIED WARRANTY OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
     }
