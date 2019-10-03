@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.27 2009/03/06 13:15:40 tom Exp $
+# $Id: trowser.tcl,v 1.28 2009/03/06 20:18:05 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -177,6 +177,8 @@ proc CreateMainWindow {} {
   KeyCmdBind .f1.t "#" {SearchWord 0}
   KeyCmdBind .f1.t "&" {SearchHighlightClear}
   KeyCmdBind .f1.t "i" {SearchList_Open 1; SearchList_CopyCurrentLine}
+  KeyCmdBind .f1.t "u" SearchList_Undo
+  bind .f1.t <Control-Key-r> SearchList_Redo
   bind .f1.t <Alt-Key-f> {focus .f2.e; KeyClr; break}
   bind .f1.t <Alt-Key-n> {SearchNext 1; KeyClr; break}
   bind .f1.t <Alt-Key-p> {SearchNext 0; KeyClr; break}
@@ -1032,22 +1034,21 @@ proc SearchNext {is_fwd} {
 proc SearchAll {} {
   global tlb_find tlb_last_wid
 
-  if {$tlb_find ne ""} {
-    if {[SearchExprCheck 1]} {
-      SearchList_Open
-      SearchList_AddMatches
+  if {[SearchExprCheck 1]} {
 
-      Search_AddHistory $tlb_find
+    if {[focus -displayof .] eq ".f2.e"} {
+      focus .f1.t
+
+      if {$tlb_last_wid ne ""} {
+        focus $tlb_last_wid
+        if {[regsub {^(\.[^\.]*).*} $tlb_last_wid {\1} top_wid]} {
+          raise $top_wid .
+        }
+      }
     }
-  } else {
+
     SearchList_Open
-  }
-
-  if {[focus -displayof .] eq ".f2.e"} {
-    focus .f1.t
-    if {$tlb_last_wid ne ""} {
-      focus $tlb_last_wid
-    }
+    SearchList_AddMatches
   }
 }
 
@@ -1811,30 +1812,41 @@ proc YviewScrollHalf {wid dir} {
 #
 # This function moves the cursor into a given line in the current view.
 #
-proc CursorSetLine {wid where} {
+proc CursorSetLine {wid where off} {
   global font_content
 
   CursorPosStore $wid
 
   if {$where eq "top"} {
-    $wid mark set insert {@1,1}
+    set index [$wid index [list {@1,1} + $off lines]]
+    if {($off > 0) && ![IsRowFullyVisible $wid $index]} {
+      # offset out of range - set to bottom instead
+      return [CursorSetLine $wid bottom 0]
+    } else {
+      $wid mark set insert $index
+    }
 
   } elseif {$where eq "center"} {
+    # note the offset parameter is not applicable in this case
     $wid mark set insert "@1,[expr {int([winfo height $wid] / 2)}]"
 
   } elseif {$where eq "bottom"} {
-    $wid mark set insert "@1,[winfo height $wid] linestart"
-    # move cursor to the last fully visible line to avoid scrolling
-    set fh [font metrics $font_content -linespace]
-    set pos_new [$wid bbox insert]
-    if {([llength $pos_new] != 4) || ([lindex $pos_new 3] < $fh)} {
-      $wid mark set insert [list insert - 1 lines]
+    set index [$wid index [list "@1,[winfo height $wid]" linestart - $off lines]]
+    if {![IsRowFullyVisible $wid $index]} {
+      if {$off == 0} {
+        # move cursor to the last fully visible line to avoid scrolling
+        set index [$wid index [list $index - 1 lines]]
+      } else {
+        # offset out of range - set to top instead
+        return [CursorSetLine $wid top 0]
+      }
     }
+    $wid mark set insert $index
 
   } else {
     $wid mark set insert [list insert linestart]
   }
-  # place cursor on first non-blank character
+  # place cursor on first non-blank character in the selected row
   CursorMoveLine $wid 0
 }
 
@@ -1978,7 +1990,7 @@ proc CursorMoveWord {is_fwd spc_only to_end} {
     } else {
       set dump [ExtractText [concat $pos linestart] $pos]
       set word ""
-      if {$ispc_only} {
+      if {$spc_only} {
         if {$to_end} {
           set match [regexp {\s(\s+)$} $dump foo word]
         } else {
@@ -2001,6 +2013,23 @@ proc CursorMoveWord {is_fwd spc_only to_end} {
   }
 }
 
+
+#
+# Helper function which determines if the text at the given index in
+# the given window is fully visible.
+#
+proc IsRowFullyVisible {wid index} {
+  global font_content
+
+  set fh [font metrics $font_content -linespace]
+  set bbox [$wid bbox $index]
+
+  if {([llength $bbox] != 4) || ([lindex $bbox 3] < $fh)} {
+    return 0
+  } else {
+    return 1
+  }
+}
 
 #
 # Helper function to extrace a range of characters from the content.
@@ -2162,9 +2191,9 @@ proc KeyBinding_UpDown {wid} {
   KeyCmdBind $wid "-" [list CursorMoveLine $wid -1]
   KeyCmdBind $wid "k" [list event generate $wid <Up>]
   KeyCmdBind $wid "j" [list event generate $wid <Down>]
-  KeyCmdBind $wid "H" [list CursorSetLine $wid top]
-  KeyCmdBind $wid "M" [list CursorSetLine $wid center]
-  KeyCmdBind $wid "L" [list CursorSetLine $wid bottom]
+  KeyCmdBind $wid "H" [list CursorSetLine $wid top 0]
+  KeyCmdBind $wid "M" [list CursorSetLine $wid center 0]
+  KeyCmdBind $wid "L" [list CursorSetLine $wid bottom 0]
 
   KeyCmdBind $wid "G" "CursorPosStore $wid; $wid mark set insert {end -1 lines linestart}; CursorMoveLine $wid 0"
   KeyCmdBind $wid "gg" "CursorPosStore $wid; $wid mark set insert 1.0; CursorMoveLine $wid 0"
@@ -2228,28 +2257,39 @@ proc KeyCmd_OpenDialog {type {txt {}}} {
       # line goto key binding
       bind .dlg_key.e <Key-g> {KeyCmd_ExecGoto; break}
       bind .dlg_key.e <Shift-Key-G> {KeyCmd_ExecGoto; break}
-      # cursor movement binding
-      bind .dlg_key.e <Key-minus> {KeyCmd_ExecCursor 0; break}
-      bind .dlg_key.e <Return> {KeyCmd_ExecCursor 1; break}
-      bind .dlg_key.e <Key-bar> {KeyCmd_ExecColumn; break}
-      # search key binding
-      bind .dlg_key.e <Key-n> {KeyCmd_ExecSearch 1; break}
-      bind .dlg_key.e <Key-p> {KeyCmd_ExecSearch 0; break}
-      bind .dlg_key.e <Shift-Key-N> {KeyCmd_ExecSearch 0; break}
-      # cursor move
+      # vertical cursor movement binding
+      bind .dlg_key.e <Key-minus> {KeyCmd_ExecCursorUpDown 0; break}
+      bind .dlg_key.e <Key-plus> {KeyCmd_ExecCursorUpDown 1; break}
+      bind .dlg_key.e <Return> {KeyCmd_ExecCursorUpDown 1; break}
+      bind .dlg_key.e <Key-bar> {KeyCmd_ExecAbsColumn; break}
+      bind .dlg_key.e <Key-k> {KeyCmd_ExecCursorUpDown 0; break}
+      bind .dlg_key.e <Key-j> {KeyCmd_ExecCursorUpDown 1; break}
+      bind .dlg_key.e <Key-H> {KeyCmd_ExecCursorVertSet top; break}
+      bind .dlg_key.e <Key-M> {KeyCmd_ExecCursorVertSet center; break}
+      bind .dlg_key.e <Key-L> {KeyCmd_ExecCursorVertSet bottom; break}
+      # horizontal/in-line cursor movement binding
       bind .dlg_key.e <Key-w> {KeyCmd_ExecCursorMove <Key-w>; break}
       bind .dlg_key.e <Key-e> {KeyCmd_ExecCursorMove <Key-e>; break}
       bind .dlg_key.e <Key-b> {KeyCmd_ExecCursorMove <Key-b>; break}
       bind .dlg_key.e <Key-W> {KeyCmd_ExecCursorMove <Key-W>; break}
       bind .dlg_key.e <Key-E> {KeyCmd_ExecCursorMove <Key-E>; break}
       bind .dlg_key.e <Key-B> {KeyCmd_ExecCursorMove <Key-B>; break}
+      bind .dlg_key.e <Key-colon> {KeyCmd_ExecCursorMove <Key-colon>; break}
+      bind .dlg_key.e <Key-semicolon> {KeyCmd_ExecCursorMove <Key-semicolon>; break}
       bind .dlg_key.e <Key-space> {KeyCmd_ExecCursorMove <Key-space>; break}
       bind .dlg_key.e <Key-BackSpace> {KeyCmd_ExecCursorMove <Key-BackSpace>; break}
+      bind .dlg_key.e <Key-h> {KeyCmd_ExecCursorMove <Key-h>; break}
+      bind .dlg_key.e <Key-l> {KeyCmd_ExecCursorMove <Key-l>; break}
+      bind .dlg_key.e <Key-semicolon> {KeyCmd_ExecCursorMove <Key-semicolon>; break}
+      # search key binding
+      bind .dlg_key.e <Key-n> {KeyCmd_ExecSearch 1; break}
+      bind .dlg_key.e <Key-p> {KeyCmd_ExecSearch 0; break}
+      bind .dlg_key.e <Shift-Key-N> {KeyCmd_ExecSearch 0; break}
       # catch-all
       bind .dlg_key.e <KeyPress> {
         if {"%A" eq "|"} {
-          # work-around: keysym doesn't work on German keyboard
-          KeyCmd_ExecColumn
+          # work-around: keysym <Key-bar> doesn't work on German keyboard
+          KeyCmd_ExecAbsColumn
           break
         } elseif {![regexp {[[:digit:]]} %A] && [regexp {[[:graph:][:space:]]} %A]} {
           break
@@ -2307,9 +2347,9 @@ proc KeyCmd_ExecGoto {} {
 
 
 #
-# This function moves the cursor by a given amount of lines.
+# This function moves the cursor up or down by a given number of lines.
 #
-proc KeyCmd_ExecCursor {is_fwd} {
+proc KeyCmd_ExecCursorUpDown {is_fwd} {
   global keycmd_ent
 
   # check if the content is a valid line number
@@ -2328,16 +2368,37 @@ proc KeyCmd_ExecCursor {is_fwd} {
 
 
 #
-# This function sets the cursor into a given column
+# This function sets the cursor into a given row, relative to top, or bottom.
+# Placement into the middle is also supported, but without offset.
 #
-proc KeyCmd_ExecColumn {} {
+proc KeyCmd_ExecCursorVertSet {where} {
   global keycmd_ent
 
   # check if the content is a valid line number
   set foo 0
   if {[catch {incr foo $keycmd_ent}] == 0} {
-    # note: line range check not required, text widget does not complain
-    catch {.f1.t mark set insert [list insert linestart + $keycmd_ent chars]}
+    CursorSetLine .f1.t $where $keycmd_ent
+    KeyCmd_Leave
+  }
+}
+
+
+#
+# This function sets the cursor into a given column
+#
+proc KeyCmd_ExecAbsColumn {} {
+  global keycmd_ent
+
+  # check if the content is a valid line number
+  set foo 0
+  if {[catch {incr foo $keycmd_ent}] == 0} {
+    # prevent running beyond the end of the line
+    scan [.f1.t index {insert lineend}] "%*d.%d" max_col
+    if {$keycmd_ent < $max_col} {
+      catch {.f1.t mark set insert [list insert linestart + $keycmd_ent chars]}
+    } else {
+      catch {.f1.t mark set insert [list insert lineend]}
+    }
     .f1.t see insert
     KeyCmd_Leave
   }
@@ -2378,7 +2439,8 @@ proc KeyCmd_ExecSearch {is_fwd} {
 
 
 #
-# This function moves the cursort
+# This function moves the cursor as if the given key had been pressed
+# the number of times specified in the number entry field.
 #
 proc KeyCmd_ExecCursorMove {key} {
   global keycmd_ent
@@ -3545,8 +3607,8 @@ proc SearchList_Open {{no_raise 0}} {
     bind .dlg_srch.f1.l <Control-minus> {ChangeFontSize -1; KeyClr}
     KeyCmdBind .dlg_srch.f1.l "/" {SearchEnter 1 .dlg_srch.f1.l}
     KeyCmdBind .dlg_srch.f1.l "?" {SearchEnter 0 .dlg_srch.f1.l}
-    KeyCmdBind .dlg_srch.f1.l "n" {Search_list_SearchNext 1}
-    KeyCmdBind .dlg_srch.f1.l "N" {Search_list_SearchNext 0}
+    KeyCmdBind .dlg_srch.f1.l "n" {SearchList_SearchNext 1}
+    KeyCmdBind .dlg_srch.f1.l "N" {SearchList_SearchNext 0}
     KeyCmdBind .dlg_srch.f1.l "&" {SearchHighlightClear}
     KeyCmdBind .dlg_srch.f1.l "Return" {CursorMoveLine .dlg_srch.f1.l 1}
     KeyCmdBind .dlg_srch.f1.l "u" SearchList_Undo
@@ -3750,22 +3812,28 @@ proc SearchList_RemoveSelection {} {
 }
 
 
+#
 # This function is bound to "n", "N" in the search filter dialog. The function
 # starts a regular search in the main window, but repeats until a matching
 # line is found which is also listed in the filter dialog.
 #
-proc Search_list_SearchNext {is_fwd} {
+proc SearchList_SearchNext {is_fwd} {
   global dlg_srch_sel dlg_srch_lines
 
+  set old_yview [.f1.t yview]
+  set old_cpos [.f1.t index insert]
+
   if {$is_fwd} {
-    .f1.t mark set insert "insert lineend"
+    .f1.t mark set insert {insert lineend}
   } else {
-    .f1.t mark set insert "insert linestart"
+    .f1.t mark set insert {insert linestart}
   }
+  set found_any 0
 
   while 1 {
     set found [SearchNext $is_fwd]
     if {$found ne ""} {
+      set found_any 1
       # check if the found line is also listed in the search list
       scan $found "%d" line
       set idx [SearchList_GetLineIdx $line]
@@ -3775,6 +3843,17 @@ proc Search_list_SearchNext {is_fwd} {
       }
     } else {
       break
+    }
+  }
+
+  # if none found, set the cursor back to the original position
+  if {$found eq ""} {
+    .f1.t mark set insert $old_cpos
+    .f1.t yview moveto [lindex $old_yview 0]
+
+    if {$found_any} {
+      # match found in main window, but not in search result window
+      DisplayStatusLine search warn "No match in search result list"
     }
   }
 }
@@ -3873,13 +3952,19 @@ proc SearchList_InvertCmd {op line_list mode} {
 # addition, either via search or manually.)
 #
 proc SearchList_Undo {} {
-  global dlg_srch_undo dlg_srch_redo
+  global dlg_srch_shown dlg_srch_undo dlg_srch_redo
 
-  if {[llength $dlg_srch_undo] > 0} {
-    set cmd [lindex $dlg_srch_undo end]
-    set dlg_srch_undo [lrange $dlg_srch_undo 0 end-1]
-    SearchList_InvertCmd [lindex $cmd 0] [lindex $cmd 1] -1
-    lappend dlg_srch_redo $cmd
+  if {[info exists dlg_srch_shown]} {
+    if {[llength $dlg_srch_undo] > 0} {
+      set cmd [lindex $dlg_srch_undo end]
+      set dlg_srch_undo [lrange $dlg_srch_undo 0 end-1]
+      SearchList_InvertCmd [lindex $cmd 0] [lindex $cmd 1] -1
+      lappend dlg_srch_redo $cmd
+
+      ClearStatusLine search
+    } else {
+      DisplayStatusLine search warn "Already at oldest change"
+    }
   }
 }
 
@@ -3889,13 +3974,19 @@ proc SearchList_Undo {} {
 # This reverts the last "undo", if any.
 #
 proc SearchList_Redo {} {
-  global dlg_srch_undo dlg_srch_redo
+  global dlg_srch_shown dlg_srch_undo dlg_srch_redo
 
-  if {[llength $dlg_srch_redo] > 0} {
-    set cmd [lindex $dlg_srch_redo end]
-    set dlg_srch_redo [lrange $dlg_srch_redo 0 end-1]
-    SearchList_InvertCmd [lindex $cmd 0] [lindex $cmd 1] 1
-    lappend dlg_srch_undo $cmd
+  if {[info exists dlg_srch_shown]} {
+    if {[llength $dlg_srch_redo] > 0} {
+      set cmd [lindex $dlg_srch_redo end]
+      set dlg_srch_redo [lrange $dlg_srch_redo 0 end-1]
+      SearchList_InvertCmd [lindex $cmd 0] [lindex $cmd 1] 1
+      lappend dlg_srch_undo $cmd
+
+      ClearStatusLine search
+    } else {
+      DisplayStatusLine search warn "Already at newest change"
+    }
   }
 }
 
@@ -6676,7 +6767,7 @@ proc TextSel_AdjustDeletion {var line} {
 #
 proc OpenLoadPipeDialog {stop} {
   global font_normal dlg_load_shown dlg_load_file_limit
-  global load_buf_size load_buf_fill load_file_sum load_file_mode load_file_close
+  global load_buf_size load_buf_fill load_file_sum_str load_file_mode load_file_close
 
   if {![info exists dlg_load_shown]} {
     toplevel .dlg_load
@@ -6691,7 +6782,7 @@ proc OpenLoadPipeDialog {stop} {
     set row 0
     label .dlg_load.f1.lab_total -text "Loaded data:"
     grid  .dlg_load.f1.lab_total -sticky w -column 0 -row $row
-    label .dlg_load.f1.val_total -textvariable load_file_sum -font $font_normal
+    label .dlg_load.f1.val_total -textvariable load_file_sum_str -font $font_normal
     grid  .dlg_load.f1.val_total -sticky w -column 1 -row $row -columnspan 2
     incr row
     label .dlg_load.f1.lab_bufil -text "Buffered data:"
@@ -6820,7 +6911,7 @@ proc LoadPipe_CmdContinue {is_user} {
 # copying large buffers.)
 #
 proc LoadPipe_LimitData {exact} {
-  global load_buf_size load_buf_fill load_file_sum load_file_mode
+  global load_buf_size load_buf_fill load_file_mode
   global load_file_data
 
   # tail mode: delete oldest data / head mode: delete newest data
@@ -6864,7 +6955,8 @@ proc LoadPipe_LimitData {exact} {
 # when reading text data from STDIN, i.e. via a pipe.
 #
 proc LoadDataFromPipe {} {
-  global load_buf_size load_buf_fill load_file_sum load_file_mode
+  global load_buf_size load_buf_fill load_file_mode
+  global load_file_sum_hi load_file_sum_lo load_file_sum_str
   global load_file_complete load_file_data load_file_close
 
   if {[catch {
@@ -6877,7 +6969,14 @@ proc LoadDataFromPipe {} {
       set data [read stdin $size]
       set len [string length $data]
       if {$len > 0} {
-        incr load_file_sum $len
+        set load_file_sum_hi [expr {(($load_file_sum_lo + $len) >> 20) + $load_file_sum_hi}]
+        set load_file_sum_lo [expr {($load_file_sum_lo + $len) & 0xFFFFF}]
+        if {($load_file_sum_hi >= 0xFFF) ||
+            ((($load_file_sum_hi << 20) | $load_file_sum_hi) > 4 * $load_buf_size)} {
+          set load_file_sum_str "$load_file_sum_hi MByte"
+        }  else {
+          set load_file_sum_str [expr {($load_file_sum_hi << 20) | $load_file_sum_hi}]
+        }
         incr load_buf_fill $len
         # data chunk is added to an array (i.e. not a single char string) for efficiency
         lappend load_file_data $data
@@ -6915,7 +7014,8 @@ proc LoadDataFromPipe {} {
 #
 proc LoadPipe {} {
   global cur_filename load_file_complete load_file_data
-  global load_buf_size load_buf_fill load_file_sum load_file_mode load_file_close
+  global load_buf_size load_buf_fill load_file_mode load_file_close
+  global load_file_sum_hi load_file_sum_lo load_file_sum_str
 
   set cur_filename ""
   if {![info exists load_file_mode]}  {
@@ -6924,11 +7024,12 @@ proc LoadPipe {} {
   if {![info exists load_file_close]} {
     set load_file_close 1
   }
-  if {![info exists load_file_sum]} {
-    if {[catch "set load_file_sum [expr {wide(0)}]"] != 0} {
-      # backwards compatibility to older Tcl versions without 64-bit support
-      set load_file_sum 0
-    }
+  if {![info exists load_file_sum_lo]} {
+    # split file length in HIGH and LOW (20 bit) as it may exceed 32-bit
+    # (newer Tcl versions support 64-bit int, but this still fails when used as -textvariable)
+    set load_file_sum_lo 0
+    set load_file_sum_hi 0
+    set load_file_sum_str 0
   }
   set load_file_data {}
   set load_buf_fill 0
