@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.26 2009/03/03 15:08:05 tom Exp $
+# $Id: trowser.tcl,v 1.27 2009/03/06 13:15:40 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -80,7 +80,9 @@ proc InitResources {} {
 
 
 #
-# This function creates the main window of the trace browser.
+# This function creates the main window of the trace browser, including the
+# menu at the top, the text area and a vertical scrollbar in the middle, and
+# the search control dialog at the bottom.
 #
 proc CreateMainWindow {} {
   global font_content col_bg_content col_fg_content main_win_geom
@@ -88,7 +90,7 @@ proc CreateMainWindow {} {
   global tlb_find tlb_hall tlb_case tlb_regexp
 
   # menubar at the top of the main window
-  menu .menubar -relief raised
+  menu .menubar
   . config -menu .menubar
   .menubar add cascade -label "Control" -menu .menubar.ctrl -underline 0
   .menubar add cascade -label "Search" -menu .menubar.search -underline 0
@@ -224,8 +226,8 @@ proc CreateMainWindow {} {
   bind .f2.e <Alt-Key-n> {SearchNext 1; break}
   bind .f2.e <Alt-Key-p> {SearchNext 0; break}
   bind .f2.e <Alt-Key-a> {SearchAll; break}
-  bind .f2.e <Alt-Key-c> {set tlb_case [expr !$tlb_case]; SearchHighlightSettingChange; break}
-  bind .f2.e <Alt-Key-e> {set tlb_regexp [expr !$tlb_regexp]; SearchHighlightSettingChange; break}
+  bind .f2.e <Alt-Key-c> {set tlb_case [expr {!$tlb_case}]; SearchHighlightSettingChange; break}
+  bind .f2.e <Alt-Key-e> {set tlb_regexp [expr {!$tlb_regexp}]; SearchHighlightSettingChange; break}
   trace add variable tlb_find write SearchVarTrace
 
   wm protocol . WM_DELETE_WINDOW UserQuit
@@ -245,7 +247,8 @@ proc CreateButtonBitmap {args} {
         img_dropdown {
           # image for drop-down menu copied from combobox.tcl by Bryan Oakley
           image create bitmap img_dropdown -data \
-            "#define down_arrow_width 15\n#define down_arrow_height 15\n
+            "#define down_arrow_width 15
+            #define down_arrow_height 15
             static char down_arrow_bits[] = {
             0x00,0x80,0x00,0x80,0x00,0x80,0x00,0x80,
             0x00,0x80,0xf8,0x8f,0xf0,0x87,0xe0,0x83,
@@ -254,7 +257,8 @@ proc CreateButtonBitmap {args} {
         }
         img_down {
           image create bitmap img_down -data \
-            "#define ptr_down_width 16\n#define ptr_down_height 14\n
+            "#define ptr_down_width 16
+            #define ptr_down_height 14
             static unsigned char ptr_down_bits[] = {
             0xc0,0x01,0xc0,0x01,0xc0,0x01,0xc0,0x01,
             0xc0,0x01,0xc0,0x01,0xc0,0x01,0xc0,0x01,
@@ -263,7 +267,8 @@ proc CreateButtonBitmap {args} {
         }
         img_up {
           image create bitmap img_up -data \
-            "#define ptr_up_width 16\n#define ptr_up_height 14\n
+            "#define ptr_up_width 16
+            #define ptr_up_height 14
             static unsigned char ptr_up_bits[] = {
             0x80,0x00,0xc0,0x01,0xe0,0x03,0xf0,0x07,
             0xf8,0x0f,0xc0,0x01,0xc0,0x01,0xc0,0x01,
@@ -312,7 +317,7 @@ proc HighlightInit {} {
     # create a progress bar as overlay to the main window
     toplevel .hipro -takefocus 0 -relief sunken -borderwidth 2
     wm transient .hipro .
-    wm geometry .hipro "+[expr [winfo rootx .f1.t] + 1]+[expr [winfo rooty .f1.t] + 1]"
+    wm geometry .hipro "+[expr {[winfo rootx .f1.t] + 1}]+[expr {[winfo rooty .f1.t] + 1}]"
     wm title .hipro "Highlighting progress"
     wm resizable .hipro 0 0
 
@@ -322,50 +327,55 @@ proc HighlightInit {} {
 
     .f1.t tag add margin 1.0 end
 
-    # first apply highlighting on the text in the visible area (this is quick)
-    foreach w $patlist {
-      set opt [Search_GetOptions [lindex $w 0] [lindex $w 1] [lindex $w 2]]
-      HighlightVisible [lindex $w 0] [lindex $w 4] $opt
-    }
-
     # trigger highlighting for the 1st pattern in the background
-    set tid_high_init [after 50 HighlightInitBg 0 $cid 0]
+    set tid_high_init [after 50 HighlightInitBg 0 $cid 0 0]
     .f1.t configure -cursor watch
+
+    # apply highlighting on the text in the visible area (this is quick)
+    # use the yview callback to redo highlighting in case the user scrolls
+    Highlight_YviewRedirect 1
   }
 }
 
 
 #
 # This function is a slave-function of proc HighlightInit. The function
-# loops across all patterns to apply color highlighting. The loop is broken
-# up by means of a 10ms timer.
+# loops across all members in the global pattern list to apply color
+# the respective highlighting. The loop is broken up by installing each
+# new iteration as an idle event (and limiting each step to 100ms)
 #
-proc HighlightInitBg {pat_idx cid line} {
+proc HighlightInitBg {pat_idx cid line loop_cnt} {
   global block_bg_tasks tid_search_inc tid_search_hall tid_search_list
   global patlist tid_high_init
 
   if {$block_bg_tasks || ($tid_search_inc ne {}) || ($tid_search_hall ne {}) || ($tid_search_list ne {})} {
     # background tasks are suspended - re-schedule with timer
-    set tid_high_init [after 100 [list HighlightInitBg $pat_idx $cid $line]]
+    set tid_high_init [after 100 [list HighlightInitBg $pat_idx $cid $line 0]]
+  } elseif {$loop_cnt > 10} {
+    # insert a small timer delay to allow for idle-driven interactive tasks (e.g. selections)
+    set tid_high_init [after 10 [list HighlightInitBg $pat_idx $cid $line 0]]
 
   } elseif {$pat_idx < [llength $patlist]} {
     set w [lindex $patlist $pat_idx]
     set tagnam [lindex $w 4]
     set opt [Search_GetOptions [lindex $w 0] [lindex $w 1] [lindex $w 2]]
+    incr loop_cnt
 
+    # here we do the actual work:
     # apply the tag to all matching lines of text
     set line [HighlightLines [lindex $w 0] $tagnam $opt $line]
+
     if {$line >= 0} {
       # not done yet - reschedule
-      set tid_high_init [after idle [list HighlightInitBg $pat_idx $cid $line]]
+      set tid_high_init [after idle [list HighlightInitBg $pat_idx $cid $line $loop_cnt]]
 
     } else {
       # trigger next tag
       incr pat_idx
-      set tid_high_init [after idle [list HighlightInitBg $pat_idx $cid 1]]
+      set tid_high_init [after idle [list HighlightInitBg $pat_idx $cid 1 $loop_cnt]]
 
       # update the progress bar
-      catch {.hipro.c coords $cid 0 0 [expr int(100*$pat_idx/[llength $patlist])] 12}
+      catch {.hipro.c coords $cid 0 0 [expr {int(100*$pat_idx/[llength $patlist])}] 12}
 
       # move focus into the main window (repeatedly, as Tk sometimes moves it back)
       if {[focus -displayof .] eq ".hipro"} {
@@ -375,6 +385,7 @@ proc HighlightInitBg {pat_idx cid line} {
   } else {
     catch {destroy .hipro}
     .f1.t configure -cursor top_left_arrow
+    Highlight_YviewRedirect 0
     set tid_high_init {}
   }
 }
@@ -395,7 +406,7 @@ proc HighlightLines {pat tagnam opt line} {
          ([set pos [eval .f1.t search $opt -- {$pat} "$line.0" end]] ne {})} {
     # match found, highlight this line
     scan $pos "%d.%d" line char
-    .f1.t tag add $tagnam "$line.0" "[expr $line + 1].0"
+    .f1.t tag add $tagnam "$line.0" "[expr {$line + 1}].0"
     # trigger the search result list dialog in case the line is included there too
     SearchList_HighlightLine $tagnam $line
     incr line
@@ -419,7 +430,7 @@ proc HighlightLines {pat tagnam opt line} {
 proc HighlightAll {pat tagnam opt {line 1}} {
   global tid_high_init block_bg_tasks
 
-  if $block_bg_tasks {
+  if {$block_bg_tasks} {
     # background tasks are suspended - re-schedule with timer
     set tid_high_init [after 100 [list HighlightAll $pat $tagnam $opt $line]]
   } else {
@@ -441,7 +452,7 @@ proc HighlightAll {pat tagnam opt {line 1}} {
 #
 proc HighlightVisible {pat tagnam opt} {
   set start_pos [.f1.t index {@1,1}]
-  set end_pos [.f1.t index "@[expr [winfo width .f1.t] - 1],[expr [winfo height .f1.t] - 1]"]
+  set end_pos [.f1.t index "@[expr {[winfo width .f1.t] - 1}],[expr {[winfo height .f1.t] - 1}]"]
   scan $start_pos "%d.%d" line char
   scan $end_pos "%d.%d" max_line char
   #puts "visible $start_pos...$end_pos: $pat $opt"
@@ -449,8 +460,39 @@ proc HighlightVisible {pat tagnam opt} {
   while {($line < $max_line) &&
          ([set pos [eval .f1.t search $opt -- {$pat} "$line.0" end]] ne {})} {
     scan $pos "%d.%d" line char
-    .f1.t tag add $tagnam "$line.0" "[expr $line + 1].0"
+    .f1.t tag add $tagnam "$line.0" "[expr {$line + 1}].0"
     incr line
+  }
+}
+
+#
+# This callback is installed to the main text widget's yview. It is used
+# to detect changes in the view to update highlighting if the initial
+# highlighting task is not complete yet. The event is forwarded to the
+# vertical scrollbar.
+#
+proc Highlight_YviewCallback {frac1 frac2} {
+  global tid_high_init patlist
+
+  if {$tid_high_init ne ""} {
+    foreach w $patlist {
+      set opt [Search_GetOptions [lindex $w 0] [lindex $w 1] [lindex $w 2]]
+      HighlightVisible [lindex $w 0] [lindex $w 4] $opt
+    }
+  }
+  .f1.sb set $frac1 $frac2
+}
+
+#
+# This function redirect the yview callback from the scrollbar into the
+# above function, or to undo the change. This is used to install a
+# redirection for the duration of the initial highlighting task.
+#
+proc Highlight_YviewRedirect {enable} {
+  if {$enable} {
+    .f1.t configure -yscrollcommand Highlight_YviewCallback
+  } else {
+    .f1.t configure -yscrollcommand {.f1.sb set}
   }
 }
 
@@ -465,17 +507,17 @@ proc HighlightConfigure {w} {
   global font_content
 
   set cfg {}
-  if [lindex $w 8] {
+  if {[lindex $w 8]} {
     lappend cfg -font [DeriveFont $font_content 0 bold]
   } else {
     lappend cfg -font {}
   }
-  if [lindex $w 9] {
+  if {[lindex $w 9]} {
     lappend cfg -underline [lindex $w 9]
   } else {
     lappend cfg -underline {}
   }
-  if [lindex $w 10] {
+  if {[lindex $w 10]} {
     lappend cfg -overstrike [lindex $w 10]
   } else {
     lappend cfg -overstrike {}
@@ -531,8 +573,8 @@ proc SearchHighlightUpdate {} {
   global tid_search_hall tlb_last_hall
 
   if {$tlb_find ne ""} {
-    if $tlb_hall {
-      if [SearchExprCheck 1] {
+    if {$tlb_hall} {
+      if {[SearchExprCheck 1]} {
         set opt [Search_GetOptions $tlb_find $tlb_regexp $tlb_case]
 
         HighlightVisible $tlb_find find $opt
@@ -587,7 +629,7 @@ proc SearchHighlightAll {pat tagnam opt {line 1}} {
 proc SearchHighlightOnOff {} {
   global tlb_hall
 
-  set tlb_hall [expr !$tlb_hall]
+  set tlb_hall [expr {!$tlb_hall}]
   UpdateRcAfterIdle
 
   SearchHighlightUpdate
@@ -606,7 +648,7 @@ proc SearchHighlightSettingChange {} {
   UpdateRcAfterIdle
 
   SearchHighlightClear
-  if $tlb_hall {
+  if {$tlb_hall} {
     SearchHighlightUpdate
   }
 }
@@ -628,7 +670,7 @@ proc Search_Background {pat is_fwd opt start is_changed callback} {
     return
   }
 
-  if $is_fwd {
+  if {$is_fwd} {
     set end [.f1.t index end]
   } else {
     set end "1.0"
@@ -673,7 +715,7 @@ proc Search_Atomic {is_fwd is_changed} {
     set start_pos [Search_GetBase $is_fwd 0]
     CursorPosStore .f1.t
 
-    if $is_fwd {
+    if {$is_fwd} {
       set search_range [list $start_pos [.f1.t index end]]
     } else {
       set search_range [list $start_pos "1.0"]
@@ -751,12 +793,12 @@ proc Search_HandleMatch {pos match_len is_changed} {
     .f1.t see $pos
     .f1.t mark set insert $pos
     .f1.t tag add findinc $pos "$pos + $match_len chars"
-    .f1.t tag add find "$tlb_find_line.0" "[expr $tlb_find_line + 1].0"
+    .f1.t tag add find "$tlb_find_line.0" "[expr {$tlb_find_line + 1}].0"
 
     SearchList_HighlightLine find $tlb_find_line
     SearchList_MatchView $tlb_find_line
   }
-  if $tlb_hall {
+  if {$tlb_hall} {
     SearchHighlightUpdate
   }
 }
@@ -839,7 +881,7 @@ proc Search_IncMatch {pos pat is_fwd is_changed} {
       .f1.t see insert
     }
 
-    if $is_fwd {
+    if {$is_fwd} {
       DisplayStatusLine search warn "No match until end of file"
     } else {
       DisplayStatusLine search warn "No match until start of file"
@@ -862,10 +904,10 @@ proc SearchExprCheck {display} {
   global tlb_find tlb_regexp
 
   if {$tlb_regexp && [catch {regexp -- $tlb_find ""} cerr]} {
-    if $display {
+    if {$display} {
       set pos [string last ":" $cerr]
       if {$pos >= 0} {
-        set cerr [string trim [string range $cerr [expr $pos + 1] end]]
+        set cerr [string trim [string range $cerr [expr {$pos + 1}] end]]
       }
       DisplayStatusLine search error "Syntax error in search expression: $cerr"
     }
@@ -887,14 +929,14 @@ proc SearchExprCheck {display} {
 #
 proc Search_GetBase {is_fwd is_init} {
   if {[.f1.t bbox insert] eq ""} {
-    if $is_fwd {
+    if {$is_fwd} {
       .f1.t mark set insert {@1,1}
     } else {
-      .f1.t mark set insert "@[expr [winfo width .f1.t] - 1],[expr [winfo height .f1.t] - 1]"
+      .f1.t mark set insert "@[expr {[winfo width .f1.t] - 1}],[expr {[winfo height .f1.t] - 1}]"
     }
     set start_pos insert
   } else {
-    if $is_init {
+    if {$is_init} {
       set start_pos insert
     } elseif $is_fwd {
       set start_pos [list insert + 1 chars]
@@ -905,7 +947,7 @@ proc Search_GetBase {is_fwd is_init} {
   set start_pos [.f1.t index $start_pos]
 
   # move start position for forward search after the end of the previous match
-  if $is_fwd {
+  if {$is_fwd} {
     # search for tag which marks the previous match (would have been cleared if the pattern changed)
     set pos12 [.f1.t tag nextrange findinc [concat $start_pos linestart] [concat $start_pos lineend]]
     if {$pos12 ne ""} {
@@ -930,8 +972,8 @@ proc Search_GetOptions {pat is_re match_case {is_fwd -1}} {
   global tlb_case tlb_regexp tlb_last_dir
 
   set search_opt {}
-  if $is_re {
-    if [regexp {[\.\\\*\+\?\(\[\{\^\$]} $pat] {
+  if {$is_re} {
+    if {[regexp {[\.\\\*\+\?\(\[\{\^\$]} $pat]} {
       lappend search_opt {-regexp}
     }
   }
@@ -939,7 +981,7 @@ proc Search_GetOptions {pat is_re match_case {is_fwd -1}} {
     lappend search_opt {-nocase}
   }
   if {$is_fwd != -1} {
-    if $is_fwd {
+    if {$is_fwd} {
       lappend search_opt {-forwards}
     } else {
       lappend search_opt {-backwards}
@@ -968,7 +1010,7 @@ proc SearchNext {is_fwd} {
   if {$tlb_find ne ""} {
     set found [Search_Atomic $is_fwd 0]
     if {$found eq ""} {
-      if $is_fwd {
+      if {$is_fwd} {
         DisplayStatusLine search warn "No match until end of file"
       } else {
         DisplayStatusLine search warn "No match until start of file"
@@ -984,14 +1026,14 @@ proc SearchNext {is_fwd} {
 
 #
 # This function is used by the "All" or "List all" buttons and assorted
-# keyboard shortcuts to list all matches on the current search expression
-# in a separate dialog window.
+# keyboard shortcuts to list all text lines matching the current search
+# expression in a separate dialog window.
 #
 proc SearchAll {} {
   global tlb_find tlb_last_wid
 
   if {$tlb_find ne ""} {
-    if [SearchExprCheck 1] {
+    if {[SearchExprCheck 1]} {
       SearchList_Open
       SearchList_AddMatches
 
@@ -1021,7 +1063,7 @@ proc SearchReset {} {
   .f1.t tag remove findinc 1.0 end
   set tlb_last_hall {}
 
-  if [info exists tlb_inc_base] {
+  if {[info exists tlb_inc_base]} {
     .f1.t xview moveto [lindex $tlb_inc_view 0]
     .f1.t yview moveto [lindex $tlb_inc_view 1]
     .f1.t mark set insert $tlb_inc_base
@@ -1095,8 +1137,8 @@ proc SearchLeave {} {
     set tlb_find_focus 0
   }
 
-  if $tlb_hall {
-    if [SearchExprCheck 0] {
+  if {$tlb_hall} {
+    if {[SearchExprCheck 0]} {
       SearchHighlightUpdate
     }
   }
@@ -1154,12 +1196,12 @@ proc SearchReturn {} {
     }
   }
 
-  if [SearchExprCheck 1] {
-    if $restart {
+  if {[SearchExprCheck 1]} {
+    if {$restart} {
       # incremental search not completed -> start regular search
       if {[SearchNext $tlb_last_dir] eq ""} {
         global tlb_inc_view tlb_inc_base
-        if [info exists tlb_inc_base] {
+        if {[info exists tlb_inc_base]} {
           .f1.t xview moveto [lindex $tlb_inc_view 0]
           .f1.t yview moveto [lindex $tlb_inc_view 1]
           .f1.t mark set insert $tlb_inc_base
@@ -1200,7 +1242,7 @@ proc Search_AddHistory {txt} {
 
     # maintain max. stack depth
     if {[llength $tlb_hist] > $tlb_hist_maxlen} {
-      set tlb_hist [lrange $tlb_hist 0 [expr $tlb_hist_maxlen - 1]]
+      set tlb_hist [lrange $tlb_hist 0 [expr {$tlb_hist_maxlen - 1}]]
     }
 
     UpdateRcAfterIdle
@@ -1227,7 +1269,7 @@ proc Search_BrowseHistory {is_up} {
       if {$is_up} {
         set tlb_hist_pos 0
       } else {
-        set tlb_hist_pos [expr [llength $tlb_hist] - 1]
+        set tlb_hist_pos [expr {[llength $tlb_hist] - 1}]
       }
     } elseif $is_up {
       if {$tlb_hist_pos + 1 < [llength $tlb_hist]} {
@@ -1240,7 +1282,7 @@ proc Search_BrowseHistory {is_up} {
     }
 
     if {[string length $tlb_hist_prefix] > 0} {
-      set tlb_hist_pos [Search_HistoryComplete [expr $is_up ? 1 : -1]]
+      set tlb_hist_pos [Search_HistoryComplete [expr {$is_up ? 1 : -1}]]
     }
 
     if {$tlb_hist_pos >= 0} {
@@ -1287,13 +1329,13 @@ proc Search_Complete {} {
     set dump [ExtractText $pos [concat $pos lineend]]
     set off 0
 
-    if $tlb_regexp {
-      if $tlb_case {
+    if {$tlb_regexp} {
+      if {$tlb_case} {
         set opt {-nocase}
       } else {
         set opt {--}
       }
-      if [SearchExprCheck 1] {
+      if {[SearchExprCheck 1]} {
         if {[regexp $opt "^${tlb_find}" $dump word]} {
           set off [string length $word]
         }
@@ -1308,7 +1350,7 @@ proc Search_Complete {} {
       set word [Search_EscapeSpecialChars $word]
       append tlb_find $word
       .f2.e selection clear
-      .f2.e selection range [expr [string length $tlb_find] - [string length $word]] end
+      .f2.e selection range [expr {[string length $tlb_find] - [string length $word]}] end
       .f2.e icursor end
       .f2.e xview moveto 1
     }
@@ -1363,7 +1405,7 @@ proc SearchWord {is_fwd} {
       set word [Search_EscapeSpecialChars $word]
 
       # add regexp to match on word boundaries
-      if $tlb_regexp {
+      if {$tlb_regexp} {
         set nword {}
         append nword {\m} $word {\M}
         set word $nword
@@ -1376,7 +1418,7 @@ proc SearchWord {is_fwd} {
       set found [Search_Atomic $is_fwd 1]
 
       if {$found eq ""} {
-        if $is_fwd {
+        if {$is_fwd} {
           DisplayStatusLine search warn "No match until end of file"
         } else {
           DisplayStatusLine search warn "No match until start of file"
@@ -1399,9 +1441,9 @@ proc SearchCharInLine {char dir} {
     set last_inline_char $char
     set last_inline_dir $dir
   } else {
-    if [info exists last_inline_char]  {
+    if {[info exists last_inline_char]}  {
       set char $last_inline_char
-      set dir [expr $dir * $last_inline_dir]
+      set dir [expr {$dir * $last_inline_dir}]
     } else {
       DisplayStatusLine search_inline error "No previous in-line character search"
       return
@@ -1424,7 +1466,7 @@ proc SearchCharInLine {char dir} {
       set len [string length $dump]
       set idx [string last $char $dump]
       if {$idx != -1} {
-        .f1.t mark set insert [list insert - [expr $len - $idx] chars]
+        .f1.t mark set insert [list insert - [expr {$len - $idx}] chars]
         .f1.t see insert
       } else {
         DisplayStatusLine search_inline warn "Character \"$char\" not found until line start"
@@ -1442,7 +1484,7 @@ proc SearchCharInLine {char dir} {
 proc Search_EscapeSpecialChars {word} {
   global tlb_regexp
 
-  if $tlb_regexp {
+  if {$tlb_regexp} {
     regsub -all {[^[:alnum:][:blank:]_\-\:\=\%\"\!\'\;\,\#\/\<\>]\@} $word {\\&} word
   }
   return $word
@@ -1465,10 +1507,11 @@ proc Search_RemoveFromHistory {} {
     SearchHistory_Fill
     SearchHistory_RestoreSel $old_sel
 
-    if {[llength $tlb_hist] == 0} {
+    set new_len [llength $tlb_hist]
+    if {$new_len == 0} {
       unset tlb_hist_pos tlb_hist_prefix
-    } elseif {$tlb_hist_pos >= [llength $tlb_hist]} {
-      set tlb_hist_pos [expr [llength $tlb_hist] - 1]
+    } elseif {$tlb_hist_pos >= $new_len} {
+      set tlb_hist_pos [expr {$new_len - 1}]
     }
   }
 }
@@ -1501,7 +1544,7 @@ proc DisplayStatusLine {topic type msg} {
     pack .stline.l -side left
 
     set fh [font metrics [.stline.l cget -font] -linespace]
-    wm geometry .stline "+[winfo rootx .f1]+[expr [winfo rooty .f2] - $fh - 10]"
+    wm geometry .stline "+[winfo rootx .f1]+[expr {[winfo rooty .f2] - $fh - 10}]"
 
   } else {
     raise .stline
@@ -1556,7 +1599,7 @@ proc DisplayLineNumer {} {
       }
 
       if {$end_line > 0} {
-        set val [expr int(100.0*$line/$end_line + 0.5)]
+        set val [expr {int(100.0*$line/$end_line + 0.5)}]
         set perc " ($val%)"
       } else {
         set perc ""
@@ -1605,7 +1648,7 @@ proc DeriveFont {afont delta_size {style {}}} {
   }
   set size [lindex $afont 1]
   if {$size < 0} {
-    set size [expr $size - $delta_size]
+    set size [expr {$size - $delta_size}]
   } else {
     incr size $delta_size
   }
@@ -1687,15 +1730,17 @@ proc YviewSet {wid where col} {
   if {[llength $pos] == 4} {
     set fh [font metrics $font_content -linespace]
     set wh [winfo height $wid]
+    set bbox_y [lindex $pos 1]
+    set bbox_h [lindex $pos 3]
 
     if {$where eq "top"} {
-      set delta [expr int([lindex $pos 1] / $fh)]
+      set delta [expr {int($bbox_y / $fh)}]
 
     } elseif {$where eq "center"} {
-      set delta [expr 0 - int(($wh/2 - [lindex $pos 1] + [lindex $pos 3]/2) / $fh)]
+      set delta [expr {0 - int(($wh/2 - $bbox_y + $bbox_h/2) / $fh)}]
 
     } elseif {$where eq "bottom"} {
-      set delta [expr 0 - int(($wh - [lindex $pos 1] - [lindex $pos 3]) / $fh)]
+      set delta [expr {0 - int(($wh - $bbox_y - $bbox_h) / $fh)}]
 
     } else {
       set delta 0
@@ -1715,6 +1760,10 @@ proc YviewSet {wid where col} {
       $wid see insert
     }
   }
+
+  # synchronize the search result list (if open) with the main text
+  scan [.f1.t index insert] "%d" line
+  SearchList_MatchView $line
 }
 
 
@@ -1749,11 +1798,12 @@ proc YviewScroll {wid delta} {
 proc YviewScrollHalf {wid dir} {
   global font_content
 
+  set wh [winfo height $wid]
   set fh [font metrics $font_content -linespace]
   if {$fh > 0} {
-    set wh [expr int(([winfo height $wid] + $fh/2) / $fh)]
+    set wh [expr {int(($wh + $fh/2) / $fh)}]
 
-    YviewScroll $wid [expr int($wh/2 * $dir)]
+    YviewScroll $wid [expr {int($wh/2 * $dir)}]
   }
 }
 
@@ -1770,7 +1820,7 @@ proc CursorSetLine {wid where} {
     $wid mark set insert {@1,1}
 
   } elseif {$where eq "center"} {
-    $wid mark set insert "@1,[expr int([winfo height $wid] / 2)]"
+    $wid mark set insert "@1,[expr {int([winfo height $wid] / 2)}]"
 
   } elseif {$where eq "bottom"} {
     $wid mark set insert "@1,[winfo height $wid] linestart"
@@ -1820,7 +1870,7 @@ proc XviewScroll {wid how delta dir} {
   set pos_old [$wid bbox insert]
 
   if {$how eq "scroll"} {
-    $wid xview scroll [expr $dir * $delta] units
+    $wid xview scroll [expr {$dir * $delta}] units
   } else {
     $wid xview moveto $delta
   }
@@ -1830,7 +1880,7 @@ proc XviewScroll {wid how delta dir} {
 
     # check if cursor is fully visible
     if {([llength $pos_new] != 4) || ([lindex $pos_new 2] == 0)} {
-      set ycoo [expr [lindex $pos_old 1] + int([lindex $pos_old 3] / 2)]
+      set ycoo [expr {[lindex $pos_old 1] + int([lindex $pos_old 3] / 2)}]
       if {$dir < 0} {
         $wid mark set insert "@[winfo width $wid],$ycoo"
       } else {
@@ -1849,8 +1899,8 @@ proc XviewScrollHalf {wid dir} {
   set xpos [$wid xview]
   set w [winfo width $wid]
   if {$w != 0} {
-    set fract_visible [expr [lindex $xpos 1] - [lindex $xpos 0]]
-    set off [expr [lindex $xpos 0] + $dir * (0.5 * $fract_visible)]
+    set fract_visible [expr {[lindex $xpos 1] - [lindex $xpos 0]}]
+    set off [expr {[lindex $xpos 0] + $dir * (0.5 * $fract_visible)}]
     if {$off > 1} {set off 1}
     if {$off < 0} {set off 0}
   }
@@ -1867,14 +1917,14 @@ proc XviewSet {wid where} {
   set coo [$wid bbox insert]
   set w [winfo width $wid]
   if {($coo ne "") && ($w != 0)} {
-    set fract_visible [expr [lindex $xpos 1] - [lindex $xpos 0]]
-    set fract_insert [expr double(2 + [lindex $coo 0] + [lindex $coo 2]) / $w]
+    set fract_visible [expr {[lindex $xpos 1] - [lindex $xpos 0]}]
+    set fract_insert [expr {double(2 + [lindex $coo 0] + [lindex $coo 2]) / $w}]
 
     if {$where eq "left"} {
-      set off [expr [lindex $xpos 0] + ($fract_insert * $fract_visible)]
+      set off [expr {[lindex $xpos 0] + ($fract_insert * $fract_visible)}]
       if {$off > 1.0} {set off 1.0}
     } else {
-      set off [expr [lindex $xpos 0] - ((1 - $fract_insert) * $fract_visible)]
+      set off [expr {[lindex $xpos 0] - ((1 - $fract_insert) * $fract_visible)}]
       if {$off < 0.0} {set off 0.0}
     }
     $wid xview moveto $off
@@ -1905,16 +1955,16 @@ proc CursorSetColumn {wid where} {
 proc CursorMoveWord {is_fwd spc_only to_end} {
   set pos [.f1.t index insert]
   if {$pos ne ""} {
-    if $is_fwd {
+    if {$is_fwd} {
       set dump [ExtractText $pos [concat $pos lineend]]
-      if $spc_only {
-        if $to_end {
+      if {$spc_only} {
+        if {$to_end} {
           set match [regexp {^\s*\S*} $dump word]
         } else {
           set match [regexp {^\S*\s*} $dump word]
         }
       } else {
-        if $to_end {
+        if {$to_end} {
           set match [regexp {^\W*\w*} $dump word]
         } else {
           set match [regexp {^\w*\W*} $dump word]
@@ -1928,20 +1978,20 @@ proc CursorMoveWord {is_fwd spc_only to_end} {
     } else {
       set dump [ExtractText [concat $pos linestart] $pos]
       set word ""
-      if $spc_only {
-        if $to_end {
+      if {$ispc_only} {
+        if {$to_end} {
           set match [regexp {\s(\s+)$} $dump foo word]
         } else {
           set match [regexp {\S+\s*$} $dump word]
         }
       } else {
-        if $to_end {
+        if {$to_end} {
           set match [regexp {\w(\W+\w*)$} $dump foo word]
         } else {
           set match [regexp {(\w+|\w+\W+)$} $dump word]
         }
       }
-      if $match {
+      if {$match} {
         .f1.t mark set insert [list insert - [string length $word] chars]
       } else {
         .f1.t mark set insert [list insert - 1 lines lineend]
@@ -2037,7 +2087,7 @@ proc KeyCmd {wid char} {
     } elseif {($last_key_char eq "z") || ($last_key_char eq "g")} {
       ClearStatusLine keycmd
       set char "$last_key_char$char"
-      if [info exists key_hash($char)] {
+      if {[info exists key_hash($char)]} {
         uplevel {#0} $key_hash($char)
       } else {
         DisplayStatusLine keycmd error "Undefined key sequence \"$char\""
@@ -2058,7 +2108,7 @@ proc KeyCmd {wid char} {
     } else {
       set last_key_char {}
 
-      if [info exists key_hash($char)] {
+      if {[info exists key_hash($char)]} {
         uplevel {#0} $key_hash($char)
 
       } elseif {[regexp {[1-9]} $char]} {
@@ -2246,7 +2296,7 @@ proc KeyCmd_ExecGoto {} {
     if {$keycmd_ent >= 0} {
       .f1.t mark set insert "$keycmd_ent.0"
     } else {
-      set keycmd_ent [expr 1 - $keycmd_ent]
+      set keycmd_ent [expr {1 - $keycmd_ent}]
       catch {.f1.t mark set insert "end - $keycmd_ent lines linestart"}
       CursorMoveLine .f1.t 0
     }
@@ -2311,7 +2361,7 @@ proc KeyCmd_ExecSearch {is_fwd} {
       for {set idx 0} {$idx < $keycmd_ent} {incr idx} {
         set found [Search_Atomic $is_fwd 0]
         if {$found eq ""} {
-          if $is_fwd {set limit "end"} else {set limit "start"}
+          if {$is_fwd} {set limit "end"} else {set limit "start"}
           if {$count == 0} {
             DisplayStatusLine search warn "No match until $limit of file"
           } else {
@@ -2461,7 +2511,7 @@ proc Mark_Line {line} {
   set tlb_last_hall ""
 
   # highlight the specified line
-  .f1.t tag add find "$line.0" "[expr $line + 1].0"
+  .f1.t tag add find "$line.0" "[expr {$line + 1}].0"
 }
 
 
@@ -2475,7 +2525,7 @@ proc Mark_JumpNext {is_fwd} {
   set pos [.f1.t index insert]
   if {$pos ne ""} {
     scan $pos "%d.%d" line char
-    if $is_fwd {
+    if {$is_fwd} {
       foreach mark_line [lsort -integer [array names mark_list]] {
         if {$mark_line > $line} {
           set goto $mark_line
@@ -2497,7 +2547,7 @@ proc Mark_JumpNext {is_fwd} {
       .f2.e xview moveto 0
 
     } else {
-      if $is_fwd {
+      if {$is_fwd} {
         DisplayStatusLine bookmark warn "No more bookmarks until end of file"
       } else {
         DisplayStatusLine bookmark warn "No more bookmarks until start of file"
@@ -2560,7 +2610,7 @@ proc Mark_ReadFile {filename} {
     close $file
 
     if {$line_num > 0} {
-      set modif [expr $mark_list_modified || ([array size mark_list] != 0)]
+      set modif [expr {$mark_list_modified || ([array size mark_list] != 0)}]
 
       set pos [.f1.t index end]
       scan [lindex $pos 0] "%d.%d" max_line foo
@@ -2665,7 +2715,7 @@ proc Mark_DefaultFile {trace_name} {
     catch {
       set cur_mtime [file mtime $trace_name]
     }
-    if [info exists cur_mtime] {
+    if {[info exists cur_mtime]} {
       set name "${trace_name}.bok"
       catch {
         if {[file readable $name]} {
@@ -2737,7 +2787,7 @@ proc Mark_OfferSave {} {
       if {$mark_list_modified == 0} {
         toplevel .minfo
         wm transient .minfo .
-        wm geometry .minfo "+[expr [winfo rootx .] + 100]+[expr [winfo rooty .] + 100]"
+        wm geometry .minfo "+[expr {[winfo rootx .] + 100}]+[expr {[winfo rooty .] + 100}]"
         wm title .minfo "Bookmarks saved"
 
         button  .minfo.b -bitmap info -relief flat
@@ -2782,7 +2832,7 @@ proc MarkList_Insert {idx line} {
   append txt "\n"
 
   # insert text (prepend space to improve visibility of selection)
-  .dlg_mark.l insert "[expr $idx + 1].0" "  " margin $txt $tag_list
+  .dlg_mark.l insert "[expr {$idx + 1}].0" "  " margin $txt $tag_list
 }
 
 
@@ -2792,7 +2842,7 @@ proc MarkList_Insert {idx line} {
 proc MarkList_Fill {} {
   global dlg_mark_shown dlg_mark_list mark_list
 
-  if [info exists dlg_mark_shown] {
+  if {[info exists dlg_mark_shown]} {
     set dlg_mark_list {}
     .dlg_mark.l delete 1.0 end
 
@@ -2814,7 +2864,7 @@ proc MarkList_Fill {} {
 proc MarkList_Add {line} {
   global dlg_mark_shown mark_list dlg_mark_list dlg_mark_sel
 
-  if [info exists dlg_mark_shown] {
+  if {[info exists dlg_mark_shown]} {
     set idx 0
     foreach l $dlg_mark_list {
       if {$l > $line} {
@@ -2824,7 +2874,7 @@ proc MarkList_Add {line} {
     }
     set dlg_mark_list [linsert $dlg_mark_list $idx $line]
     MarkList_Insert $idx $line
-    .dlg_mark.l see "[expr $idx + 1].0"
+    .dlg_mark.l see "[expr {$idx + 1}].0"
     TextSel_SetSelection dlg_mark_sel $idx
   }
 }
@@ -2837,11 +2887,11 @@ proc MarkList_Add {line} {
 proc MarkList_Delete {line} {
   global dlg_mark_shown mark_list dlg_mark_list dlg_mark_sel
 
-  if [info exists dlg_mark_shown] {
+  if {[info exists dlg_mark_shown]} {
     set idx [lsearch -exact -integer $dlg_mark_list $line]
     if {$idx >= 0} {
       set dlg_mark_list [lreplace $dlg_mark_list $idx $idx]
-      .dlg_mark.l delete "[expr $idx + 1].0" "[expr $idx + 2].0"
+      .dlg_mark.l delete "[expr {$idx + 1}].0" "[expr {$idx + 2}].0"
       TextSel_SetSelection dlg_mark_sel {}
     }
   }
@@ -2901,7 +2951,7 @@ proc MarkList_SelectionChange {sel} {
   if {[llength $sel] > 1} {
     foreach idx [lrange $sel 1 end] {
       set line [lindex $dlg_mark_list $idx]
-      .f1.t tag add find "$line.0" "[expr $line + 1].0"
+      .f1.t tag add find "$line.0" "[expr {$line + 1}].0"
     }
   }
 }
@@ -2929,7 +2979,7 @@ proc MarkList_AdjustLineNums {top_l bottom_l} {
   foreach {line title} [array get mark_list] {
     unset mark_list($line)
     if {($line >= $top_l) && (($line < $bottom_l) || ($bottom_l == 0))} {
-      set mark_list([expr $line - $top_l + 1]) $title
+      set mark_list([expr {$line - $top_l + 1}]) $title
     }
   }
   MarkList_Fill
@@ -2943,11 +2993,11 @@ proc MarkList_AdjustLineNums {top_l bottom_l} {
 proc MarkList_Remove {line} {
   global dlg_mark_shown dlg_mark_list mark_list mark_list_modified
 
-  if [info exists dlg_mark_shown] {
+  if {[info exists dlg_mark_shown]} {
     set idx [lsearch $dlg_mark_list $line]
     if {$idx != -1} {
       set dlg_mark_list [lreplace $dlg_mark_list $idx $idx]
-      .dlg_mark.l delete "[expr $idx + 1].0" "[expr $idx + 2].0"
+      .dlg_mark.l delete "[expr {$idx + 1}].0" "[expr {$idx + 2}].0"
 
       set mark_list_modified 1
       unset mark_list($line)
@@ -2973,9 +3023,9 @@ proc MarkList_Rename {idx txt} {
       set mark_list($line) $txt
       set mark_list_modified 1
 
-      .dlg_mark.l delete "[expr $idx + 1].0" "[expr $idx + 2].0"
+      .dlg_mark.l delete "[expr {$idx + 1}].0" "[expr {$idx + 2}].0"
       MarkList_Insert $idx $line
-      .dlg_mark.l see "[expr $idx + 1].0"
+      .dlg_mark.l see "[expr {$idx + 1}].0"
       TextSel_SetSelection dlg_mark_sel $idx
     }
   }
@@ -2998,8 +3048,8 @@ proc MarkList_ContextMenu {xcoo ycoo} {
     }
     .dlg_mark.ctxmen add command -label "Remove marker" -command MarkList_RemoveSelection
 
-    set rootx [expr [winfo rootx .dlg_mark] + $xcoo]
-    set rooty [expr [winfo rooty .dlg_mark] + $ycoo]
+    set rootx [expr {[winfo rootx .dlg_mark] + $xcoo}]
+    set rooty [expr {[winfo rooty .dlg_mark] + $ycoo}]
     tk_popup .dlg_mark.ctxmen $rootx $rooty 0
   }
 }
@@ -3026,7 +3076,7 @@ proc MarkList_OpenDialog {} {
     text .dlg_mark.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
                      -foreground $col_fg_content -background $col_bg_content \
                      -exportselection 0 -insertofftime 0 -yscrollcommand {.dlg_mark.sb set} \
-                     -insertwidth [expr 2 * [font measure $font_content " "]]
+                     -insertwidth [expr {2 * [font measure $font_content " "]}]
     pack .dlg_mark.l -side left -fill both -expand 1
     scrollbar .dlg_mark.sb -orient vertical -command {.dlg_mark.l yview} -takefocus 0
     pack .dlg_mark.sb -side left -fill y
@@ -3097,8 +3147,8 @@ proc MarkList_OpenRename {idx} {
   if {[info exists dlg_mark_shown] &&
       ($idx < [llength $dlg_mark_list])} {
 
-    .dlg_mark.l see "[expr $idx + 1].0"
-    set coo [.dlg_mark.l dlineinfo "[expr $idx + 1].0"]
+    .dlg_mark.l see "[expr {$idx + 1}].0"
+    set coo [.dlg_mark.l dlineinfo "[expr {$idx + 1}].0"]
     if {[llength $coo] == 5} {
       catch {destroy .mren}
       toplevel .mren
@@ -3106,10 +3156,10 @@ proc MarkList_OpenRename {idx} {
       wm title .mren "Enter bookmark text"
       wm resizable .mren 0 0
 
-      set xcoo [expr [lindex $coo 0] + [winfo rootx .dlg_mark.l] - 3]
-      set ycoo [expr [lindex $coo 1] + [winfo rooty .dlg_mark.l] - 3]
+      set xcoo [expr {[lindex $coo 0] + [winfo rootx .dlg_mark.l] - 3}]
+      set ycoo [expr {[lindex $coo 1] + [winfo rooty .dlg_mark.l] - 3}]
       set w [winfo width .dlg_mark.l]
-      set h [expr [lindex $coo 3] + 6]
+      set h [expr {[lindex $coo 3] + 6}]
       wm geometry .mren "${w}x${h}+${xcoo}+${ycoo}"
 
       set line [lindex $dlg_mark_list $idx]
@@ -3254,8 +3304,8 @@ proc SearchHistory_ContextMenu {xcoo ycoo} {
   }
 
   if {$c > 0} {
-    set rootx [expr [winfo rootx .dlg_hist] + $xcoo]
-    set rooty [expr [winfo rooty .dlg_hist] + $ycoo]
+    set rootx [expr {[winfo rootx .dlg_hist] + $xcoo}]
+    set rooty [expr {[winfo rooty .dlg_hist] + $ycoo}]
     tk_popup .dlg_hist.ctxmen $rootx $rooty 0
   }
 }
@@ -3269,7 +3319,7 @@ proc SearchHistory_StoreSel {} {
   global dlg_hist_shown dlg_hist_sel tlb_hist
 
   set pat_list {}
-  if [info exists dlg_hist_shown] {
+  if {[info exists dlg_hist_shown]} {
     set sel [TextSel_GetSelection dlg_hist_sel]
     foreach idx $sel {
       lappend pat_list [lindex $tlb_hist $idx]
@@ -3287,7 +3337,7 @@ proc SearchHistory_StoreSel {} {
 proc SearchHistory_RestoreSel {pat_list} {
   global dlg_hist_shown dlg_hist_sel tlb_hist
 
-  if [info exists dlg_hist_shown] {
+  if {[info exists dlg_hist_shown]} {
     set sel {}
     foreach pat $pat_list {
       set idx [lsearch -exact $tlb_hist $pat]
@@ -3307,7 +3357,7 @@ proc SearchHistory_RestoreSel {pat_list} {
 proc SearchHistory_Fill {} {
   global dlg_hist_shown tlb_hist
 
-  if [info exists dlg_hist_shown] {
+  if {[info exists dlg_hist_shown]} {
 
     .dlg_hist.f1.l delete 1.0 end
 
@@ -3331,7 +3381,7 @@ proc SearchHistory_Remove {} {
   set sel [TextSel_GetSelection dlg_hist_sel]
   set sel [lsort -integer -decreasing -uniq $sel]
   foreach idx $sel {
-    set line "[expr $idx + 1].0"
+    set line "[expr {$idx + 1}].0"
     set tlb_hist [lreplace $tlb_hist $idx $idx]
     .dlg_hist.f1.l delete $line [list $line + 1 lines]
   }
@@ -3354,11 +3404,11 @@ proc SearchHistory_Search {is_fwd} {
     set tlb_find [lindex $tlb_hist [lindex $sel 0]]
     Search_AddHistory $tlb_find
 
-    if [SearchExprCheck 1] {
+    if {[SearchExprCheck 1]} {
       ClearStatusLine search
       set found [Search_Atomic $is_fwd 1]
       if {$found eq ""} {
-        if $is_fwd {
+        if {$is_fwd} {
           DisplayStatusLine search warn "No match until end of file"
         } else {
           DisplayStatusLine search warn "No match until start of file"
@@ -3479,7 +3529,7 @@ proc SearchList_Open {{no_raise 0}} {
     text .dlg_srch.f1.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
                         -foreground $col_fg_content -background $col_bg_content \
                         -exportselection 0 -insertofftime 0 \
-                        -insertwidth [expr 2 * [font measure $font_content " "]] \
+                        -insertwidth [expr {2 * [font measure $font_content " "]}] \
                         -yscrollcommand {.dlg_srch.f1.sb set}
     pack .dlg_srch.f1.l -side left -fill both -expand 1
     scrollbar .dlg_srch.f1.sb -orient vertical -command {.dlg_srch.f1.l yview} -takefocus 0
@@ -3501,10 +3551,11 @@ proc SearchList_Open {{no_raise 0}} {
     KeyCmdBind .dlg_srch.f1.l "Return" {CursorMoveLine .dlg_srch.f1.l 1}
     KeyCmdBind .dlg_srch.f1.l "u" SearchList_Undo
     KeyCmdBind .dlg_srch.f1.l "m" SearchList_ToggleMark
+    bind .dlg_srch.f1.l <Escape> {SearchList_SearchAbort}
     bind .dlg_srch.f1.l <Control-Key-r> SearchList_Redo
-    bind .dlg_srch.f1.l <Alt-Key-h> {set dlg_srch_highlight [expr !$dlg_srch_highlight]; SearchList_ToggleHighlight; break}
-    bind .dlg_srch.f1.l <Alt-Key-f> {set dlg_srch_show_fn [expr !$dlg_srch_show_fn]; SearchList_ToggleTickNo; break}
-    bind .dlg_srch.f1.l <Alt-Key-d> {set dlg_srch_fn_delta [expr !$dlg_srch_fn_delta]; SearchList_ToggleTickNo; break}
+    bind .dlg_srch.f1.l <Alt-Key-h> {set dlg_srch_highlight [expr {!$dlg_srch_highlight}]; SearchList_ToggleHighlight; break}
+    bind .dlg_srch.f1.l <Alt-Key-f> {set dlg_srch_show_fn [expr {!$dlg_srch_show_fn}]; SearchList_ToggleTickNo; break}
+    bind .dlg_srch.f1.l <Alt-Key-d> {set dlg_srch_fn_delta [expr {!$dlg_srch_fn_delta}]; SearchList_ToggleTickNo; break}
     focus .dlg_srch.f1.l
 
     menu .dlg_srch.ctxmen -tearoff 0
@@ -3554,7 +3605,7 @@ proc SearchList_Clear {} {
   global dlg_srch_shown dlg_srch_lines dlg_srch_sel
   global dlg_srch_undo dlg_srch_redo
 
-  if [info exists dlg_srch_shown] {
+  if {[info exists dlg_srch_shown]} {
     SearchList_SearchAbort
 
     if {[llength $dlg_srch_lines] > 0} {
@@ -3577,7 +3628,7 @@ proc SearchList_Init {} {
   global dlg_srch_shown dlg_srch_lines dlg_srch_fns dlg_srch_fn_root
   global dlg_srch_undo dlg_srch_redo
 
-  if [info exists dlg_srch_shown] {
+  if {[info exists dlg_srch_shown]} {
     set dlg_srch_lines {}
     set dlg_srch_undo {}
     set dlg_srch_redo {}
@@ -3665,8 +3716,8 @@ proc SearchList_ContextMenu {xcoo ycoo} {
   }
 
   if {$c > 0} {
-    set rootx [expr [winfo rootx .dlg_srch] + $xcoo]
-    set rooty [expr [winfo rooty .dlg_srch] + $ycoo]
+    set rootx [expr {[winfo rootx .dlg_srch] + $xcoo}]
+    set rooty [expr {[winfo rooty .dlg_srch] + $ycoo}]
     tk_popup .dlg_srch.ctxmen $rootx $rooty 0
   }
 }
@@ -3687,7 +3738,7 @@ proc SearchList_RemoveSelection {} {
   foreach idx $sel {
     lappend line_list [lindex $dlg_srch_lines $idx]
     set dlg_srch_lines [lreplace $dlg_srch_lines $idx $idx]
-    set line "[expr $idx + 1].0"
+    set line "[expr {$idx + 1}].0"
     .dlg_srch.f1.l delete $line "$line +1 lines"
   }
   TextSel_SetSelection dlg_srch_sel {}
@@ -3699,7 +3750,6 @@ proc SearchList_RemoveSelection {} {
 }
 
 
-#
 # This function is bound to "n", "N" in the search filter dialog. The function
 # starts a regular search in the main window, but repeats until a matching
 # line is found which is also listed in the filter dialog.
@@ -3707,7 +3757,7 @@ proc SearchList_RemoveSelection {} {
 proc Search_list_SearchNext {is_fwd} {
   global dlg_srch_sel dlg_srch_lines
 
-  if $is_fwd {
+  if {$is_fwd} {
     .f1.t mark set insert "insert lineend"
   } else {
     .f1.t mark set insert "insert linestart"
@@ -3760,7 +3810,7 @@ proc SearchList_SetFnRoot {fn} {
 proc SearchList_ToggleHighlight {} {
   global dlg_srch_highlight tlb_last_hall
 
-  if $dlg_srch_highlight {
+  if {$dlg_srch_highlight} {
     # search highlighting was enabled:
     # force update of global highlighting (in main and search result windows)
     set tlb_last_hall ""
@@ -3785,7 +3835,7 @@ proc SearchList_InvertCmd {op line_list mode} {
     foreach line [lsort -integer -decreasing $line_list] {
       set idx [SearchList_GetLineIdx $line]
       if {[lindex $dlg_srch_lines $idx] == $line} {
-        set pos "[expr $idx + 1].0"
+        set pos "[expr {$idx + 1}].0"
         .dlg_srch.f1.l delete $pos "$pos +1 lines"
 
         #too slow: set dlg_srch_lines [lreplace $new_lines $idx $idx]
@@ -3801,7 +3851,7 @@ proc SearchList_InvertCmd {op line_list mode} {
     foreach line [lsort -integer -decreasing $line_list] {
       set idx [SearchList_GetLineIdx $line]
       if {[lindex $dlg_srch_lines $idx] != $line} {
-        set pos "[expr $idx + 1].0"
+        set pos "[expr {$idx + 1}].0"
         SearchList_InsertLine $line $pos
 
         #too slow: set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
@@ -3810,7 +3860,7 @@ proc SearchList_InvertCmd {op line_list mode} {
     }
     set dlg_srch_lines [lsort -integer -increasing [concat $dlg_srch_lines $new_lines]]
   }
-  if [info exists pos] {
+  if {[info exists pos]} {
     .dlg_srch.f1.l see $pos
   }
   TextSel_SetSelection dlg_srch_sel {}
@@ -3874,7 +3924,7 @@ proc SearchList_SearchMatches {do_add} {
   TextSel_SetSelection dlg_srch_sel {}
 
   if {$tlb_find ne ""} {
-    if [SearchExprCheck 1] {
+    if {[SearchExprCheck 1]} {
       set opt [Search_GetOptions $tlb_find $tlb_regexp $tlb_case 1]
       SearchList_Search [list $tlb_find] $opt $do_add
     }
@@ -3895,19 +3945,19 @@ proc SearchList_GetLineIdx {ins_line} {
   set min -1
   set max $end
   if {$end > 0} {
-    set idx [expr $end >> 1]
+    set idx [expr {$end >> 1}]
     incr end -1
     while 1 {
       set el [lindex $dlg_srch_lines $idx]
       if {$el < $ins_line} {
         set min $idx
-        set idx [expr ($idx + $max) >> 1]
+        set idx [expr {($idx + $max) >> 1}]
         if {($idx >= $max) || ($idx <= $min)} {
           break
         }
       } elseif {$el > $ins_line} {
         set max $idx
-        set idx [expr ($min + $idx) >> 1]
+        set idx [expr {($min + $idx) >> 1}]
         if {$idx <= $min} {
           break
         }
@@ -3933,7 +3983,7 @@ proc SearchList_Search {pat_list opt do_add} {
   .dlg_srch.f1.l configure -cursor watch
 
   after cancel $tid_search_list
-  set tid_search_list [after 10 [list SearchList_BgSearchLoop $pat_list $opt $do_add 1 0]]
+  set tid_search_list [after 10 [list SearchList_BgSearchLoop $pat_list $opt $do_add 1 0 0]]
 }
 
 
@@ -3942,17 +3992,20 @@ proc SearchList_Search {pat_list opt do_add} {
 # The search loop continues for at most 100ms, then the function re-schedules
 # itself as idle task.
 #
-proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx} {
+proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx loop_cnt} {
   global block_bg_tasks tid_search_inc tid_search_hall
   global dlg_srch_shown dlg_srch_lines tid_search_list
 
   if {$block_bg_tasks || ($tid_search_inc ne {}) || ($tid_search_hall ne {})} {
     # background tasks are suspended - re-schedule with timer
-    set tid_search_list [after 100 [list SearchList_BgSearchLoop $pat_list $opt $do_add $line $pat_idx]]
+    set tid_search_list [after 100 [list SearchList_BgSearchLoop $pat_list $opt $do_add $line $pat_idx 0]]
+
+  } elseif {$loop_cnt > 10} {
+    set tid_search_list [after 10 [list SearchList_BgSearchLoop $pat_list $opt $do_add $line $pat_idx 0]]
 
   } elseif [info exists dlg_srch_shown] {
     scan [.f1.t index end] "%d" max_line
-    set stop_t [expr [clock clicks -milliseconds] + 200]
+    set stop_t [expr {[clock clicks -milliseconds] + 200}]
     set pat [lindex $pat_list $pat_idx]
     set line_list {}
     set off 0
@@ -3962,9 +4015,9 @@ proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx} {
       scan $pos "%d" line
 
       set idx [SearchList_GetLineIdx $line]
-      if $do_add {
+      if {$do_add} {
         if {[lindex $dlg_srch_lines $idx] != $line} {
-          SearchList_InsertLine $line "[expr $idx + $off + 1].0"
+          SearchList_InsertLine $line "[expr {$idx + $off + 1}].0"
           lappend line_list $line
           # linsert is extremely slow on large lists, so use append and sort instead (outside of the loop)
           #set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
@@ -3974,7 +4027,7 @@ proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx} {
         if {[lindex $dlg_srch_lines $idx] == $line} {
           lappend line_list $line
           set dlg_srch_lines [lreplace $dlg_srch_lines $idx $idx]
-          .dlg_srch.f1.l delete "[expr $idx + 1].0" "[expr $idx + 2].0"
+          .dlg_srch.f1.l delete "[expr {$idx + 1}].0" "[expr {$idx + 2}].0"
         }
       }
 
@@ -3987,23 +4040,25 @@ proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx} {
 
     if {[llength $line_list] > 0} {
       SearchList_BgSearch_AppendUndoList $do_add $line_list
-      if $do_add {
+      if {$do_add} {
         set dlg_srch_lines [lsort -integer -increasing [concat $dlg_srch_lines $line_list]]
       }
     }
 
     if {($line < $max_line) && ($pos ne "")} {
       # create or update the progress bar
-      set ratio [expr int(100.0*(double($line)/$max_line + $pat_idx)/[llength $pat_list])]
+      set ratio [expr {int(100.0*(double($line)/$max_line + $pat_idx)/[llength $pat_list])}]
       SearchList_SearchProgress $ratio
 
-      set tid_search_list [after idle [list SearchList_BgSearchLoop $pat_list $opt $do_add $line $pat_idx]]
+      incr loop_cnt
+      set tid_search_list [after idle [list SearchList_BgSearchLoop $pat_list $opt $do_add $line $pat_idx $loop_cnt]]
 
     } else {
       SearchList_BgSearch_FinalizeUndoList
       incr pat_idx
       if {$pat_idx < [llength $pat_list]} {
-        set tid_search_list [after idle [list SearchList_BgSearchLoop $pat_list $opt $do_add 1 $pat_idx]]
+        incr loop_cnt
+        set tid_search_list [after idle [list SearchList_BgSearchLoop $pat_list $opt $do_add 1 $pat_idx $loop_cnt]]
       } else {
         set tid_search_list {}
         catch {destroy .slpro}
@@ -4026,7 +4081,7 @@ proc SearchList_SearchTags {tag_list} {
   .dlg_srch.f1.l configure -cursor watch
 
   after cancel $tid_search_list
-  set tid_search_list [after 10 [list SearchList_BgSearchTagsLoop $tag_list 0 1]]
+  set tid_search_list [after 10 [list SearchList_BgSearchTagsLoop $tag_list 0 1 0]]
 }
 
 
@@ -4034,13 +4089,16 @@ proc SearchList_SearchTags {tag_list} {
 # This function acts as background process to fill the search list window with
 # matches on highlight tags.
 #
-proc SearchList_BgSearchTagsLoop {tag_list tag_idx line} {
+proc SearchList_BgSearchTagsLoop {tag_list tag_idx line loop_cnt} {
   global block_bg_tasks tid_search_inc tid_search_hall
   global dlg_srch_shown dlg_srch_lines tid_search_list
 
   if {$block_bg_tasks || ($tid_search_inc ne {}) || ($tid_search_hall ne {})} {
     # background tasks are suspended - re-schedule with timer
-    set tid_search_list [after 100 [list SearchList_BgSearchTagsLoop $tag_list $tag_idx $line]]
+    set tid_search_list [after 100 [list SearchList_BgSearchTagsLoop $tag_list $tag_idx $line 0]]
+
+  } elseif {$loop_cnt > 10} {
+    set tid_search_list [after 10 [list SearchList_BgSearchTagsLoop $tag_list $tag_idx $line 0]]
 
   } elseif [info exists dlg_srch_shown] {
     set start_t [clock clicks -milliseconds]
@@ -4053,7 +4111,7 @@ proc SearchList_BgSearchTagsLoop {tag_list tag_idx line} {
 
       set idx [SearchList_GetLineIdx $line]
       if {[lindex $dlg_srch_lines $idx] != $line} {
-        SearchList_InsertLine $line "[expr $idx + 1].0"
+        SearchList_InsertLine $line "[expr {$idx + 1}].0"
         lappend line_list $line
         # linsert is extremely slow on large lists... (see also comments in other search loop)
         #set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
@@ -4074,16 +4132,18 @@ proc SearchList_BgSearchTagsLoop {tag_list tag_idx line} {
     if {$pos12 ne ""} {
       # create or update the progress bar
       scan [.f1.t index end] "%d" max_line
-      set ratio [expr int(100.0*(double($line)/$max_line + $tag_idx)/[llength $tag_list])]
+      set ratio [expr {int(100.0*(double($line)/$max_line + $tag_idx)/[llength $tag_list])}]
       SearchList_SearchProgress $ratio
 
-      set tid_search_list [after idle [list SearchList_BgSearchTagsLoop $tag_list $tag_idx $line]]
+      incr loop_cnt
+      set tid_search_list [after idle [list SearchList_BgSearchTagsLoop $tag_list $tag_idx $line $loop_cnt]]
 
     } else {
       SearchList_BgSearch_FinalizeUndoList
       incr tag_idx
       if {$tag_idx < [llength $tag_list]} {
-        set tid_search_list [after idle [list SearchList_BgSearchTagsLoop $tag_list $tag_idx 1]]
+        incr loop_cnt
+        set tid_search_list [after idle [list SearchList_BgSearchTagsLoop $tag_list $tag_idx 1 $loop_cnt]]
       } else {
         set tid_search_list {}
         catch {destroy .slpro}
@@ -4104,14 +4164,21 @@ proc SearchList_SearchProgress {ratio} {
   if {[info commands .slpro] eq ""} {
     toplevel .slpro -takefocus 0 -relief sunken -borderwidth 2
     wm transient .slpro .dlg_srch
-    wm geometry .slpro "+[expr [winfo rootx .dlg_srch] + 1]+[expr [winfo rooty .dlg_srch] + 1]"
+    wm geometry .slpro "+[expr {[winfo rootx .dlg_srch] + 1}]+[expr {[winfo rooty .dlg_srch] + 1}]"
     wm title .slpro "Filling search list..."
     wm resizable .slpro 0 0
 
     canvas .slpro.c -width 100 -height 10 -highlightthickness 0 -takefocus 0
     pack .slpro.c
     .slpro.c create rect 0 0 $ratio 12 -fill {#0b1ff7} -outline {}
+
+    .dlg_srch.f1.l configure -cursor watch
     update
+
+    if {([info commands .slpro.c] ne "") &&
+        ([focus -displayof .] eq ".slpro")} {
+      focus .dlg_srch.f1.l
+    }
 
   } else {
     .slpro.c coords all 0 0 $ratio 12
@@ -4126,13 +4193,19 @@ proc SearchList_SearchProgress {ratio} {
 proc SearchList_SearchAbort {} {
   global tid_search_list
 
-  # stop the background process
-  after cancel $tid_search_list
-  set tid_search_list {}
+  if {$tid_search_list ne ""} {
+    SearchList_BgSearch_FinalizeUndoList
 
-  # remove the progress bar
-  catch {destroy .slpro}
-  catch {.dlg_srch.f1.l configure -cursor top_left_arrow}
+    # stop the background process
+    after cancel $tid_search_list
+    set tid_search_list {}
+
+    # remove the progress bar
+    catch {destroy .slpro}
+    catch {.dlg_srch.f1.l configure -cursor top_left_arrow}
+
+    DisplayStatusLine search warn "Search 'all' was aborted"
+  }
 }
 
 
@@ -4148,14 +4221,14 @@ proc SearchList_BgSearch_AppendUndoList {do_add line_list} {
   if {[llength $dlg_srch_undo] > 0} {
     set prev_undo [lindex $dlg_srch_undo end]
     set prev_op [lindex $prev_undo 0]
-    if {$prev_op == [expr $do_add ? 2 : -2]} {
+    if {$prev_op == [expr {$do_add ? 2 : -2}]} {
       set prev_l [lindex $prev_undo 1]
       set dlg_srch_undo [lreplace $dlg_srch_undo end end [list $prev_op [concat $prev_l $line_list]]]
     } else {
-      lappend dlg_srch_undo [list [expr $do_add ? 2 : -2] $line_list]
+      lappend dlg_srch_undo [list [expr {$do_add ? 2 : -2}] $line_list]
     }
   } else {
-    lappend dlg_srch_undo [list [expr $do_add ? 2 : -2] $line_list]
+    lappend dlg_srch_undo [list [expr {$do_add ? 2 : -2}] $line_list]
   }
 }
 
@@ -4173,7 +4246,7 @@ proc SearchList_BgSearch_FinalizeUndoList {} {
     set prev_op [lindex $prev_undo 0]
     if {($prev_op == 2) || ($prev_op == -2)} {
       set prev_l [lindex $prev_undo 1]
-      set prev_op [expr ($prev_op == -2) ? -1 : 1]
+      set prev_op [expr {($prev_op == -2) ? -1 : 1}]
       set dlg_srch_undo [lreplace $dlg_srch_undo end end [list $prev_op $prev_l]]
     }
   }
@@ -4187,7 +4260,7 @@ proc SearchList_AddMainSelection {} {
   global dlg_srch_shown dlg_srch_lines dlg_srch_sel
   global dlg_srch_undo dlg_srch_redo
 
-  if [info exists dlg_srch_shown] {
+  if {[info exists dlg_srch_shown]} {
     set pos12 {1.0 1.0}
     while {[set pos12 [.f1.t tag nextrange sel [lindex $pos12 1]]] ne ""} {
       scan [lindex $pos12 0] "%d" line_1
@@ -4198,7 +4271,7 @@ proc SearchList_AddMainSelection {} {
       set idx_list {}
       for {set line $line_1} {$line <= $line_2} {incr line} {
         set idx [SearchList_GetLineIdx $line]
-        set pos "[expr $idx + 1].0"
+        set pos "[expr {$idx + 1}].0"
         if {[lindex $dlg_srch_lines $idx] != $line} {
           set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
           SearchList_InsertLine $line $pos
@@ -4227,7 +4300,7 @@ proc SearchList_CopyCurrentLine {} {
   global dlg_srch_shown dlg_srch_lines dlg_srch_sel
   global dlg_srch_undo dlg_srch_redo
 
-  if [info exists dlg_srch_shown] {
+  if {[info exists dlg_srch_shown]} {
     set pos12 [.f1.t tag nextrange sel 1.0]
     # ignore selection if not visible (because it can be irritating when "i"
     # inserts some random line instead of the one holding the cursor)
@@ -4240,7 +4313,7 @@ proc SearchList_CopyCurrentLine {} {
       set idx [SearchList_GetLineIdx $line]
       if {[lindex $dlg_srch_lines $idx] != $line} {
         set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
-        set pos "[expr $idx + 1].0"
+        set pos "[expr {$idx + 1}].0"
         SearchList_InsertLine $line $pos
         .dlg_srch.f1.l see $pos
         TextSel_SetSelection dlg_srch_sel $idx 0
@@ -4264,7 +4337,7 @@ proc SearchList_CopyCurrentLine {} {
 proc SearchList_CreateHighlightTags {} {
   global patlist fmt_find dlg_srch_sel dlg_srch_shown
 
-  if [info exists dlg_srch_shown] {
+  if {[info exists dlg_srch_shown]} {
     # create highlight tags
     foreach w $patlist {
       eval [linsert [HighlightConfigure $w] 0 .dlg_srch.f1.l tag configure [lindex $w 4]]
@@ -4293,12 +4366,13 @@ proc SearchList_CreateHighlightTags {} {
 #
 proc SearchList_HighlightLine {tag line} {
   global dlg_srch_shown dlg_srch_highlight dlg_srch_lines
+  global tid_high_init
 
-  if [info exists dlg_srch_shown] {
-    if $dlg_srch_highlight {
+  if {[info exists dlg_srch_shown]} {
+    if {$dlg_srch_highlight || ($tid_high_init ne "")} {
       set idx [SearchList_GetLineIdx $line]
       if {[lindex $dlg_srch_lines $idx] == $line} {
-        catch {.dlg_srch.f1.l tag add $tag "[expr $idx + 1].0" "[expr $idx + 2].0"}
+        catch {.dlg_srch.f1.l tag add $tag "[expr {$idx + 1}].0" "[expr {$idx + 2}].0"}
       }
     }
   }
@@ -4312,7 +4386,7 @@ proc SearchList_HighlightLine {tag line} {
 proc SearchList_HighlightClear {} {
   global dlg_srch_shown
 
-  if [info exists dlg_srch_shown] {
+  if {[info exists dlg_srch_shown]} {
     .dlg_srch.f1.l tag remove find 1.0 end
   }
 }
@@ -4325,12 +4399,12 @@ proc SearchList_HighlightClear {} {
 proc SearchList_MatchView {line} {
   global dlg_srch_shown dlg_srch_lines dlg_srch_sel
 
-  if [info exists dlg_srch_shown] {
+  if {[info exists dlg_srch_shown]} {
     set idx [SearchList_GetLineIdx $line]
     if {$idx < [llength $dlg_srch_lines]} {
       .dlg_srch.f1.l see "$idx.0"
-      .dlg_srch.f1.l see "[expr $idx + 1].0"
-      .dlg_srch.f1.l mark set insert "[expr $idx + 1].0"
+      .dlg_srch.f1.l see "[expr {$idx + 1}].0"
+      .dlg_srch.f1.l mark set insert "[expr {$idx + 1}].0"
 
       if {[lindex $dlg_srch_lines $idx] == $line} {
         TextSel_SetSelection dlg_srch_sel $idx 0
@@ -4354,11 +4428,11 @@ proc SearchList_MarkLine {line} {
   global dlg_srch_shown dlg_srch_lines
   global img_marker mark_list
 
-  if [info exists dlg_srch_shown] {
+  if {[info exists dlg_srch_shown]} {
     set idx [lsearch -exact -integer $dlg_srch_lines $line]
     if {$idx != -1} {
-      set pos "[expr $idx + 1].0"
-      if [info exists mark_list($line)] {
+      set pos "[expr {$idx + 1}].0"
+      if {[info exists mark_list($line)]} {
         .dlg_srch.f1.l image create $pos -image $img_marker -padx 2
         .dlg_srch.f1.l tag add bookmark $pos
         .dlg_srch.f1.l see $pos
@@ -4405,21 +4479,21 @@ proc SearchList_InsertLine {txt_line ins_pos} {
   set tag_list [lsearch -all -inline -glob [.f1.t tag names $pos] "tag*"]
 
   if {$dlg_srch_fn_delta || $dlg_srch_show_fn} {
-    if [info exists dlg_srch_fns($pos)] {
+    if {[info exists dlg_srch_fns($pos)]} {
       set fn $dlg_srch_fns($pos)
     } else {
       set fn [ParseFrameTickNo $pos]
       set dlg_srch_fns($pos) $fn
     }
-    if {[catch {expr $fn + 0}]} {
+    if {[catch {expr {$fn + 0}}]} {
       set fn 0
     }
     if {$dlg_srch_fn_delta && $dlg_srch_show_fn} {
-      set prefix "   $tick_str_prefix$fn:[expr $fn-$dlg_srch_fn_root] "
+      set prefix "   $tick_str_prefix$fn:[expr {$fn - $dlg_srch_fn_root}] "
     } elseif $dlg_srch_show_fn {
       set prefix "   $tick_str_prefix$fn "
     } elseif $dlg_srch_fn_delta {
-      set prefix "   $tick_str_prefix[expr $fn-$dlg_srch_fn_root] "
+      set prefix "   $tick_str_prefix[expr {$fn - $dlg_srch_fn_root}] "
     }
   } else {
     set prefix "   "
@@ -4429,7 +4503,7 @@ proc SearchList_InsertLine {txt_line ins_pos} {
   .dlg_srch.f1.l insert $ins_pos $prefix prefix "$dump\n" $tag_list
 
   # add bookmark, if this line is marked
-  if [info exists mark_list($txt_line)] {
+  if {[info exists mark_list($txt_line)]} {
     .dlg_srch.f1.l image create $ins_pos -image $img_marker -padx 2
     .dlg_srch.f1.l tag add bookmark $ins_pos
   }
@@ -4496,7 +4570,7 @@ proc SearchList_AdjustLineNums {top_l bottom_l} {
     set tmpl {}
     foreach line $dlg_srch_lines {
       if {($line >= $top_l) && (($line < $bottom_l) || ($bottom_l == 0))} {
-        lappend tmpl [expr $line - $top_l + 1]
+        lappend tmpl [expr {$line - $top_l + 1}]
       }
     }
     set dlg_srch_lines $tmpl
@@ -4513,7 +4587,7 @@ proc SearchList_SaveFile {filename line_no} {
 
   if {[catch {set file [open $filename w]} cerr] == 0} {
     if {[catch {
-      if $line_no {
+      if {$line_no} {
         # save line numbers only (i.e. line numbers in main window)
         foreach line $dlg_srch_lines {
           puts $file $line
@@ -4582,7 +4656,7 @@ proc TagList_OpenDialog {} {
     text .dlg_tags.f1.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
                         -foreground $col_fg_content -background $col_bg_content \
                         -exportselection 0 -insertofftime 0 -yscrollcommand {.dlg_tags.f1.sb set} \
-                        -insertwidth [expr 2 * [font measure $font_content " "]]
+                        -insertwidth [expr {2 * [font measure $font_content " "]}]
     pack .dlg_tags.f1.l -side left -fill both -expand 1
     scrollbar .dlg_tags.f1.sb -orient vertical -command {.dlg_tags.f1.l yview} -takefocus 0
     pack .dlg_tags.f1.sb -side left -fill y
@@ -4652,8 +4726,8 @@ proc TagList_ContextMenu {xcoo ycoo} {
 
   TagList_ContextPopulate .dlg_tags.ctxmen 0
 
-  set rootx [expr [winfo rootx .dlg_tags] + $xcoo]
-  set rooty [expr [winfo rooty .dlg_tags] + $ycoo]
+  set rootx [expr {[winfo rootx .dlg_tags] + $xcoo}]
+  set rooty [expr {[winfo rooty .dlg_tags] + $ycoo}]
   tk_popup .dlg_tags.ctxmen $rootx $rooty 0
 }
 
@@ -4666,10 +4740,11 @@ proc TagList_ContextPopulate {wid show_all} {
   global tlb_find dlg_tags_sel
 
   set sel [TextSel_GetSelection dlg_tags_sel]
+  set sel_cnt [llength $sel]
 
   set state_find [expr {($tlb_find eq "") ? "disabled" : "normal"}]
-  set state_sel_1 [expr {([llength $sel] != 1) ? "disabled" : "normal"}]
-  set state_sel_n0 [expr {([llength $sel] == 0) ? "disabled" : "normal"}]
+  set state_sel_1 [expr {($sel_cnt != 1) ? "disabled" : "normal"}]
+  set state_sel_n0 [expr {($sel_cnt == 0) ? "disabled" : "normal"}]
 
   $wid delete 0 end
   if {($state_sel_1 eq "normal") || $show_all} {
@@ -4714,16 +4789,16 @@ proc TagList_ShiftUp {} {
     set new_sel {}
     foreach idx $sel {
       # remove the item in the listbox widget above the shifted one
-      TagList_DisplayDelete [expr $idx - 1]
+      TagList_DisplayDelete [expr {$idx - 1}]
       # re-insert the just removed item below the shifted one
-      TagList_DisplayInsert $idx [expr $idx - 1]
+      TagList_DisplayInsert $idx [expr {$idx - 1}]
 
       # perform the same exchange in the associated list
-      set patlist [lreplace $patlist [expr $idx - 1] $idx \
+      set patlist [lreplace $patlist [expr {$idx - 1}] $idx \
                             [lindex $patlist $idx] \
-                            [lindex $patlist [expr $idx - 1]]]
+                            [lindex $patlist [expr {$idx - 1}]]]
 
-      lappend new_sel [expr $idx - 1]
+      lappend new_sel [expr {$idx - 1}]
     }
 
     # redraw selection
@@ -4744,14 +4819,14 @@ proc TagList_ShiftDown {} {
   if {[lindex $sel 0] < [llength $patlist] - 1} {
     set new_sel {}
     foreach idx $sel {
-      TagList_DisplayDelete [expr $idx + 1]
-      TagList_DisplayInsert $idx [expr $idx + 1]
+      TagList_DisplayDelete [expr {$idx + 1}]
+      TagList_DisplayInsert $idx [expr {$idx + 1}]
 
-      set patlist [lreplace $patlist $idx [expr $idx + 1] \
-                            [lindex $patlist [expr $idx + 1]] \
+      set patlist [lreplace $patlist $idx [expr {$idx + 1}] \
+                            [lindex $patlist [expr {$idx + 1}]] \
                             [lindex $patlist $idx]]
 
-      lappend new_sel [expr $idx + 1]
+      lappend new_sel [expr {$idx + 1}]
     }
     TextSel_SetSelection dlg_tags_sel $new_sel
   }
@@ -4792,7 +4867,7 @@ proc Tags_Search {is_fwd} {
     CursorPosStore .f1.t
     Mark_Line $min_line
   } else {
-    if $is_fwd {
+    if {$is_fwd} {
       DisplayStatusLine search warn "No match until end of file"
     } else {
       DisplayStatusLine search warn "No match until start of file"
@@ -4861,14 +4936,14 @@ proc TagList_GetLen {} {
 proc TagList_Update {pat_idx} {
   global dlg_tags_shown patlist
 
-  if [info exists dlg_tags_shown] {
+  if {[info exists dlg_tags_shown]} {
     if {$pat_idx < [llength $patlist]} {
       set w [lindex $patlist $pat_idx]
 
       TagList_Fill
       TextSel_SetSelection dlg_tags_sel {}
 
-      .dlg_tags.f1.l see "[expr $pat_idx + 1].0"
+      .dlg_tags.f1.l see "[expr {$pat_idx + 1}].0"
     }
   }
 }
@@ -4878,7 +4953,7 @@ proc TagList_Update {pat_idx} {
 # This function removes an entry from the listbox.
 #
 proc TagList_DisplayDelete {pat_idx} {
-  .dlg_tags.f1.l delete "[expr $pat_idx + 1].0" "[expr $pat_idx + 2].0"
+  .dlg_tags.f1.l delete "[expr {$pat_idx + 1}].0" "[expr {$pat_idx + 2}].0"
 }
 
 
@@ -4895,7 +4970,7 @@ proc TagList_DisplayInsert {pos pat_idx} {
   append txt "\n"
 
   # insert text (prepend space to improve visibility of selection)
-  .dlg_tags.f1.l insert "[expr $pos + 1].0" "  " margin $txt [lindex $w 4]
+  .dlg_tags.f1.l insert "[expr {$pos + 1}].0" "  " margin $txt [lindex $w 4]
 }
 
 
@@ -4906,7 +4981,7 @@ proc TagList_DisplayInsert {pos pat_idx} {
 proc TagList_Fill {} {
   global dlg_tags_shown patlist
 
-  if [info exists dlg_tags_shown] {
+  if {[info exists dlg_tags_shown]} {
     .dlg_tags.f1.l delete 1.0 end
 
     set idx 0
@@ -4932,14 +5007,14 @@ proc TagList_Fill {} {
 proc TagList_PopupColorPalette {pat_idx is_fg} {
   global patlist
 
-  .dlg_tags.f1.l see "[expr $pat_idx + 1].0"
+  .dlg_tags.f1.l see "[expr {$pat_idx + 1}].0"
 
-  set cool [.dlg_tags.f1.l dlineinfo "[expr $pat_idx + 1].0"]
-  set rootx [expr [winfo rootx .dlg_tags] + [lindex $cool 0]]
-  set rooty [expr [winfo rooty .dlg_tags] + [lindex $cool 1]]
+  set cool [.dlg_tags.f1.l dlineinfo "[expr {$pat_idx + 1}].0"]
+  set rootx [expr {[winfo rootx .dlg_tags] + [lindex $cool 0]}]
+  set rooty [expr {[winfo rooty .dlg_tags] + [lindex $cool 1]}]
 
   set w [lindex $patlist $pat_idx]
-  set col_idx [expr $is_fg ? 7 : 6]
+  set col_idx [expr {$is_fg ? 7 : 6}]
   set def_col [lindex $w $col_idx]
 
   PaletteMenu_Popup .dlg_tags $rootx $rooty \
@@ -4957,7 +5032,7 @@ proc TagList_UpdateColor {pat_idx is_fg col} {
   global patlist dlg_tags_sel
 
   set w [lindex $patlist $pat_idx]
-  set col_idx [expr $is_fg ? 7 : 6]
+  set col_idx [expr {$is_fg ? 7 : 6}]
 
   set w [lreplace $w $col_idx $col_idx $col]
   if {[catch {.dlg_tags.f1.l tag configure [lindex $w 4] -background [lindex $w 6] -foreground [lindex $w 7]}] == 0} {
@@ -4988,7 +5063,7 @@ proc TagList_AddSearch {parent} {
     foreach w $patlist {
       scan [lindex $w 4] "tag%d" tag_idx
       if {$tag_idx >= $nam_idx} {
-        set nam_idx [expr $tag_idx + 1]
+        set nam_idx [expr {$tag_idx + 1}]
       }
       if {[lindex $w 0] eq $tlb_find} {
         set dup_idx $idx
@@ -5027,11 +5102,11 @@ proc TagList_AddSearch {parent} {
     HighlightAll [lindex $w 0] [lindex $w 4] $opt
     SearchHighlightClear
 
-    if [info exists dlg_tags_shown] {
+    if {[info exists dlg_tags_shown]} {
       # insert the entry into the listbox
       TagList_Fill
       TextSel_SetSelection dlg_tags_sel $pat_idx
-      .dlg_tags.f1.l see "[expr $pat_idx + 1].0"
+      .dlg_tags.f1.l see "[expr {$pat_idx + 1}].0"
     } else {
       TagList_OpenDialog
     }
@@ -5090,7 +5165,7 @@ proc TagList_CopyFromSearch {pat_idx} {
     TagList_DisplayDelete $pat_idx
     TagList_DisplayInsert $pat_idx $pat_idx
     TextSel_SetSelection dlg_tags_sel $pat_idx
-    .dlg_tags.f1.l see "[expr $pat_idx + 1].0"
+    .dlg_tags.f1.l see "[expr {$pat_idx + 1}].0"
   }
 }
 
@@ -5205,7 +5280,7 @@ proc FontList_OpenDialog {} {
 
     # fill font list and select current font
     FontList_Fill
-    set dlg_font_bold [expr ![string equal [font actual $font_content -weight] "normal"]]
+    set dlg_font_bold [expr {![string equal [font actual $font_content -weight] "normal"]}]
     set dlg_font_size [font actual $font_content -size]
     set idx [lsearch -exact $dlg_font_fams [font actual $font_content -family]]
     if {$idx >= 0} {
@@ -5260,7 +5335,7 @@ proc FontList_Selection {} {
   if {([llength $sel] == 1) && ($sel < [llength $dlg_font_fams])} {
     set name [list [lindex $dlg_font_fams $sel]]
     lappend name $dlg_font_size
-    if $dlg_font_bold {
+    if {$dlg_font_bold} {
       lappend name bold
     }
     if {[catch {.dlg_font.demo configure -font $name}] != 0} {
@@ -5279,12 +5354,12 @@ proc FontList_Quit {do_store} {
   global dlg_font_fams dlg_font_size dlg_font_bold
   global font_content
 
-  if $do_store {
+  if {$do_store} {
     set sel [.dlg_font.f1.fams curselection]
     if {([llength $sel] == 1) && ($sel < [llength $dlg_font_fams])} {
       set name [list [lindex $dlg_font_fams $sel]]
       lappend name $dlg_font_size
-      if $dlg_font_bold {
+      if {$dlg_font_bold} {
         lappend name bold
       }
 
@@ -5331,7 +5406,7 @@ proc Markup_OpenDialog {pat_idx} {
                          -foreground $col_fg_content -background $col_bg_content \
                          -relief sunken -borderwidth 1 -takefocus 0 -highlightthickness 0 \
                          -exportselection 0 -insertofftime 0 \
-                         -insertwidth [expr 2 * [font measure $font_content " "]]
+                         -insertwidth [expr {2 * [font measure $font_content " "]}]
     pack .dlg_fmt.sample -side top -padx 5 -pady 6
     bindtags .dlg_fmt.sample {.dlg_fmt.sample TextReadOnly .dlg_fmt all}
 
@@ -5540,7 +5615,7 @@ proc Markup_GetConfig {pat_idx} {
 proc Markup_Save {do_save do_quit} {
   global dlg_fmt patlist
 
-  if $do_save {
+  if {$do_save} {
     # determine the edited pattern's index in the list (use the unique tag
     # which doesn't change even if the list is reordered)
     set tagnam $dlg_fmt(tagnam)
@@ -5552,7 +5627,7 @@ proc Markup_Save {do_save do_quit} {
       }
       incr idx
     }
-    if [info exists pat_idx] {
+    if {[info exists pat_idx]} {
       set w [Markup_GetConfig $pat_idx]
       set patlist [lreplace $patlist $pat_idx $pat_idx $w]
       UpdateRcAfterIdle
@@ -5575,7 +5650,7 @@ proc Markup_Save {do_save do_quit} {
       return
     }
   }
-  if $do_quit {
+  if {$do_quit} {
     unset -nocomplain dlg_fmt
     destroy .dlg_fmt
   }
@@ -5600,7 +5675,7 @@ proc Markup_UpdateFormat {} {
 
   # adjust spacing above first line to center the content vertically
   set lh [font metrics $font_content -linespace]
-  set spc [expr $lh - $dlg_fmt(spacing)]
+  set spc [expr {$lh - $dlg_fmt(spacing)}]
   if {$spc < 0} {set spc 0}
   .dlg_fmt.sample tag configure spacing -spacing1 $spc
 
@@ -5640,7 +5715,7 @@ proc Markup_ImageButton {wid type} {
 
   CreateButtonBitmap img_dropdown
   frame ${wid} -relief sunken -borderwidth 1
-  canvas ${wid}.c -width [expr [image width img_dropdown] + 4] -height [image height img_dropdown] \
+  canvas ${wid}.c -width [expr {[image width img_dropdown] + 4}] -height [image height img_dropdown] \
                  -highlightthickness 0 -takefocus 0 -borderwidth 0
   pack ${wid}.c -fill both -expand 1 -side left
   button ${wid}.b -image img_dropdown -highlightthickness 1 -borderwidth 1 -relief raised
@@ -5668,7 +5743,7 @@ proc Markup_PopupColorPalette {wid type} {
   global dlg_fmt
 
   set rootx [winfo rootx $wid]
-  set rooty [expr [winfo rooty $wid] + [winfo height $wid]]
+  set rooty [expr {[winfo rooty $wid] + [winfo height $wid]}]
   PaletteMenu_Popup .dlg_fmt $rootx $rooty [list Markup_UpdateColor $type] $dlg_fmt($type)
 }
 
@@ -5680,7 +5755,7 @@ proc Markup_PopupColorPalette {wid type} {
 #
 proc Markup_PopupPatternMenu {wid} {
   set rootx [winfo rootx $wid]
-  set rooty [expr [winfo rooty $wid] + [winfo height $wid]]
+  set rooty [expr {[winfo rooty $wid] + [winfo height $wid]}]
   tk_popup ${wid}.men $rootx $rooty {}
 }
 
@@ -5756,7 +5831,7 @@ proc Palette_Fill {wid pal {sz 20} {sel_cmd {}}} {
   set col_idx 0
   set idx 0
   foreach col $pal {
-    set cid [$wid create rect $x $y [expr $x + $sz] [expr $y + $sz] \
+    set cid [$wid create rect $x $y [expr {$x + $sz}] [expr {$y + $sz}] \
                                      -outline black -fill $col \
                                      -activeoutline black -activewidth 2]
     lappend dlg_cols_cid $cid
@@ -5779,8 +5854,8 @@ proc Palette_Fill {wid pal {sz 20} {sel_cmd {}}} {
     incr idx
   }
 
-  $wid configure -width [expr 10 * $sz + 3+3] \
-                 -height [expr (int([llength $pal] + (10-1)) / 10) * $sz + 2+2]
+  $wid configure -width [expr {10 * $sz + 3+3}] \
+                 -height [expr {(int([llength $pal] + (10-1)) / 10) * $sz + 2+2}]
 }
 
 
@@ -5804,8 +5879,8 @@ proc Palette_ContextMenu {xcoo ycoo} {
       .dlg_cols.ctxmen add separator
       .dlg_cols.ctxmen add command -label "Remove this color" -command [list Palette_RemoveColor $idx]
 
-      set rootx [expr [winfo rootx .dlg_cols] + $xcoo]
-      set rooty [expr [winfo rooty .dlg_cols] + $ycoo]
+      set rootx [expr {[winfo rootx .dlg_cols] + $xcoo}]
+      set rooty [expr {[winfo rooty .dlg_cols] + $ycoo}]
       tk_popup .dlg_cols.ctxmen $rootx $rooty 0
     }
   }
@@ -5871,11 +5946,11 @@ proc Palette_EditColor {idx cid} {
 #
 proc Palette_MoveColor {idx cid xcoo ycoo} {
   set sz 20
-  set sz_2 [expr 0 - ($sz /2)]
+  set sz_2 [expr {0 - ($sz /2)}]
   incr xcoo $sz_2
   incr ycoo $sz_2
   .dlg_cols.c raise $cid
-  .dlg_cols.c coords $cid $xcoo $ycoo [expr $xcoo + $sz] [expr $ycoo + $sz]
+  .dlg_cols.c coords $cid $xcoo $ycoo [expr {$xcoo + $sz}] [expr {$ycoo + $sz}]
 }
 
 
@@ -5889,10 +5964,10 @@ proc Palette_MoveColorEnd {idx cid xcoo ycoo} {
   set sz 20
   incr xcoo -2
   incr ycoo -2
-  if {$xcoo < 0} {set col_idx 0} else {set col_idx [expr int($xcoo / $sz)]}
-  if {$ycoo < 0} {set row_idx 0} else {set row_idx [expr int($ycoo / $sz)]}
+  if {$xcoo < 0} {set col_idx 0} else {set col_idx [expr {int($xcoo / $sz)}]}
+  if {$ycoo < 0} {set row_idx 0} else {set row_idx [expr {int($ycoo / $sz)}]}
 
-  set new_idx [expr ($row_idx * 10) + $col_idx]
+  set new_idx [expr {($row_idx * 10) + $col_idx}]
   set col [lindex $dlg_cols_palette $idx]
   set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx]
   set dlg_cols_palette [linsert $dlg_cols_palette $new_idx $col]
@@ -5909,7 +5984,7 @@ proc Palette_MoveColorEnd {idx cid xcoo ycoo} {
 proc Palette_Save {do_save} {
   global col_palette dlg_cols_palette dlg_cols_cid
 
-  if $do_save {
+  if {$do_save} {
     set col_palette $dlg_cols_palette
     UpdateRcAfterIdle
   }
@@ -6159,7 +6234,7 @@ proc TextSel_Button {var xcoo ycoo} {
     set notify 1
   }
   # invoke notification callback if an element was selected or de-selected
-  if $notify {
+  if {$notify} {
     eval [list [lindex $state 1] [lindex $state 6]]
   }
   focus [lindex $state 0]
@@ -6207,16 +6282,16 @@ proc TextSel_Motion {var xcoo ycoo} {
       # scrolling speed is determined by how far the mouse is outside
       set fh [font metrics [$wid cget -font] -linespace]
       if {$ycoo < 0} {
-        set delta [expr 0 - $ycoo]
+        set delta [expr {0 - $ycoo}]
       } else {
-        set delta [expr $ycoo - $wh]
+        set delta [expr {$ycoo - $wh}]
       }
-      set delay [expr 500 - int($delta / $fh) * 100]
+      set delay [expr {500 - int($delta / $fh) * 100}]
       if {$delay > 500} {set delay 500}
       if {$delay <  50} {set delay  50}
       if {[lindex $state 3] eq ""} {
         # start timer and remember it's ID to be able to cancel it later
-        set tid [after $delay [list TextSel_MotionScroll $var [expr ($ycoo < 0) ? -1 : 1]]]
+        set tid [after $delay [list TextSel_MotionScroll $var [expr {($ycoo < 0) ? -1 : 1}]]]
         set state [lreplace $state 3 4 $tid $delay]
       } else {
         # timer already active - just update the delay
@@ -6248,7 +6323,8 @@ proc TextSel_MotionScroll {var delta} {
     if {$delta < 0} {
       TextSel_Motion $var 0 0
     } else {
-      TextSel_Motion $var 0 [expr [winfo height $wid] - 1]
+      set wid_h [winfo height $wid]
+      TextSel_Motion $var 0 [expr {$wid_h - 1}]
     }
 
     # install the timer gain (possibly with a changed delay if the mouse was moved)
@@ -6360,7 +6436,7 @@ proc TextSel_KeyUpDown {var delta} {
         set state [lreplace $state 5 6 $line $line]
 
         TextSel_ShowSelection $var
-        $wid see "[expr $line + 1].0"
+        $wid see "[expr {$line + 1}].0"
         eval [list [lindex $state 1] [lindex $state 6]]
 
       } elseif {[llength $sel] > 1} {
@@ -6368,35 +6444,36 @@ proc TextSel_KeyUpDown {var delta} {
         if {$delta < 0} {
           set line 0
         } else {
-          set line [expr $content_len - 1]
+          set line [expr {$content_len - 1}]
         }
         set state [lreplace $state 5 6 $line $line]
 
         TextSel_ShowSelection $var
-        $wid see "[expr $line + 1].0"
+        $wid see "[expr {$line + 1}].0"
         eval [list [lindex $state 1] [lindex $state 6]]
       }
 
     } else {
       # no selection exists yet -> use last anchor, or top/bottom visible line
       set anchor [lindex $state 5]
-      if {($anchor >= 0) && ([$wid bbox "[expr $anchor + 1].0"] ne "")} {
-        set idx "[expr $anchor + 1].0"
+      if {($anchor >= 0) && ([$wid bbox "[expr {$anchor + 1}].0"] ne "")} {
+        set idx "[expr {$anchor + 1}].0"
       } else {
         if {$delta > 0} {
           set idx {@1,1}
         } else {
-          set idx "@1,[expr [winfo height $wid] - 1]"
+          set wid_h [winfo height $wid]
+          set idx "@1,[expr {$wid_h - 1}]"
         }
       }
       set pos [$wid index $idx]
       if {([scan $pos "%d.%d" line char] == 2) && ($line > 0)} {
         incr line -1
-        if {$line >= $content_len} {set line [expr $content_len - 1]}
+        if {$line >= $content_len} {set line [expr {$content_len - 1}]}
         set state [lreplace $state 5 6 $line $line]
 
         TextSel_ShowSelection $var
-        $wid see "[expr $line + 1].0"
+        $wid see "[expr {$line + 1}].0"
         eval [list [lindex $state 1] [lindex $state 6]]
       }
     }
@@ -6432,7 +6509,7 @@ proc TextSel_KeyResize {var delta} {
       set state [lreplace $state 6 6 $sel]
 
       TextSel_ShowSelection $var
-      $wid see "[expr $line + 1].0"
+      $wid see "[expr {$line + 1}].0"
       eval [list [lindex $state 1] [lindex $state 6]]
     }
   } else {
@@ -6456,8 +6533,8 @@ proc TextSel_KeyHomeEnd {var is_end is_resize} {
 
   set content_len [$len_cb]
   if {$content_len > 0} {
-    if $is_end {
-      set line [expr $content_len - 1]
+    if {$is_end} {
+      set line [expr {$content_len - 1}]
     } else {
       set line 0
     }
@@ -6470,7 +6547,7 @@ proc TextSel_KeyHomeEnd {var is_end is_resize} {
       }
     }
     TextSel_ShowSelection $var
-    $wid see "[expr $line + 1].0"
+    $wid see "[expr {$line + 1}].0"
     eval [list [lindex $state 1] [lindex $state 6]]
   }
 }
@@ -6510,13 +6587,13 @@ proc TextSel_ShowSelection {var} {
 
   # select each selected line (may be non-consecutive)
   foreach line $sel {
-    $wid tag add sel "[expr $line + 1].0" "[expr $line + 2].0"
+    $wid tag add sel "[expr {$line + 1}].0" "[expr {$line + 2}].0"
   }
 
   if {([llength $sel] == 0) || ($anchor == -1)} {
     $wid mark set insert end
   } else {
-    $wid mark set insert "[expr $anchor + 1].0"
+    $wid mark set insert "[expr {$anchor + 1}].0"
   }
 }
 
@@ -6553,7 +6630,7 @@ proc TextSel_AdjustInsert {var line} {
   set sel {}
   foreach idx [lindex $state 6] {
     if {$idx >= $line} {
-      lappend sel [expr $idx + 1]
+      lappend sel [expr {$idx + 1}]
     } else {
       lappend sel $idx
     }
@@ -6580,7 +6657,7 @@ proc TextSel_AdjustDeletion {var line} {
     if {$idx == $line} {
       # skip
     } elseif {$idx > $line} {
-      lappend sel [expr $idx - 1]
+      lappend sel [expr {$idx - 1}]
     } else {
       lappend sel $idx
     }
@@ -6606,8 +6683,8 @@ proc OpenLoadPipeDialog {stop} {
     wm title .dlg_load "Loading from STDIN..."
     wm group .dlg_load .
     wm transient .dlg_load .
-    set xcoo [expr [winfo rootx .f1.t] + 50]
-    set ycoo [expr [winfo rooty .f1.t] + 50]
+    set xcoo [expr {[winfo rootx .f1.t] + 50}]
+    set ycoo [expr {[winfo rooty .f1.t] + 50}]
     wm geometry .dlg_load "+${xcoo}+${ycoo}"
 
     frame .dlg_load.f1
@@ -6623,7 +6700,7 @@ proc OpenLoadPipeDialog {stop} {
     grid  .dlg_load.f1.val_bufil -sticky w -column 1 -row $row -columnspan 2
     incr row
 
-    set dlg_load_file_limit [expr int(($load_buf_size+(1024*1024-1))/(1024*1024))]
+    set dlg_load_file_limit [expr {int(($load_buf_size+(1024*1024-1))/(1024*1024))}]
     label .dlg_load.f1.lab_bufsz -text "Buffer size:"
     grid  .dlg_load.f1.lab_bufsz -sticky w -column 0 -row $row
     frame .dlg_load.f1.f11
@@ -6659,7 +6736,7 @@ proc OpenLoadPipeDialog {stop} {
     bind .dlg_load.cmd <Destroy> {unset -nocomplain dlg_load_shown}
     wm protocol .dlg_load WM_DELETE_WINDOW {}
   }
-  if $stop {
+  if {$stop} {
     LoadPipe_CmdStop
   } else {
     LoadPipe_CmdContinue 0
@@ -6708,7 +6785,7 @@ proc LoadPipe_CmdContinue {is_user} {
   global dlg_load_file_limit
 
   # apply possible change of buffer limit by the user
-  if {[catch {set val [expr 1024*1024*$dlg_load_file_limit]} cerr] == 0} {
+  if {[catch {set val [expr {1024*1024*$dlg_load_file_limit}]} cerr] == 0} {
     if {$val != $load_buf_size} {
       set load_buf_size $val
       UpdateRcAfterIdle
@@ -6754,7 +6831,7 @@ proc LoadPipe_LimitData {exact} {
   }
 
   # calculate how much data must be discarded
-  set rest [expr $load_buf_fill - $load_buf_size]
+  set rest [expr {$load_buf_fill - $load_buf_size}]
 
   # unhook complete data buffers from the queue
   while {($rest > 0) &&
@@ -6762,8 +6839,8 @@ proc LoadPipe_LimitData {exact} {
          ([string length [lindex $load_file_data $lidx]] <= $rest)} {
 
     set len [string length [lindex $load_file_data $lidx]]
-    set rest [expr $rest - $len]
-    set load_buf_fill [expr $load_buf_fill - $len]
+    set rest [expr {$rest - $len}]
+    set load_buf_fill [expr {$load_buf_fill - $len}]
     set load_file_data [lreplace $load_file_data $lidx $lidx]
   }
 
@@ -6772,12 +6849,12 @@ proc LoadPipe_LimitData {exact} {
     set len [string length [lindex $load_file_data $lidx]]
     set data [lindex $load_file_data $lidx]
     if {$load_file_mode == 0} {
-      set data [string replace $data [expr $len - $rest] end]
+      set data [string replace $data [expr {$len - $rest}] end]
     } else {
-      set data [string replace $data 0 [expr $rest - 1]]
+      set data [string replace $data 0 [expr {$rest - 1}]]
     }
     set load_file_data [lreplace $load_file_data $lidx $lidx $data]
-    set load_buf_fill [expr $load_buf_fill - $rest]
+    set load_buf_fill [expr {$load_buf_fill - $rest}]
   }
 }
 
@@ -6794,7 +6871,7 @@ proc LoadDataFromPipe {} {
     # limit read length to buffer size ("head" mode only)
     set size 100000
     if {($load_file_mode == 0) && ($load_buf_fill + $size > $load_buf_size)} {
-      set size [expr $load_buf_size - $load_buf_fill]
+      set size [expr {$load_buf_size - $load_buf_fill}]
     }
     if {$size > 0} {
       set data [read stdin $size]
@@ -6848,7 +6925,7 @@ proc LoadPipe {} {
     set load_file_close 1
   }
   if {![info exists load_file_sum]} {
-    if {[catch "set load_file_sum [expr wide(0)]"] != 0} {
+    if {[catch "set load_file_sum [expr {wide(0)}]"] != 0} {
       # backwards compatibility to older Tcl versions without 64-bit support
       set load_file_sum 0
     }
@@ -6876,7 +6953,7 @@ proc LoadPipe {} {
     foreach data $load_file_data {
       .f1.t insert end $data
     }
-    if $load_file_close {
+    if {$load_file_close} {
       catch {close stdin}
     }
   } else {
@@ -6907,7 +6984,7 @@ proc LoadFile {filename} {
     # apply file length limit
     file stat $filename sta
     if {$sta(size) > $load_buf_size} {
-      seek $file [expr 0 - $load_buf_size] end
+      seek $file [expr {0 - $load_buf_size}] end
     }
 
     # insert the data into the text widget
@@ -6940,7 +7017,7 @@ proc InitContent {} {
   # window title and main menu
   if {$cur_filename ne ""} {
     wm title . "$cur_filename - Trace browser"
-    if [info exists dlg_mark_shown] {
+    if {[info exists dlg_mark_shown]} {
       wm title .dlg_mark "Bookmark list [$cur_filename]"
     }
     .menubar.ctrl entryconfigure 1 -state normal -label "Reload current file"
@@ -7004,11 +7081,11 @@ proc DiscardContent {} {
 proc MenuCmd_Discard {is_fwd} {
   global cur_filename
 
-  if $is_fwd {
+  if {$is_fwd} {
     # delete everything below the line holding the cursor
     scan [.f1.t index "insert +1 lines linestart"] "%d.%d" first_l first_c
     scan [.f1.t index end] "%d.%d" last_l last_c
-    set count [expr $last_l - $first_l]
+    set count [expr {$last_l - $first_l}]
     if {($last_c == 0) && ($count > 0)} {
       incr count -1
     }
@@ -7021,7 +7098,7 @@ proc MenuCmd_Discard {is_fwd} {
     set first_l 1
     set first_c 0
     scan [.f1.t index "insert linestart"] "%d.%d" last_l last_c
-    set count [expr $last_l - $first_l]
+    set count [expr {$last_l - $first_l}]
     if {$count == 0} {
       tk_messageBox -type ok -default ok -icon error -parent . -message "Already at the top"
       return
@@ -7033,7 +7110,7 @@ proc MenuCmd_Discard {is_fwd} {
     scan [.f1.t index end] "%d.%d" end_l end_c
     if {$end_l > 1} {
       if {$end_c == 0} {incr end_l -1}
-      set tmp_val [expr int(100.0*$count/($end_l-1) + 0.5)]
+      set tmp_val [expr {int(100.0*$count/($end_l-1) + 0.5)}]
       set perc " ($tmp_val%)"
     } else {
       set perc ""
@@ -7053,8 +7130,8 @@ proc MenuCmd_Discard {is_fwd} {
       global last_jump_orig
       set last_jump_orig {}
 
-      MarkList_AdjustLineNums [expr $is_fwd ? 1 : $last_l] [expr $is_fwd ? $first_l : 0]
-      SearchList_AdjustLineNums [expr $is_fwd ? 1 : $last_l] [expr $is_fwd ? $first_l : 0]
+      MarkList_AdjustLineNums [expr {$is_fwd ? 1 : $last_l}] [expr {$is_fwd ? $first_l : 0}]
+      SearchList_AdjustLineNums [expr {$is_fwd ? 1 : $last_l}] [expr {$is_fwd ? $first_l : 0}]
     }
   }
 }
@@ -7148,7 +7225,7 @@ proc ResumeBgTasks {} {
 proc ClearBgTasks {flag} {
   global block_bg_tasks tid_resume_bg
 
-  if $flag {
+  if {$flag} {
     if {$block_bg_tasks == 0}  {
       puts stderr "Warning: nested call of ResumeBgTasks(?) - internal error"
     } else {
@@ -7162,8 +7239,9 @@ proc ClearBgTasks {flag} {
 
 #
 # This helper function is installed as post command for all menu popups
-# so that background tasks are shortly suspended while a menu popup is
-# displayed.
+# so that idle-event driven background tasks are shortly suspended while
+# a menu popup is displayed. Without this the GUI may freeze until the
+# background task has finished.
 #
 proc MenuPosted {} {
   PreemptBgTasks
@@ -7219,7 +7297,7 @@ proc LoadRcFile {} {
 
   # override config var with command line options
   global load_buf_size_opt
-  if [info exists load_buf_size_opt] {
+  if {[info exists load_buf_size_opt]} {
     set load_buf_size $load_buf_size_opt
   }
 }
@@ -7241,7 +7319,7 @@ proc UpdateRcFile {} {
   set tid_update_rc_min {}
 
   expr {srand([clock clicks -milliseconds])}
-  set tmpfile "${myrcfile}.[expr {int(rand()*1000000)}].tmp"
+  append tmpfile $myrcfile "." [expr {int(rand() * 1000000)}] ".tmp"
 
   if {[catch {set rcfile [open $tmpfile "w"]} errstr] == 0} {
     if {[catch {
@@ -7511,8 +7589,9 @@ set tlb_find {}
 # take some time. The variable is empty when no highlights are shown.
 set tlb_last_hall {}
 
-# This variable contains the stack of previously used search expressions.
-# The most recently used expression is at the front of the list.
+# This variable contains the stack of previously used search expressions
+# (i.e. search text only; options are not remembered.)  The top of the stack,
+# aka the most recently used expression, is at the front of the list.
 set tlb_hist {}
 
 # This variable defines the maximum length of the search history list.
@@ -7662,6 +7741,7 @@ set patlist {
 }
 
 # This variable contains the limit for file load
+# The value can be changed by the "head" and "tail" command line options.
 set load_buf_size 2000000
 
 # define RC file version limit for forwards compatibility
