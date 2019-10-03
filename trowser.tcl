@@ -1355,11 +1355,15 @@ proc MarkList_ContextMenu {xcoo ycoo} {
 # all currently defined bookmarks.
 #
 proc MarkList_OpenDialog {} {
-  global font_normal dlg_mark_shown dlg_mark_size
+  global font_normal cur_filename dlg_mark_shown dlg_mark_size
 
   if {![info exists dlg_mark_shown]} {
     toplevel .dlg_mark
-    wm title .dlg_mark "Bookmark list"
+    if {$cur_filename ne ""} {
+      wm title .dlg_mark "Bookmark list - $cur_filename"
+    } else {
+      wm title .dlg_mark "Bookmark list"
+    }
     wm group .dlg_mark .
 
     listbox .dlg_mark.l -width 40 -height 10 -font $font_normal -exportselection false \
@@ -1640,36 +1644,8 @@ proc TestCaseList_Resize {wid top var} {
 
 
 #
-# This function loads a trace log via stdin. Afterwards color highlighting
-# is initiated.
-#
-proc LoadStream {} {
-  global cur_filename
-
-  set cur_filename {}
-  .menubar.ctrl entryconfigure "Reload*" -state disabled
-
-  while 1 {
-    set data [read stdin]
-    if {[string length $data] == 0} {
-      break
-    }
-    .f1.t insert end $data
-  }
-  .f1.t see end
-
-  global tid_search_inc tid_search_hall tid_high_init
-  after cancel $tid_high_init
-  after cancel $tid_search_inc
-  after cancel $tid_search_hall
-  HighlightInit
-  Mark_JumpPos
-}
-
-
-#
-# This function loads a trace from a file. Afterwards color highlighting
-# is initiated.
+# This function loads a trace from a file or stdin.
+# Afterwards color highlighting is initiated.
 #
 proc LoadFile {filename} {
   global cur_filename
@@ -1677,17 +1653,53 @@ proc LoadFile {filename} {
   set cur_filename $filename
   .menubar.ctrl entryconfigure "Reload*" -state normal
 
-  set file [open $filename r]
-  .f1.t insert end [read $file]
-  .f1.t see end
-  close $file
+  if {$filename eq ""} {
+    if {[catch {
+      while 1 {
+        set data [read stdin]
+        if {[string length $data] == 0} {
+          break
+        }
+        .f1.t insert end $data
+      }
+      .f1.t see end
+      set result 1
+    } cerr] != 0} {
+      tk_messageBox -type ok -icon error -message "Read error on STDIN: $cerr"
+      set result 0
+    }
+  } else {
+    if {[catch {
+      set file [open $filename r]
+      .f1.t insert end [read $file]
+      .f1.t see end
+      close $file
+      set result 1
+    } cerr] != 0} {
+      tk_messageBox -type ok -icon error -message "Failed to load \"$filename\": $cerr"
+      set result 0
+    }
+  }
 
-  global tid_search_inc tid_search_hall tid_high_init
-  after cancel $tid_high_init
-  after cancel $tid_search_inc
-  after cancel $tid_search_hall
-  HighlightInit
-  Mark_JumpPos
+  if $result {
+    global tid_search_inc tid_search_hall tid_high_init
+    global dlg_mark_shown
+
+    after cancel $tid_high_init
+    after cancel $tid_search_inc
+    after cancel $tid_search_hall
+
+    if {$cur_filename ne ""} {
+      wm title . "$cur_filename - Trace browser"
+      if [info exists dlg_mark_shown] {
+        wm title .dlg_mark "Bookmark list [$cur_filename]"
+      }
+    } else {
+      wm title . "Trace browser"
+    }
+    Mark_JumpPos
+    HighlightInit
+  }
 }
 
 
@@ -1697,7 +1709,9 @@ proc LoadFile {filename} {
 proc MenuCmd_Reload {} {
   global cur_filename
 
-  after idle LoadFile $cur_filename
+  if {$cur_filename ne ""} {
+    after idle LoadFile $cur_filename
+  }
 }
 
 
@@ -1726,8 +1740,8 @@ proc MenuCmd_OpenFile {} {
 
     SearchReset
     array unset ::mark_list
+    MarkList_Fill
 
-    wm title . "$filename - Trace browser"
     after idle LoadFile $filename
   }
 }
@@ -1936,11 +1950,9 @@ wm protocol . WM_DELETE_WINDOW UserQuit
 update
 
 if {$argc == 0} {
-  LoadStream
-  wm title . "Trace browser"
+  LoadFile {}
 } elseif {$argc == 1} {
   LoadFile [lindex $argv 0]
-  wm title . "[lindex $argv 0] - Trace browser"
 } else {
   puts stderr "Usage: $argv0 <file>"
 }
