@@ -68,10 +68,34 @@ proc InitResources {} {
   # bookmark image which is inserted into the text widget
   global img_marker
   set img_marker [image create photo -data R0lGODlhBwAHAMIAAAAAuPj8+Hh8+JiYmDAw+AAAAAAAAAAAACH5BAEAAAEALAAAAAAHAAcAAAMUGDGsSwSMJ0RkpEIG4F2d5DBTkAAAOw==]
+
+  # image for drop-down menu copied from combobox.tcl by Bryan Oakley
+  image create bitmap img_dropdown -data \
+    "#define down_arrow_width 15\n#define down_arrow_height 15\n
+    static char down_arrow_bits[] = {
+    0x00,0x80,0x00,0x80,0x00,0x80,0x00,0x80,
+    0x00,0x80,0xf8,0x8f,0xf0,0x87,0xe0,0x83,
+    0xc0,0x81,0x80,0x80,0x00,0x80,0x00,0x80,
+    0x00,0x80,0x00,0x80,0x00,0x80};"
+
+  image create bitmap img_down -data \
+    "#define ptr_down_width 16\n#define ptr_down_height 14\n
+    static unsigned char ptr_down_bits[] = {
+    0xc0,0x01,0xc0,0x01,0xc0,0x01,0xc0,0x01,
+    0xc0,0x01,0xc0,0x01,0xc0,0x01,0xc0,0x01,
+    0xc0,0x01,0xf8,0x0f,0xf0,0x07,0xe0,0x03,
+    0xc0,0x01,0x80,0x00};"
+
+  image create bitmap img_up -data \
+    "#define ptr_up_width 16\n#define ptr_up_height 14\n
+    static unsigned char ptr_up_bits[] = {
+    0x80,0x00,0xc0,0x01,0xe0,0x03,0xf0,0x07,
+    0xf8,0x0f,0xc0,0x01,0xc0,0x01,0xc0,0x01,
+    0xc0,0x01,0xc0,0x01,0xc0,0x01,0xc0,0x01,
+    0xc0,0x01,0xc0,0x01};"
 }
 
 
-# ----------------------------------------------------------------------------
 #
 # This function creates the main window of the trace browser.
 #
@@ -90,11 +114,10 @@ proc CreateMainWindow {} {
   .menubar.ctrl add command -label "Open file..." -command MenuCmd_OpenFile
   .menubar.ctrl add command -label "Reload current file" -command MenuCmd_Reload
   .menubar.ctrl add separator
-  .menubar.ctrl add command -label "Read bookmarks from file..." -command Mark_ReadFile
-  .menubar.ctrl add command -label "Save bookmarks to file..." -command Mark_SaveFile
+  .menubar.ctrl add command -label "Read bookmarks from file..." -command Mark_ReadFileFrom
+  .menubar.ctrl add command -label "Save bookmarks to file..." -command Mark_SaveFileAs
   .menubar.ctrl add separator
   .menubar.ctrl add command -label "Edit color highlighting..." -command Tags_OpenDialog
-  .menubar.ctrl add command -label "Edit color palette..." -command Palette_OpenDialog
   .menubar.ctrl add command -label "Font selection..." -command FontList_OpenDialog
   .menubar.ctrl add separator
   .menubar.ctrl add command -label "Quit" -command {destroy .; update}
@@ -139,7 +162,8 @@ proc CreateMainWindow {} {
   bind .f1.t <Key-L> {CursorSetLine bottom; KeyClr; break}
   # goto line or column
   bind .f1.t <G> {.f1.t mark set insert end; .f1.t see insert; KeyClr; break}
-  bind .f1.t <Key-dollar> {.f1.t mark set insert [list insert lineend]; .f1.t see insert; KeyClr; break}
+  bind .f1.t <Key-dollar> {.f1.t mark set insert "insert lineend"; .f1.t see insert; KeyClr; break}
+  bind .f1.t <Control-g> {DisplayLineNumer; KeyClr; break}
   # search with "/", "?"; repeat search with n/N
   bind .f1.t <Key-slash> {set tlb_last_dir 1; focus .f2.e; KeyClr; break}
   bind .f1.t <Key-question> {set tlb_last_dir 0; focus .f2.e; KeyClr; break}
@@ -152,7 +176,7 @@ proc CreateMainWindow {} {
   bind .f1.t <Alt-Key-f> {focus .f2.e; KeyClr; break}
   bind .f1.t <Alt-Key-n> {Search 1 0; KeyClr; break}
   bind .f1.t <Alt-Key-p> {Search 0 0; KeyClr; break}
-  bind .f1.t <Alt-Key-h> {set tlb_hall [expr !$tlb_hall]; SearchHighlightUpdate; KeyClr; break}
+  bind .f1.t <Alt-Key-h> {SearchHighlightOnOff; KeyClr; break}
   # bookmarks
   bind .f1.t <Double-Button-1> {Mark_ToggleAtInsert; KeyClr; break}
   bind .f1.t <Key-m> {Mark_ToggleAtInsert; KeyClr; break}
@@ -168,16 +192,16 @@ proc CreateMainWindow {} {
   menu .f2.mh -tearoff 0
   button .f2.bn -text "Find next" -command {Search 1 0} -underline 5 -pady 2
   button .f2.bp -text "Find previous" -command {Search 0 0} -underline 5 -pady 2
-  checkbutton .f2.bh -text "Highlight all" -variable tlb_hall -command SearchHighlightUpdate -underline 0
-  checkbutton .f2.cb -text "Match case" -variable tlb_case -command SearchHighlightUpdate
-  checkbutton .f2.re -text "Reg.Exp." -variable tlb_regexp -command SearchHighlightUpdate
+  checkbutton .f2.bh -text "Highlight all" -variable tlb_hall -command SearchHighlightSettingChange -underline 0
+  checkbutton .f2.cb -text "Match case" -variable tlb_case -command SearchHighlightSettingChange
+  checkbutton .f2.re -text "Reg.Exp." -variable tlb_regexp -command SearchHighlightSettingChange
   pack .f2.l .f2.e .f2.bn .f2.bp .f2.bh .f2.cb .f2.re -side left -anchor w
   pack configure .f2.e -fill x -expand 1
   pack .f2 -side top -fill x
 
   bind .f2.e <Escape> {SearchAbort; break}
   bind .f2.e <Return> {SearchReturn; break}
-  bind .f2.e <FocusIn> {SearchInit %W}
+  bind .f2.e <FocusIn> {SearchInit}
   bind .f2.e <FocusOut> {SearchLeave}
   bind .f2.e <Control-n> {Search 1 0; break}
   bind .f2.e <Control-N> {Search 0 0; break}
@@ -187,6 +211,7 @@ proc CreateMainWindow {} {
   bind .f2.e <Control-D> {Search_CompleteLeft; break}
   bind .f2.e <Control-x> {Search_RemoveFromHistory; break}
   bind .f2.e <Control-c> {SearchAbort; break}
+  bind .f2.e <Control-h> {TagsList_AddSearch .; break}
   trace add variable tlb_find write SearchVarTrace
 
   wm protocol . WM_DELETE_WINDOW UserQuit
@@ -195,172 +220,21 @@ proc CreateMainWindow {} {
 }
 
 
+# ----------------------------------------------------------------------------
 #
-# This function is bound to key presses in the main window. It's called
-# when none of the single-key bindings match. It's used to handle complex
-# key press event sequences.
+# This function is called during start-up to create tags for all color
+# highlights.
 #
-proc KeyCmd {char} {
-  global last_key_char last_jump_orig
+proc HighlightCreateTags {} {
+  global patlist
 
-  set result 0
-  if {$char ne ""} {
-    if {$last_key_char eq "'"} {
-      if {$char eq "'"} {
-        set tmp $last_jump_orig
-        Mark_JumpPos
-        .f1.t mark set insert $tmp
-        .f1.t see insert
-      } elseif {($last_key_char eq "0") || ($last_key_char eq "^")} {
-        .f1.t mark set insert "insert linestart"
-      } elseif {$last_key_char eq "$"} {
-        .f1.t mark set insert "insert lineend"
-      }
-      set last_key_char {}
-      set result 1
+  foreach w $patlist {
+    set tagnam [lindex $w 4]
 
-    } elseif {$last_key_char eq "z"} {
-      if {$char eq "-"} {
-        YviewSet bottom
-      } elseif {($char eq ".") || ($char eq "z")} {
-        YviewSet center
-      } elseif {($char eq "+") || ($char eq "return")} {
-        YviewSet top
-      }
-      set last_key_char {}
-      set result 1
-
-    } else {
-      if {[regexp {[0-9]} $char]} {
-        KeyCmd_OpenDialog any $char
-        set last_key_char {}
-        set result 1
-
-      } elseif {[regexp {[z']} $char]} {
-        set last_key_char $char
-        set result 1
-
-      } elseif {$char eq "-"} {
-        .f1.t mark set insert [list insert linestart - 1 lines]
-        .f1.t xview moveto 0
-        .f1.t see insert
-
-      } elseif {$char eq "return"} {
-        .f1.t mark set insert [list insert linestart + 1 lines]
-        .f1.t xview moveto 0
-        .f1.t see insert
-      }
-    }
+    set cfg [HighlightConfigure $w]
+    eval [linsert $cfg 0 .f1.t tag configure $tagnam]
+    .f1.t tag lower $tagnam find
   }
-  return $result
-}
-
-
-#
-# This function is called for all explicit key bindings to forget about
-# any previously buffered partial multi-keypress commands.
-#
-proc KeyClr {} {
-  global last_key_char
-  set last_key_char {}
-}
-
-
-#
-# This function adjusts the view so that the line holding the cursor is
-# placed at the top, center or bottom of the viewable area, if possible.
-#
-proc YviewSet {where} {
-  global font_normal
-
-  .f1.t see insert
-  set pos [.f1.t bbox insert]
-  if {[llength $pos] == 4} {
-    set fh [font metrics $font_normal -linespace]
-    set wh [winfo height .f1.t]
-
-    if {$where eq "top"} {
-      set delta [expr [lindex $pos 1] / $fh]
-
-    } elseif {$where eq "center"} {
-      set delta [expr 0 - (($wh/2 - [lindex $pos 1] + [lindex $pos 3]/2) / $fh)]
-
-    } elseif {$where eq "bottom"} {
-      set delta [expr 0 - (($wh - [lindex $pos 1] - [lindex $pos 3]) / $fh)]
-
-    } else {
-      set delta 0
-    }
-
-    if {$delta > 0} {
-      .f1.t yview scroll $delta units
-      .f1.t see insert
-    } elseif {$delta < 0} {
-      .f1.t yview scroll $delta units
-      .f1.t see insert
-    }
-  }
-}
-
-
-#
-# This function scrolls the view vertically by the given number of lines.
-# When the line holding the cursor is scrolled out of the window
-#
-proc YviewScroll {delta} {
-  global font_normal
-
-  .f1.t yview scroll $delta units
-
-  set pos [.f1.t bbox insert]
-  set fh [font metrics $font_normal -linespace]
-
-  # check if cursor is fully visible
-  if {([llength $pos] != 4) || ([lindex $pos 3] < $fh)} {
-    if {$delta < 0} {
-      .f1.t mark set insert "@1,[expr [winfo height .f1.t] - $fh/2]"
-      .f1.t see insert
-    } else {
-      .f1.t mark set insert {@1,1}
-      .f1.t see insert
-    }
-  }
-}
-
-
-#
-# This function moves the cursor onto a given position in the current view.
-#
-proc CursorSetLine {where} {
-  global font_normal
-
-  if {$where eq "top"} {
-    .f1.t mark set insert {@1,1}
-
-  } elseif {$where eq "center"} {
-    .f1.t mark set insert "@1,[expr [winfo height .f1.t] / 2]"
-
-  } elseif {$where eq "bottom"} {
-    set fh [font metrics $font_normal -linespace]
-    .f1.t mark set insert "@1,[expr [winfo height .f1.t] - $fh/2]"
-
-  } else {
-    .f1.t mark set insert [list insert linestart]
-  }
-  .f1.t xview moveto 0
-  .f1.t see insert
-}
-
-
-#
-# Helper function to extrace a range of characters from the content.
-#
-proc ExtractText {pos1 pos2} {
-  set dump {}
-  foreach {key val idx} [.f1.t dump -text $pos1 $pos2] {
-    append dump $val
-  }
-  return $dump
 }
 
 
@@ -383,24 +257,18 @@ proc HighlightInit {} {
     wm transient .hipro .
     wm geometry .hipro "+[expr [winfo rootx .f1.t] + 1]+[expr [winfo rooty .f1.t] + 1]"
 
-    canvas .hipro.c -width 100 -height 10 -borderwidth 0 -relief flat -takefocus 0
+    canvas .hipro.c -width 100 -height 10 -highlightthickness 0 -takefocus 0
     pack .hipro.c
     set cid [.hipro.c create rect 0 0 0 12 -fill {#0b1ff7} -outline {}]
 
-    foreach w $patlist {
-      set tagnam [lindex $w 4]
-
-      set cfg [HighlightConfigure $w]
-      eval [linsert $cfg 0 .f1.t tag configure $tagnam]
-      .f1.t tag lower $tagnam find
-
-      HighlightVisible [lindex $w 0] $tagnam {}
-    }
-
     .f1.t tag add margin 1.0 end
 
+    foreach w $patlist {
+      HighlightVisible [lindex $w 0] [lindex $w 4] {}
+    }
+
     # trigger highlighting for the 1st and following patterns
-    set tid_high_init [after 10 HighlightInitBg 0 $cid]
+    set tid_high_init [after 10 HighlightInitBg 0 $cid 0]
     .f1.t configure -cursor watch
   }
 }
@@ -411,7 +279,7 @@ proc HighlightInit {} {
 # loops across all patterns to apply color highlights. The loop is broken
 # up by means of a 10ms timer.
 #
-proc HighlightInitBg {pat_idx cid} {
+proc HighlightInitBg {pat_idx cid line} {
   global patlist tid_high_init
 
   if {$pat_idx < [llength $patlist]} {
@@ -420,15 +288,19 @@ proc HighlightInitBg {pat_idx cid} {
     set opt [Search_GetOptions [lindex $w 1] [lindex $w 2]]
 
     # apply the tag to all matching lines of text
-    HighlightAll [lindex $w 0] $tagnam $opt
+    set line [HighlightLines [lindex $w 0] $tagnam $opt $line]
+    if {$line >= 0} {
+      # not done yet - reschedule
+      set tid_high_init [after idle [list HighlightInitBg $pat_idx $cid $line]]
 
-    # trigger next tag right away - or allow user interaction
-    incr pat_idx
-    set tid_high_init [after 10 HighlightInitBg $pat_idx $cid]
+    } else {
+      # trigger next tag
+      incr pat_idx
+      set tid_high_init [after 10 [list HighlightInitBg $pat_idx $cid 1]]
 
-    # update the progress bar
-    catch {.hipro.c coords $cid 0 0 [expr int(100*$pat_idx/[llength $patlist])] 12}
-
+      # update the progress bar
+      catch {.hipro.c coords $cid 0 0 [expr int(100*$pat_idx/[llength $patlist])] 12}
+    }
   } else {
     catch {destroy .hipro}
     .f1.t configure -cursor top_left_arrow
@@ -437,63 +309,38 @@ proc HighlightInitBg {pat_idx cid} {
 
 
 #
-# This function creates or updates a text widget tag with the options of
-# a color highlight entry.  The function is called during start-up for all
-# highlight patterns, and by the highlight edit dialog (also used for the
-# sample text widget.)
-#
-proc HighlightConfigure {w} {
-  global font_content
-
-  set cfg {}
-  if [lindex $w 8] {
-    lappend cfg -font [linsert $font_content end bold]
-  } else {
-    lappend cfg -font {}
-  }
-  if [lindex $w 9] {
-    lappend cfg -underline [lindex $w 9]
-  } else {
-    lappend cfg -underline {}
-  }
-  if [lindex $w 10] {
-    lappend cfg -overstrike [lindex $w 10]
-  } else {
-    lappend cfg -overstrike {}
-  }
-  if {[lindex $w 13] ne "none"} {
-    lappend cfg -relief [lindex $w 13]
-    lappend cfg -borderwidth [lindex $w 14]
-  } else {
-    lappend cfg -relief {} -borderwidth {}
-  }
-  if {[lindex $w 15] > 0} {
-    lappend cfg -spacing1 [lindex $w 15] -spacing3 [lindex $w 15]
-  } else {
-    lappend cfg -spacing1 {} -spacing3 {}
-  }
-  lappend cfg -background [lindex $w 6]
-  lappend cfg -foreground [lindex $w 7]
-  lappend cfg -bgstipple [lindex $w 11]
-  lappend cfg -fgstipple [lindex $w 12]
-
-  return $cfg
-}
-
-
-#
 # This function searches for all text lines which contain the given
 # sub-string and marks these lines with the given tag.
 #
-proc HighlightAll {pat tagnam opt} {
+proc HighlightLines {pat tagnam opt line} {
   set pos [.f1.t index end]
   scan $pos "%d.%d" max_line char
-  set line 1
+  set start_t [clock clicks -milliseconds]
   while {($line < $max_line) &&
          ([set pos [eval .f1.t search $opt -- {$pat} "$line.0" end]] ne {})} {
     scan $pos "%d.%d" line char
     .f1.t tag add $tagnam "$line.0" "[expr $line + 1].0"
     incr line
+
+    if {([clock clicks -milliseconds] >= $start_t + 100) && ($line < $max_line)} {
+      return $line
+    }
+  }
+  return -1
+}
+
+
+#
+# This helper function calls the line highlight function until highlighting
+# is complete.  It's used to add highlighting for single tags and for the
+# search highlighting.
+#
+proc HighlightAll {pat tagnam opt {line 1}} {
+  set line [HighlightLines $pat $tagnam $opt $line]
+  if {$line >= 0} {
+    after idle [list HighlightAll $pat $tagnam $opt $line]
+  } else {
+    .f1.t configure -cursor top_left_arrow
   }
 }
 
@@ -519,6 +366,51 @@ proc HighlightVisible {pat tagnam opt} {
 
 
 #
+# This function creates or updates a text widget tag with the options of
+# a color highlight entry.  The function is called during start-up for all
+# highlight patterns, and by the highlight edit dialog (also used for the
+# sample text widget.)
+#
+proc HighlightConfigure {w} {
+  global font_content
+
+  set cfg {}
+  if [lindex $w 8] {
+    lappend cfg -font [DeriveFont $font_content 0 bold]
+  } else {
+    lappend cfg -font {}
+  }
+  if [lindex $w 9] {
+    lappend cfg -underline [lindex $w 9]
+  } else {
+    lappend cfg -underline {}
+  }
+  if [lindex $w 10] {
+    lappend cfg -overstrike [lindex $w 10]
+  } else {
+    lappend cfg -overstrike {}
+  }
+  if {[lindex $w 13] ne {}} {
+    lappend cfg -relief [lindex $w 13]
+    lappend cfg -borderwidth [lindex $w 14]
+  } else {
+    lappend cfg -relief {} -borderwidth {}
+  }
+  if {[lindex $w 15] > 0} {
+    lappend cfg -spacing1 [lindex $w 15] -spacing3 [lindex $w 15]
+  } else {
+    lappend cfg -spacing1 {} -spacing3 {}
+  }
+  lappend cfg -background [lindex $w 6]
+  lappend cfg -foreground [lindex $w 7]
+  lappend cfg -bgstipple [lindex $w 11]
+  lappend cfg -fgstipple [lindex $w 12]
+
+  return $cfg
+}
+
+
+#
 # This function clears the current search color highlighting without
 # resetting the search string. It's bound to the "&" key, but also used
 # during regular search reset.
@@ -535,31 +427,10 @@ proc SearchHighlightClear {} {
 
 
 #
-# This helper function is invoked by a timer and starts highlighting
-#
-proc SearchHighlightStart {pattern opt} {
-  global tlb_last_hall
-
-  .f1.t configure -cursor watch
-  update
-  # note: catch is required after "update" because the user may have destroyed the window
-  catch {
-    set tlb_last_hall $pattern
-    HighlightAll $pattern find $opt
-
-    .f1.t configure -cursor top_left_arrow
-  }
-}
-
-
-#
 # This function triggers color highlighting of all lines of text which match
 # the current search string.  The function is called when global highlighting
 # is en-/disabled, when the search string is modified or when search options
-# are changed.  (In the latter case
-# the highlighting is delayed by a timer by the caller because the operation
-# can take quite a while and should not disturb the user while entering text
-# in the search entry field.)
+# are changed.
 #
 proc SearchHighlightUpdate {} {
   global tlb_find tlb_regexp tlb_case tlb_hall tlb_last_hall
@@ -576,13 +447,52 @@ proc SearchHighlightUpdate {} {
           HighlightVisible $tlb_find find $opt
 
           if {[focus -displayof .] ne ".f2.e"} {
-             set tid_search_hall [after 10 [list SearchHighlightStart $tlb_find $opt]]
+
+            # display "busy" cursor until highlighting is finished
+            .f1.t configure -cursor watch
+
+            # start highlighting in the background
+            set tid_search_hall [after 10 [list HighlightAll $tlb_find find $opt]]
+
+            set tlb_last_hall $tlb_find
           }
         }
       }
     } else {
       SearchHighlightClear
     }
+  }
+}
+
+
+#
+# This function is bound to the "Highlight all" checkbutton to en- or
+# disable global highlighting.
+#
+proc SearchHighlightOnOff {} {
+  global tlb_hall
+
+  set tlb_hall [expr !$tlb_hall]
+  UpdateRcAfterIdle
+
+  SearchHighlightUpdate
+}
+
+
+#
+# This function is invoked after a change in search settings (i.e. case
+# match, reg.exp. or global highlighting.)  The changed settings are
+# stored in the RC file and a possible search highlighting is removed
+# or updated (the latter only if global highlighting is enabled)
+#
+proc SearchHighlightSettingChange {} {
+  global tlb_hall
+
+  UpdateRcAfterIdle
+
+  SearchHighlightClear
+  if $tlb_hall {
+    SearchHighlightUpdate
   }
 }
 
@@ -778,7 +688,7 @@ proc SearchReset {} {
 # This function is called when the "find" entry field receives keyboard focus
 # to intialize the search state machine for a new search.
 #
-proc SearchInit {wid} {
+proc SearchInit {} {
   global tlb_find tlb_find_focus tlb_hist_pos tlb_hist_base
 
   if {$tlb_find_focus == 0} {
@@ -863,6 +773,8 @@ proc Search_AddHistory {txt} {
       set off [expr [llength $tlb_hist] - $tlb_hist_maxlen - 1]
       set tlb_hist [lreplace $tlb_hist 0 $off]
     }
+
+    UpdateRcAfterIdle
   }
 }
 
@@ -1049,6 +961,7 @@ proc Search_RemoveFromHistory {} {
 
   if {[info exists tlb_hist_pos] && ($tlb_hist_pos < [llength $tlb_hist])} {
     set tlb_hist [lreplace $tlb_hist $tlb_hist_pos $tlb_hist_pos]
+    UpdateRcAfterIdle
 
     if {[llength $tlb_hist] == 0} {
       unset tlb_hist_pos tlb_hist_base
@@ -1056,6 +969,199 @@ proc Search_RemoveFromHistory {} {
       set tlb_hist_pos [expr [llength $tlb_hist] - 1]
     }
   }
+}
+
+
+# ----------------------------------------------------------------------------
+#
+# This function creates a small overlay which displays a temporary status
+# message.
+#
+proc DisplayStatusLine {type msg} {
+  global font_bold col_bg_content tid_status_line
+
+  set old_focus [focus -displayof .]
+  if {[info commands .stline] eq ""} {
+    toplevel .stline -background $col_bg_content -relief ridge -borderwidth 2 \
+                     -highlightthickness 0 -takefocus 0
+    wm overrideredirect .stline 1
+    wm group .stline .
+    wm resizable . 0 0
+
+    set fh [font metrics $font_bold -linespace]
+    wm geometry .stline "+[winfo rootx .f1]+[expr [winfo rooty .f2] - $fh - 10]"
+
+    label .stline.l -font $font_bold -text $msg -background $col_bg_content
+    pack .stline.l -side left
+
+  } else {
+    raise .stline
+    .stline.l configure -text $msg
+  }
+
+  after cancel $tid_status_line
+  set tid_status_line [after 4000 {destroy .stline}]
+
+  if {$old_focus ne ""} {
+    focus -force $old_focus
+  }
+}
+
+
+#
+# This function is bound to CTRL-G in the main window. It displays the
+# current line number (i.e. same as VIM)
+#
+proc DisplayLineNumer {} {
+  global cur_filename
+
+  set pos [.f1.t bbox insert]
+  if {[llength $pos] == 4} {
+    set pos [.f1.t index insert]
+    if {[scan $pos "%d.%d" line char] == 2} {
+      set pos [.f1.t index end]
+      scan $pos "%d.%d" end_line char
+
+      DisplayStatusLine msg "$cur_filename: line $line of $end_line lines"
+    }
+  }
+}
+
+
+#
+# This function is bound to configure events on dialog windows, i.e. called
+# when the window size or stacking changes. The function stores the new size
+# so that the same size can be used when the window is closed and re-opened.
+#
+# Note: this event is installed on the toplevel window, but also called for
+# all its childs when they are resized (due to the bindtag mechanism.) This
+# is the reason for passing widget and compare parameters.
+#
+proc TestCaseList_Resize {wid top cmp var} {
+  upvar {#0} $var size
+
+  if {$wid eq $cmp} {
+    set new_size "[winfo width $top]x[winfo height $top]"
+
+    if {![info exists size] || ($new_size ne $size)} {
+      set size $new_size
+      UpdateRcAfterIdle
+    }
+  }
+}
+
+
+#
+# Helper function to modify a font's size or appearance
+#
+proc DeriveFont {afont delta_size {style {}}} {
+  if {$style eq ""} {
+    set style [lindex $afont 2]
+  }
+  set size [lindex $afont 1]
+  if {$size < 0} {
+    set size [expr $size - $delta_size]
+  } else {
+    incr size $delta_size
+  }
+
+  return [list [lindex $afont 0] $size $style]
+}
+
+
+#
+# This function adjusts the view so that the line holding the cursor is
+# placed at the top, center or bottom of the viewable area, if possible.
+#
+proc YviewSet {where} {
+  global font_normal
+
+  .f1.t see insert
+  set pos [.f1.t bbox insert]
+  if {[llength $pos] == 4} {
+    set fh [font metrics $font_normal -linespace]
+    set wh [winfo height .f1.t]
+
+    if {$where eq "top"} {
+      set delta [expr [lindex $pos 1] / $fh]
+
+    } elseif {$where eq "center"} {
+      set delta [expr 0 - (($wh/2 - [lindex $pos 1] + [lindex $pos 3]/2) / $fh)]
+
+    } elseif {$where eq "bottom"} {
+      set delta [expr 0 - (($wh - [lindex $pos 1] - [lindex $pos 3]) / $fh)]
+
+    } else {
+      set delta 0
+    }
+
+    if {$delta > 0} {
+      .f1.t yview scroll $delta units
+      .f1.t see insert
+    } elseif {$delta < 0} {
+      .f1.t yview scroll $delta units
+      .f1.t see insert
+    }
+  }
+}
+
+
+#
+# This function scrolls the view vertically by the given number of lines.
+# When the line holding the cursor is scrolled out of the window
+#
+proc YviewScroll {delta} {
+  global font_normal
+
+  .f1.t yview scroll $delta units
+
+  set fh [font metrics $font_normal -linespace]
+  set pos [.f1.t bbox insert]
+
+  # check if cursor is fully visible
+  if {([llength $pos] != 4) || ([lindex $pos 3] < $fh)} {
+    if {$delta < 0} {
+      .f1.t mark set insert [list "@1,[winfo height .f1.t]" - 1 lines linestart]
+    } else {
+      .f1.t mark set insert {@1,1}
+    }
+  }
+}
+
+
+#
+# This function moves the cursor onto a given position in the current view.
+#
+proc CursorSetLine {where} {
+  global font_normal
+
+  if {$where eq "top"} {
+    .f1.t mark set insert {@1,1}
+
+  } elseif {$where eq "center"} {
+    .f1.t mark set insert "@1,[expr [winfo height .f1.t] / 2]"
+
+  } elseif {$where eq "bottom"} {
+    set fh [font metrics $font_normal -linespace]
+    .f1.t mark set insert "@1,[expr [winfo height .f1.t] - $fh/2]"
+
+  } else {
+    .f1.t mark set insert [list insert linestart]
+  }
+  .f1.t xview moveto 0
+  .f1.t see insert
+}
+
+
+#
+# Helper function to extrace a range of characters from the content.
+#
+proc ExtractText {pos1 pos2} {
+  set dump {}
+  foreach {key val idx} [.f1.t dump -text $pos1 $pos2] {
+    append dump $val
+  }
+  return $dump
 }
 
 
@@ -1067,6 +1173,77 @@ proc Mark_JumpPos {} {
   global last_jump_orig
 
   set last_jump_orig [.f1.t index insert]
+}
+
+
+#
+# This function is bound to key presses in the main window. It's called
+# when none of the single-key bindings match. It's used to handle complex
+# key press event sequences.
+#
+proc KeyCmd {char} {
+  global last_key_char last_jump_orig
+
+  set result 0
+  if {$char ne ""} {
+    if {$last_key_char eq "'"} {
+      if {$char eq "'"} {
+        set tmp $last_jump_orig
+        Mark_JumpPos
+        .f1.t mark set insert $tmp
+        .f1.t see insert
+      } elseif {($last_key_char eq "0") || ($last_key_char eq "^")} {
+        .f1.t mark set insert "insert linestart"
+      } elseif {$last_key_char eq "$"} {
+        .f1.t mark set insert "insert lineend"
+      }
+      set last_key_char {}
+      set result 1
+
+    } elseif {$last_key_char eq "z"} {
+      if {$char eq "-"} {
+        YviewSet bottom
+      } elseif {($char eq ".") || ($char eq "z")} {
+        YviewSet center
+      } elseif {($char eq "+") || ($char eq "return")} {
+        YviewSet top
+      }
+      set last_key_char {}
+      set result 1
+
+    } else {
+      if {[regexp {[0-9]} $char]} {
+        KeyCmd_OpenDialog any $char
+        set last_key_char {}
+        set result 1
+
+      } elseif {[regexp {[z']} $char]} {
+        set last_key_char $char
+        set result 1
+
+      } elseif {$char eq "-"} {
+        .f1.t mark set insert [list insert linestart - 1 lines]
+        .f1.t xview moveto 0
+        .f1.t see insert
+
+      } elseif {$char eq "return"} {
+        .f1.t mark set insert [list insert linestart + 1 lines]
+        .f1.t xview moveto 0
+        .f1.t see insert
+      }
+    }
+  }
+  return $result
+}
+
+
+#
+# This function is called for all explicit key bindings to forget about
+# any previously buffered partial multi-keypress commands.
+#
+proc KeyClr {} {
+  global last_key_char
+  set last_key_char {}
 }
 
 
@@ -1317,13 +1494,80 @@ proc Mark_DeleteAll {} {
 
 #
 # This function reads a list of line numbers and tags from a file and
-# adds them to the bookmark list. (Note already existing bookmars are
-# not discarded, hence there's no warning when bookmars already exist.)
+# adds them to the bookmark list. (Note already existing bookmarks are
+# not discarded, hence there's no warning when bookmarks already exist.)
 #
-proc Mark_ReadFile {} {
-  global mark_list cur_filename
+proc Mark_ReadFile {filename} {
+  global mark_list mark_list_modified
 
-  set def_name "${cur_filename}.bok"
+  if {[catch {set file [open $filename r]} cerr] == 0} {
+    set line_num 1
+    set bol {}
+    while {[gets $file line] >= 0} {
+      set txt {}
+      if {[regexp {^[[:space:]]#} $line]} {
+        # skip comment in file
+      } elseif {[regexp {^(\d+)([[:space:]:.,;\-][[:space:]]*(.*))?$} $line foo num txt]} {
+        lappend bol $num $txt
+      } else {
+        tk_messageBox -icon error -type ok -parent . \
+                      -message "Parse error in line $line_num: line is not starting with a digit: \"[string range $line 0 40]\"."
+        set line_num -1
+        break
+      }
+      incr line_num
+    }
+    close $file
+
+    if {$line_num > 0} {
+      if {[array size mark_list] != 0} {
+        set mark_list_modified 1
+      }
+      foreach {line txt} $bol {
+        if {![info exists mark_list($line)]} {
+          Mark_Toggle $line $txt
+        }
+      }
+      MarkList_Fill
+    }
+  } else {
+    tk_messageBox -icon error -type ok -parent . -message "Failed to read bookmarks file: $cerr"
+  }
+}
+
+
+#
+# This function stores the bookmark list in a file.
+#
+proc Mark_SaveFile {filename} {
+  global mark_list mark_list_modified
+
+  if {[catch {set file [open $filename w]} cerr] == 0} {
+    if {[catch {
+      foreach {line txt} [array get mark_list] {
+        puts $file "$line $txt"
+      }
+      close $file
+      set mark_list_modified 0
+
+    } cerr] != 0} {
+      tk_messageBox -icon error -type ok -parent . \
+                    -message "Error while writing bookmarks into \"$filename\": $cerr"
+    }
+  } else {
+    tk_messageBox -icon error -type ok -parent . -message "Failed to save bookmarks: $cerr"
+  }
+}
+
+
+#
+# This function is called by menu entry "Read bookmarks from file"
+# The user is asked to select a file; if he does so it's content is read.
+#
+proc Mark_ReadFileFrom {} {
+  global cur_filename
+
+  set def_name [Mark_DefaultFile $cur_filename]
   if {![file readable $def_name]} {
     set def_name ""
   }
@@ -1332,50 +1576,65 @@ proc Mark_ReadFile {} {
                                -initialfile [file tail $def_name] \
                                -initialdir [file dirname $def_name]]
   if {$filename ne ""} {
-    if {[catch {set file [open $filename r]} cerr] == 0} {
-      set line_num 1
-      set bol {}
-      while {[gets $file line] >= 0} {
-        set txt {}
-        if {[regexp {^[[:space:]]#} $line]} {
-          # skip comment in file
-        } elseif {[regexp {^(\d+)([[:space:]:.,;\-][[:space:]]*(.*))?$} $line foo num txt]} {
-          lappend bol $num $txt
-        } else {
-          tk_messageBox -icon error -type ok -parent . \
-                        -message "Parse error in line $line_num: line is not starting with a digit: \"[string range $line 0 40]\"."
-          set line_num -1
-          break
-        }
-        incr line_num
-      }
-      close $file
-
-      if {$line_num > 0} {
-        global mark_list mark_list_modified
-
-        if {[array size mark_list] != 0} {
-          set mark_list_modified 1
-        }
-        foreach {line txt} $bol {
-          if {![info exists mark_list($line)]} {
-            Mark_Toggle $line $txt
-          }
-        }
-        MarkList_Fill
-      }
-    } else {
-      tk_messageBox -icon error -type ok -parent . -message "Failed to read bookmarks file: $cerr"
-    }
+    Mark_ReadFile $filename
   }
 }
 
 
 #
-# This function stores the bookmark list in a file.
+# This function automatically reads a previously stored bookmark list
+# for a newly loaded file, if the bookmark file is named by the default
+# naming convention, i.e. with ".bok" extension.
 #
-proc Mark_SaveFile {} {
-  global mark_list mark_list_modified cur_filename
+proc Mark_ReadFileAuto {} {
+  global cur_filename
+
+  set bok_name [Mark_DefaultFile $cur_filename]
+  if {$bok_name ne ""} {
+    Mark_ReadFile $bok_name
+  }
+}
+
+
+#
+# This helper function determines the default filename for reading bookmarks.
+# Default is the trace file name or base file name plus ".bok". The name is
+# only returned if a file with this name actually exists and is not older
+# than the trace file.
+#
+proc Mark_DefaultFile {trace_name} {
+  set bok_name ""
+  # must use catch around mtime
+  catch {
+    set cur_mtime [file mtime $trace_name]
+  }
+  if [info exists cur_mtime] {
+    set name "${trace_name}.bok"
+    catch {
+      if {[file readable $name] && ([file mtime $name] >= $cur_mtime)} {
+        set bok_name $name
+      }
+    }
+    if {$bok_name eq ""} {
+      if {[regsub {\.[^\.]+$} $trace_name {.bok} name] && ($name ne $trace_name)} {
+        catch {
+          if {[file readable $name] && ([file mtime $name] >= $cur_mtime)} {
+            set bok_name $name
+          }
+        }
+      }
+    }
+  }
+  return $bok_name
+}
+
+
+#
+# This function is called by menu entry "Save bookmarks to file".
+# The user is asked to select a file; if he does so the bookmarks are written to it.
+#
+proc Mark_SaveFileAs {} {
+  global mark_list cur_filename
 
   if {[array size mark_list] > 0} {
     set def_name "${cur_filename}.bok"
@@ -1384,15 +1643,7 @@ proc Mark_SaveFile {} {
                                  -initialfile [file tail $def_name] \
                                  -initialdir [file dirname $def_name]]
     if {$filename ne ""} {
-      if {[catch {set file [open $filename w]} cerr] == 0} {
-        foreach {line txt} [array get mark_list] {
-          puts $file "$line $txt"
-        }
-        close $file
-        set mark_list_modified 0
-      } else {
-        tk_messageBox -icon error -type ok -parent . -message "Failed to save bookmarks: $cerr"
-      }
+      Mark_SaveFile $filename
     }
   } else {
     tk_messageBox -icon info -type ok -parent . -message "Your bookmark list is empty."
@@ -1413,7 +1664,7 @@ proc Mark_OfferSave {} {
                   -message "Store changes in the bookmark list?"]
 
     if {$answer eq "yes"} {
-      Mark_SaveFile
+      Mark_SaveFileAs
 
       # give some positive feedback via a popup message
       # (and don't annoy the user by forcing him to press an "ok" button to close the message)
@@ -1696,9 +1947,7 @@ proc MarkList_OpenDialog {} {
     bind .dlg_mark.l <Destroy> {+ MarkList_Quit 1}
     bind .dlg_mark <Configure> {TestCaseList_Resize %W .dlg_mark .dlg_mark dlg_mark_size}
     wm protocol .dlg_mark WM_DELETE_WINDOW {MarkList_Quit 0}
-    if [info exists dlg_mark_size] {
-      wm geometry .dlg_mark $dlg_mark_size
-    }
+    wm geometry .dlg_mark $dlg_mark_size
 
     MarkList_Fill
 
@@ -1773,7 +2022,7 @@ proc MarkList_OpenRename {idx} {
       .mren.e icursor $off
 
       focus .mren.e
-      grab set .mren
+      grab .mren
     }
   }
 }
@@ -1792,256 +2041,6 @@ proc MarkList_LeaveRename {} {
 
 # ----------------------------------------------------------------------------
 #
-# This function is bound to the next/prev buttons below the highlight tags
-# list. When one of more list entries are selected, the function searches
-# for the tag in the main window and makes the line visible.
-#
-proc Tags_Search {is_fwd} {
-  global patlist
-
-  set sel [.dlg_tags.f1.l curselection]
-  if {[llength $sel] >= 0} {
-    set min_line -1
-    foreach pat_idx $sel {
-      set w [lindex $patlist $pat_idx]
-      set pat [lindex $w 0]
-      set tagnam [lindex $w 4]
-      set start_pos [Search_GetBase $is_fwd 0]
-
-      if {$is_fwd} {
-        set pos12 [.f1.t tag nextrange $tagnam $start_pos]
-      } else {
-        set pos12 [.f1.t tag prevrange $tagnam $start_pos]
-      }
-      if {$pos12 ne ""} {
-        scan [lindex $pos12 0] "%d.%d" line char
-        if {($min_line == -1) ||
-            ($is_fwd ? ($line < $min_line) : ($line > $min_line))} {
-          set min_line $line
-        }
-      }
-    }
-    if {$min_line > 0} {
-      Mark_JumpPos
-      .f1.t mark set insert "$min_line.0"
-      .f1.t see insert
-      .f1.t tag remove sel 1.0 end
-      .f1.t tag add sel "$min_line.0" "[expr $min_line + 1].0"
-    }
-  }
-}
-
-
-#
-# This function is bound to changes of the selection in the color tags list.
-#
-proc TagsList_Selection {} {
-  global dlg_tags_list
-
-  set sel [.dlg_tags.f1.l curselection]
-  if {[llength $sel] >= 0} {
-    .dlg_tags.f2.bn configure -state normal
-    .dlg_tags.f2.bp configure -state normal
-  } else {
-    .dlg_tags.f2.bn configure -state disabled
-    .dlg_tags.f2.bp configure -state disabled
-  }
-}
-
-
-#
-# This function updates a color tag text in the listbox.
-#
-proc TagsList_Update {tag_idx} {
-  global patlist dlg_tags_list
-
-  set pos [lsearch -integer $dlg_tags_list $tag_idx]
-  if {$pos >= 0} {
-    set w [lindex $patlist $tag_idx]
-
-    .dlg_tags.f1.l delete $pos
-    .dlg_tags.f1.l insert $pos [lindex $w 0]
-    .dlg_tags.f1.l itemconfigure $pos -background [lindex $w 6] -foreground [lindex $w 7]
-    .dlg_tags.f1.l see $pos
-  }
-}
-
-
-#
-# This function inserts a color tag text into the listbox and sets its
-# foreground and background colors.
-#
-proc TagsList_Insert {pos tag_idx} {
-  global patlist
-
-  set w [lindex $patlist $tag_idx]
-
-  .dlg_tags.f1.l insert $pos [lindex $w 0]
-  .dlg_tags.f1.l itemconfigure $pos -background [lindex $w 6] -foreground [lindex $w 7]
-}
-
-
-#
-# This function fills the color tags list dialog window with all color tags.
-#
-proc TagsList_Fill {} {
-  global dlg_tags_shown dlg_tags_list patlist
-
-  if [info exists dlg_tags_shown] {
-    set dlg_tags_list {}
-    .dlg_tags.f1.l delete 0 end
-
-    set tag_idx 0
-    foreach w $patlist {
-      lappend dlg_tags_list $tag_idx
-
-      TagsList_Insert end $tag_idx
-      incr tag_idx
-    }
-  }
-}
-
-
-#
-# This function allows to edit a color assigned to a tags entry.
-#
-proc TagsList_EditColor {tag_idx is_fg} {
-
-  .dlg_tags.f1.l see $tag_idx
-  set cool [.dlg_tags.f1.l bbox $tag_idx]
-  Palette_PopupMenu .dlg_tags [lindex $cool 0] [lindex $cool 1] \
-                              [list TagsList_UpdateColor $tag_idx $is_fg]
-}
-
-proc TagsList_UpdateColor {tag_idx is_fg col} {
-  global dlg_tags_list patlist
-
-  if {$col ne ""} {
-    set pat_idx [lindex $dlg_tags_list $tag_idx]
-    set w [lindex $patlist $pat_idx]
-    if $is_fg {
-      set col_idx 7
-    } else {
-      set col_idx 6
-    }
-
-    set w [lreplace $w $col_idx $col_idx $col]
-    if {[catch {.dlg_tags.f1.l itemconfigure $tag_idx -background [lindex $w 6] -foreground [lindex $w 7]}] == 0} {
-
-      set patlist [lreplace $patlist $pat_idx $pat_idx $w]
-
-      .f1.t tag configure [lindex $w 4] -background [lindex $w 6] -foreground [lindex $w 7]
-    }
-  }
-}
-
-
-#
-# This function is invoked by the "Remove entry" command in the highlight
-# list's context menu.
-#
-proc TagsList_Remove {pos} {
-  global patlist dlg_tags_list
-
-  set answer [tk_messageBox -type yesno -icon question -parent .dlg_tags \
-                -message "Really remove this entry? This cannot be undone"]
-  if {$answer eq "yes"} {
-    set pat_idx [lindex $dlg_tags_list $pos]
-
-    # remove the highlight in the main window
-    set w [lindex $patlist $pat_idx]
-    set patlist [lreplace $patlist $pat_idx $pat_idx]
-    .f1.t tag delete [lindex $w 4]
-
-    # remove the entry in the listbox
-    TagsList_Fill
-  }
-}
-
-proc TagsList_CopyToSearch {pos} {
-  global tlb_find tlb_regexp tlb_case
-  global patlist dlg_tags_list
-
-  set pat_idx [lindex $dlg_tags_list $pos]
-  set w [lindex $patlist $pat_idx]
-
-  focus .f2.e
-  after idle [list set tlb_find [lindex $w 0]]
-  after idle [list set tlb_regexp [lindex $w 1]]
-  after idle [list set tlb_case [lindex $w 2]]
-}
-
-
-#
-# This function is invoked by the "Add current search" entry in the highlight
-# list's context menu.
-#
-proc TagsList_AddSearch {} {
-  global tlb_find tlb_regexp tlb_case
-  global col_bg_find col_bg_findinc
-  global patlist dlg_tags_list
-
-  if {$tlb_find ne ""} {
-    # search a free tag index
-    set nam_idx 0
-    foreach w $patlist {
-      scan [lindex $w 4] "tag%d" idx
-      if {$idx >= $nam_idx} {
-        set nam_idx [expr $idx + 1]
-      }
-    }
-    set pat_idx [llength $patlist]
-    set w [list $tlb_find $tlb_regexp $tlb_case default "tag$nam_idx" {} \
-                $col_bg_find {} 0 0 0 {} {} {} 1 0]
-    lappend patlist $w
-
-    # add the tag to the main window
-    set cfg [HighlightConfigure $w]
-    set tagnam [lindex $w 4]
-    eval [linsert $cfg 0 .f1.t tag configure $tagnam]
-    .f1.t tag lower $tagnam find
-    set opt [Search_GetOptions [lindex $w 1] [lindex $w 2]]
-    HighlightAll [lindex $w 0] $tagnam $opt
-
-    # insert the entry into the listbox
-    lappend dlg_tags_list $pat_idx
-    TagsList_Insert end $pat_idx
-    .dlg_tags.f1.l see end
-
-  } else {
-    tk_messageBox -type ok -icon error -parent .dlg_tags \
-      -message "First enter a search text or regular expression in the main window's \"find\" field."
-  }
-}
-
-
-#
-# This function pops up a context menu for the color tags list dialog.
-#
-proc TagsList_ContextMenu {xcoo ycoo} {
-  global dlg_tags_list
-
-  set idx [.dlg_tags.f1.l index "@$xcoo,$ycoo"]
-  if {([llength $idx] > 0) && ($idx < [llength $dlg_tags_list])} {
-    .dlg_tags.f1.l selection clear 0 end
-    .dlg_tags.f1.l selection set $idx
-
-    .dlg_tags.ctxmen delete 0 end
-    .dlg_tags.ctxmen add command -label "Change background color" -command [list TagsList_EditColor $idx 0]
-    .dlg_tags.ctxmen add command -label "Edit markup..." -command [list Markup_OpenDialog $idx]
-    .dlg_tags.ctxmen add separator
-    .dlg_tags.ctxmen add command -label "Add current search" -command TagsList_AddSearch
-    .dlg_tags.ctxmen add command -label "Copy to search field" -command [list TagsList_CopyToSearch $idx]
-    .dlg_tags.ctxmen add command -label "Remove this entry" -command [list TagsList_Remove $idx]
-
-    set rootx [expr [winfo rootx .dlg_tags] + $xcoo]
-    set rooty [expr [winfo rooty .dlg_tags] + $ycoo]
-    tk_popup .dlg_tags.ctxmen $rootx $rooty 0
-  }
-}
-
-
-#
 # This function creates or raises the color highlighting tags list dialog.
 # This dialog shows all currently defined tag assignments.
 #
@@ -2055,13 +2054,18 @@ proc Tags_OpenDialog {} {
     wm group .dlg_tags .
 
     frame .dlg_tags.f1
-    listbox .dlg_tags.f1.l -width 40 -height 10 -cursor top_left_arrow -font $font_content \
+    listbox .dlg_tags.f1.l -width 1 -height 1 -cursor top_left_arrow -font $font_content \
                         -background $col_bg_content -foreground $col_fg_content \
                         -selectmode extended -exportselection false \
                         -yscrollcommand {.dlg_tags.f1.sb set}
     pack .dlg_tags.f1.l -side left -fill both -expand 1
     scrollbar .dlg_tags.f1.sb -orient vertical -command {.dlg_tags.f1.l yview} -takefocus 0
     pack .dlg_tags.f1.sb -side left -fill y
+    frame .dlg_tags.f1.f11
+    button .dlg_tags.f1.f11.b_up -image img_up -command TagsList_ShiftUp -state disabled
+    button .dlg_tags.f1.f11.b_down -image img_down -command TagsList_ShiftDown -state disabled
+    pack .dlg_tags.f1.f11.b_up .dlg_tags.f1.f11.b_down -side top -pady 2
+    pack .dlg_tags.f1.f11 -side left -fill y -pady 15
     pack .dlg_tags.f1 -side top -fill both -expand 1
 
     bind .dlg_tags.f1.l <<ListboxSelect>> {TagsList_Selection; break}
@@ -2084,15 +2088,387 @@ proc Tags_OpenDialog {} {
     set dlg_tags_shown 1
     bind .dlg_tags.f1.l <Destroy> {+ unset -nocomplain dlg_tags_shown}
     bind .dlg_tags <Configure> {TestCaseList_Resize %W .dlg_tags .dlg_tags dlg_tags_size}
-    if [info exists dlg_tags_size] {
-      wm geometry .dlg_tags $dlg_tags_size
-    }
+    wm geometry .dlg_tags $dlg_tags_size
 
     TagsList_Fill
 
   } else {
     wm deiconify .dlg_tags
     raise .dlg_tags
+  }
+}
+
+
+#
+# This function pops up a context menu for the color tags list dialog.
+#
+proc TagsList_ContextMenu {xcoo ycoo} {
+  global patlist tlb_find
+
+  set idx [.dlg_tags.f1.l index "@$xcoo,$ycoo"]
+  if {([llength $idx] > 0) && ($idx < [llength $patlist])} {
+    .dlg_tags.f1.l selection clear 0 end
+    .dlg_tags.f1.l selection set $idx
+    TagsList_Selection
+
+    if {$tlb_find ne ""} {
+      set find_state normal
+    } else {
+      set find_state disabled
+    }
+
+    .dlg_tags.ctxmen delete 0 end
+    .dlg_tags.ctxmen add command -label "Change background color" -command [list TagsList_EditColor $idx 0]
+    .dlg_tags.ctxmen add command -label "Edit markup..." -command [list Markup_OpenDialog $idx]
+    .dlg_tags.ctxmen add separator
+    .dlg_tags.ctxmen add command -label "Add current search" -command {TagsList_AddSearch .dlg_tags} -state $find_state
+    .dlg_tags.ctxmen add command -label "Copy to search field" -command [list TagsList_CopyToSearch $idx]
+    .dlg_tags.ctxmen add command -label "Update from search field" -command [list TagsList_CopyFromSearch $idx] -state $find_state
+    .dlg_tags.ctxmen add command -label "Remove this entry" -command [list TagsList_Remove $idx]
+
+    set rootx [expr [winfo rootx .dlg_tags] + $xcoo]
+    set rooty [expr [winfo rooty .dlg_tags] + $ycoo]
+    tk_popup .dlg_tags.ctxmen $rootx $rooty 0
+  }
+}
+
+
+#
+# This function is bound to the "up" button next to the color highlight list.
+# Each selected item (selection may be non-consecutive) is shifted up by one line.
+#
+proc TagsList_ShiftUp {} {
+  global patlist
+
+  set el [lsort -integer -increasing [.dlg_tags.f1.l curselection]]
+  if {[lindex $el 0] > 0} {
+    foreach index $el {
+      # remove the item in the listbox widget above the shifted one
+      .dlg_tags.f1.l delete [expr $index - 1]
+      # re-insert the just removed item below the shifted one
+      TagsList_Insert $index [expr $index - 1]
+
+      # perform the same exchange in the associated list
+      set patlist [lreplace $patlist [expr $index - 1] $index \
+                            [lindex $patlist $index] \
+                            [lindex $patlist [expr $index - 1]]]
+    }
+  }
+}
+
+
+#
+# This function is bound to the "down" button next to the color highlight
+# list.  Each selected item is shifted down by one line.
+#
+proc TagsList_ShiftDown {} {
+  global patlist
+
+  set el [lsort -integer -decreasing [.dlg_tags.f1.l curselection]]
+  if {[lindex $el 0] < [llength $patlist] - 1} {
+    foreach index $el {
+      .dlg_tags.f1.l delete [expr $index + 1]
+      TagsList_Insert $index [expr $index + 1]
+
+      set patlist [lreplace $patlist $index [expr $index + 1] \
+                            [lindex $patlist [expr $index + 1]] \
+                            [lindex $patlist $index]]
+    }
+  }
+}
+
+
+#
+# This function is bound to the next/prev buttons below the highlight tags
+# list. When one of more list entries are selected, the function searches
+# for the tag in the main window and makes the line visible.
+#
+proc Tags_Search {is_fwd} {
+  global patlist
+
+  set min_line -1
+  foreach pat_idx [.dlg_tags.f1.l curselection] {
+
+    set w [lindex $patlist $pat_idx]
+    set tagnam [lindex $w 4]
+    set start_pos [Search_GetBase $is_fwd 0]
+
+    if {$is_fwd} {
+      set pos12 [.f1.t tag nextrange $tagnam $start_pos]
+    } else {
+      set pos12 [.f1.t tag prevrange $tagnam $start_pos]
+    }
+    if {$pos12 ne ""} {
+      scan [lindex $pos12 0] "%d.%d" line char
+      if {($min_line == -1) ||
+          ($is_fwd ? ($line < $min_line) : ($line > $min_line))} {
+        set min_line $line
+      }
+    }
+  }
+  if {$min_line > 0} {
+    Mark_JumpPos
+    .f1.t mark set insert "$min_line.0"
+    .f1.t see insert
+    .f1.t tag remove sel 1.0 end
+    .f1.t tag add sel "$min_line.0" "[expr $min_line + 1].0"
+  }
+}
+
+
+#
+# This function is bound to changes of the selection in the color tags list.
+#
+proc TagsList_Selection {} {
+
+  set sel [.dlg_tags.f1.l curselection]
+  if {[llength $sel] >= 0} {
+    .dlg_tags.f2.bn configure -state normal
+    .dlg_tags.f2.bp configure -state normal
+    .dlg_tags.f1.f11.b_up configure -state normal
+    .dlg_tags.f1.f11.b_down configure -state normal
+  } else {
+    .dlg_tags.f2.bn configure -state disabled
+    .dlg_tags.f2.bp configure -state disabled
+    .dlg_tags.f1.f11.b_up configure -state disabled
+    .dlg_tags.f1.f11.b_down configure -state disabled
+  }
+}
+
+
+#
+# This function updates a color tag text in the listbox.
+#
+proc TagsList_Update {pat_idx} {
+  global dlg_tags_shown patlist
+
+  if [info exists dlg_tags_shown] {
+    if {$pat_idx < [llength $patlist]} {
+      set w [lindex $patlist $pat_idx]
+
+      .dlg_tags.f1.l delete $pat_idx
+      .dlg_tags.f1.l insert $pat_idx [lindex $w 0]
+      .dlg_tags.f1.l itemconfigure $pat_idx -background [lindex $w 6] -foreground [lindex $w 7]
+      .dlg_tags.f1.l see $pat_idx
+    }
+  }
+}
+
+
+#
+# This function inserts a color tag text into the listbox and sets its
+# foreground and background colors.
+#
+proc TagsList_Insert {pos pat_idx} {
+  global patlist
+
+  set w [lindex $patlist $pat_idx]
+
+  .dlg_tags.f1.l insert $pos [lindex $w 0]
+  .dlg_tags.f1.l itemconfigure $pos -background [lindex $w 6] -foreground [lindex $w 7]
+}
+
+
+#
+# This function fills the color tags list dialog window with all color tags.
+#
+proc TagsList_Fill {} {
+  global dlg_tags_shown patlist
+
+  if [info exists dlg_tags_shown] {
+    .dlg_tags.f1.l delete 0 end
+
+    set idx 0
+    foreach w $patlist {
+      TagsList_Insert end $idx
+      incr idx
+    }
+  }
+}
+
+
+#
+# This function allows to edit a color assigned to a tags entry.
+#
+proc TagsList_EditColor {pat_idx is_fg} {
+  global patlist
+
+  .dlg_tags.f1.l see $pat_idx
+
+  set cool [.dlg_tags.f1.l bbox $pat_idx]
+  set rootx [expr [winfo rootx .dlg_tags] + [lindex $cool 0]]
+  set rooty [expr [winfo rooty .dlg_tags] + [lindex $cool 1]]
+
+  set w [lindex $patlist $pat_idx]
+  set col_idx [expr $is_fg ? 7 : 6]
+  set def_col [lindex $w $col_idx]
+
+  PaletteMenu_Popup .dlg_tags $rootx $rooty \
+                    [list TagsList_UpdateColor $pat_idx $is_fg] [lindex $w $col_idx]
+}
+
+
+#
+# This function is invoked after a background color change via the context menu.
+# The new color is saved in the highlight list and applied to the main window
+# and the highlight dialog's list. NOTE: the color value my be an empty string
+# (color "none" refers to the default fore- and background colors)
+#
+proc TagsList_UpdateColor {pat_idx is_fg col} {
+  global patlist
+
+  set w [lindex $patlist $pat_idx]
+  set col_idx [expr $is_fg ? 7 : 6]
+
+  set w [lreplace $w $col_idx $col_idx $col]
+  if {[catch {.dlg_tags.f1.l itemconfigure $pat_idx -background [lindex $w 6] -foreground [lindex $w 7]}] == 0} {
+    # clear selection so that the color becomes visible
+    .dlg_tags.f1.l selection clear 0 end
+
+    set patlist [lreplace $patlist $pat_idx $pat_idx $w]
+    UpdateRcAfterIdle
+
+    .f1.t tag configure [lindex $w 4] -background [lindex $w 6] -foreground [lindex $w 7]
+  }
+}
+
+
+#
+# This function is invoked by the "Add current search" entry in the highlight
+# list's context menu.
+#
+proc TagsList_AddSearch {parent} {
+  global tlb_find tlb_regexp tlb_case
+  global col_bg_find col_bg_findinc
+  global dlg_tags_shown patlist
+
+  if {$tlb_find ne ""} {
+    # search a free tag index
+    set dup_idx -1
+    set nam_idx 0
+    set idx 0
+    foreach w $patlist {
+      scan [lindex $w 4] "tag%d" tag_idx
+      if {$tag_idx >= $nam_idx} {
+        set nam_idx [expr $tag_idx + 1]
+      }
+      if {[lindex $w 0] eq $tlb_find} {
+        set dup_idx $idx
+      }
+      incr idx
+    }
+
+    set answer "no"
+    if {$dup_idx >= 0} {
+      set answer [tk_messageBox -type yesnocancel -icon warning -parent $parent \
+                     -message "The same search expression is already used - overwrite this entry?"]
+      if {$answer eq "cancel"} return
+    }
+    if {$answer eq "no"}  {
+      # append new entry
+      set pat_idx [llength $patlist]
+
+      set w [list $tlb_find $tlb_regexp $tlb_case default "tag$nam_idx" {} \
+                  $col_bg_find {} 0 0 0 {} {} {} 1 0]
+      lappend patlist $w
+
+    } else {
+      # replace pattern and search options in existing entry
+      set pat_idx $dup_idx
+      set w [lindex $patlist $pat_idx]
+      set w [lreplace $w 0 2 $tlb_find $tlb_regexp $tlb_case]
+      set patlist [lreplace $patlist $pat_idx $pat_idx $w]
+    }
+
+    # add the tag to the main window text widget
+    HighlightCreateTags
+
+    # tag matching lines in the main window
+    .f1.t configure -cursor watch
+    set opt [Search_GetOptions [lindex $w 1] [lindex $w 2]]
+    HighlightAll [lindex $w 0] [lindex $w 4] $opt
+
+    if [info exists dlg_tags_shown] {
+      # insert the entry into the listbox
+      TagsList_Insert end $pat_idx
+      .dlg_tags.f1.l see $pat_idx
+    }
+
+  } else {
+
+    tk_messageBox -type ok -icon error -parent $parent \
+      -message "First enter a search text or regular expression in the main window's \"Find\" field."
+  }
+}
+
+
+#
+# This function is invoked by the "Copy to search field" command in the
+# highlight list's context menu.
+#
+proc TagsList_CopyToSearch {pat_idx} {
+  global patlist
+  global tlb_find_focus tlb_find tlb_regexp tlb_case
+
+  set w [lindex $patlist $pat_idx]
+
+  # force focus into find entry field & suppress "Enter" event
+  SearchInit
+  set tlb_find_focus 1
+  focus .f2.e
+
+  SearchHighlightClear
+  set tlb_regexp [lindex $w 1]
+  set tlb_case [lindex $w 2]
+  set tlb_find [lindex $w 0]
+}
+
+
+#
+# This function is invoked by the "Update from search field" command in the
+# highlight list's context menu.
+#
+proc TagsList_CopyFromSearch {pat_idx} {
+  global tlb_find_focus tlb_find tlb_regexp tlb_case
+  global patlist
+
+  set answer [tk_messageBox -type okcancel -icon question -parent .dlg_tags \
+                -message "Please confirm overwriting the search pattern for this entry? This cannot be undone"]
+  if {$answer eq "ok"} {
+    set w [lindex $patlist $pat_idx]
+    set w [lreplace $w 0 2 $tlb_find $tlb_regexp $tlb_case]
+    set patlist [lreplace $patlist $pat_idx $pat_idx $w]
+    UpdateRcAfterIdle
+
+    # update tag in the main window
+    set cfg [HighlightConfigure $w]
+    eval [linsert $cfg 0 .f1.t tag configure [lindex $w 4]]
+
+    TagsList_Fill
+    .dlg_tags.f1.l see $pat_idx
+  }
+}
+
+
+#
+# This function is invoked by the "Remove entry" command in the highlight
+# list's context menu.
+#
+proc TagsList_Remove {pat_idx} {
+  global patlist
+
+  set answer [tk_messageBox -type yesno -icon question -parent .dlg_tags \
+                -message "Really remove this entry? This cannot be undone"]
+  if {$answer eq "yes"} {
+    set w [lindex $patlist $pat_idx]
+    set patlist [lreplace $patlist $pat_idx $pat_idx]
+    UpdateRcAfterIdle
+
+    # remove the highlight in the main window
+    .f1.t tag delete [lindex $w 4]
+
+    # remove the entry in the listbox
+    TagsList_Fill
   }
 }
 
@@ -2246,6 +2622,7 @@ proc FontList_Quit {do_store} {
 
       # save to rc
       set font_content $name
+      UpdateRcAfterIdle
 
     } else {
       tk_messageBox -type ok -icon error -parent .dlg_font -message "No font is selected - Use \"Abort\" to leave without selection"
@@ -2464,6 +2841,7 @@ proc Palette_Save {do_save} {
 
   if $do_save {
     set col_palette $dlg_cols_palette
+    UpdateRcAfterIdle
   }
   unset -nocomplain dlg_cols_palette dlg_cols_cid
   destroy .dlg_cols
@@ -2474,27 +2852,53 @@ proc Palette_Save {do_save} {
 # This function creates a menu with all the colors. It's usually used as
 # sub-menu (i.e. cascade) in other menus.
 #
-proc Palette_PopupMenu {parent xcoo ycoo cmd} {
-  global col_palette
+proc PaletteMenu_Popup {parent rootx rooty cmd col_def} {
+  global col_palette font_normal
 
-  toplevel .colsel
+  toplevel .colsel -highlightthickness 0
   wm title .colsel "Color selection menu"
   wm group .colsel $parent
   wm transient .colsel $parent
-  set rootx [expr [winfo rootx $parent] + $xcoo]
-  set rooty [expr [winfo rooty $parent] + $ycoo]
   wm geometry .colsel "+$rootx+$rooty"
 
   set w [expr 10*15 + 4]
   canvas .colsel.c -width $w -height 100 -background [.colsel cget -background] \
-                   -cursor top_left_arrow
-  pack .colsel.c
+                   -cursor top_left_arrow -highlightthickness 0
+  pack .colsel.c -side top
+
+  frame .colsel.f1
+  button .colsel.f1.b_other -text "Other..." -command [list PaletteMenu_OtherColor $parent $cmd $col_def] \
+                         -borderwidth 0 -relief flat -font [DeriveFont $font_normal -2 underline] \
+                         -foreground {#0000ff} -activeforeground {#0000ff} -padx 0 -pady 0
+  pack .colsel.f1.b_other -side left -expand 1 -anchor w
+  button .colsel.f1.b_none -text "None" -command [linsert $cmd end {}] \
+                       -borderwidth 0 -relief flat -font [DeriveFont $font_normal -2 underline] \
+                       -foreground {#0000ff} -activeforeground {#0000ff} -padx 0 -pady 0
+  pack .colsel.f1.b_none -side left -expand 1 -anchor e
+  pack .colsel.f1 -side top -fill x -expand 1
 
   Palette_Fill .colsel.c $col_palette $cmd
 
-  bind .colsel <Button-1> {destroy .colsel}
+  bind .colsel <ButtonRelease-1> {destroy .colsel}
   focus .colsel.c
   grab .colsel
+}
+
+
+#
+# This helper function is bound to "Other..." in the palette popup menu.
+# This function opens the color editor and returns the selected color to
+# the owner of the palette popup, if any.
+#
+proc PaletteMenu_OtherColor {parent cmd col_def} {
+  destroy .colsel
+  if {$col_def eq ""} {
+    set col_def {#000000}
+  }
+  set col [tk_chooseColor -initialcolor $col_def -parent $parent -title "Select color"]
+  if {$col ne ""} {
+    eval [linsert $cmd end $col]
+  }
 }
 
 
@@ -2512,7 +2916,8 @@ proc Markup_OpenDialog {pat_idx} {
     wm title .dlg_fmt "Markup editor"
     wm group .dlg_fmt .dlg_tags
 
-    frame .dlg_fmt.f1
+    label .dlg_fmt.head -textvariable dlg_fmt(pat)
+    pack .dlg_fmt.head -side top -anchor c
     text .dlg_fmt.sample -height 5 -width 35 -font $font_content -wrap none \
                          -foreground $col_fg_content -background $col_bg_content \
                          -relief sunken -borderwidth 2 -takefocus 0 -highlightthickness 0 \
@@ -2525,87 +2930,112 @@ proc Markup_OpenDialog {pat_idx} {
     .dlg_fmt.sample tag configure margin -lmargin1 17
     .dlg_fmt.sample tag configure sel -bgstipple gray50
     .dlg_fmt.sample tag lower sel
-    #.dlg_fmt.sample tag configure sample
+    .dlg_fmt.sample tag configure sample
     .dlg_fmt.sample insert 1.0 "Text line above\n" {margin spacing} \
                                "Text sample ... sample text\n" {margin sample} \
                                "Text line below\n" {margin}
 
-    frame .dlg_fmt.fnt
-    label .dlg_fmt.fnt.lab -text "Font:"
-    checkbutton .dlg_fmt.fnt.chk_bold -text "bold" -variable dlg_fmt(bold) \
-                                      -command Markup_UpdateFormat
-    checkbutton .dlg_fmt.fnt.chk_underline -text "underline" -variable dlg_fmt(underline) \
-                                           -command Markup_UpdateFormat
-    checkbutton .dlg_fmt.fnt.chk_overstrike -text "overstrike" -variable dlg_fmt(overstrike) \
-                                            -command Markup_UpdateFormat
-    pack .dlg_fmt.fnt.lab .dlg_fmt.fnt.chk_bold \
-         .dlg_fmt.fnt.chk_underline \
-         .dlg_fmt.fnt.chk_overstrike -side left -padx 5
-    pack .dlg_fmt.fnt -side top -fill x -padx 5 -pady 3
-
-    frame .dlg_fmt.mb
     set row 0
-    set win_frm_fg [.dlg_fmt.mb cget -highlightcolor]
-    button  .dlg_fmt.mb.bgcol -text "Background color" \
-                              -command [list Palette_PopupMenu .dlg_fmt 0 0 Markup_SelBgCol]
-    grid    .dlg_fmt.mb.bgcol -sticky we -column 0 -row $row
-
-    button  .dlg_fmt.mb.fgcol -text "Foreground color" \
-                              -command [list Palette_PopupMenu .dlg_fmt 0 0 Markup_SelFgCol]
-    grid    .dlg_fmt.mb.fgcol -sticky we -column 1 -row $row
+    frame   .dlg_fmt.mb
+    label   .dlg_fmt.mb.fnt_lab -text "Font:"
+    grid    .dlg_fmt.mb.fnt_lab -sticky w -column 0 -row $row
+    frame   .dlg_fmt.mb.fnt_f
+    checkbutton .dlg_fmt.mb.fnt_f.chk_bold -text "bold" -variable dlg_fmt(bold) \
+                                      -command Markup_UpdateFormat -font $font_normal
+    checkbutton .dlg_fmt.mb.fnt_f.chk_underline -text "underline" -variable dlg_fmt(underline) \
+                                           -command Markup_UpdateFormat -font $font_normal
+    checkbutton .dlg_fmt.mb.fnt_f.chk_overstrike -text "overstrike" -variable dlg_fmt(overstrike) \
+                                            -command Markup_UpdateFormat -font $font_normal
+    pack    .dlg_fmt.mb.fnt_f.chk_bold \
+            .dlg_fmt.mb.fnt_f.chk_underline \
+            .dlg_fmt.mb.fnt_f.chk_overstrike -side left -padx 5
+    grid    .dlg_fmt.mb.fnt_f -sticky w -column 1 -row $row -columnspan 4 -pady 2
     incr row
 
-    menubutton  .dlg_fmt.mb.bgpat -text "Background pattern" -indicatoron 1 -borderwidth 2 -relief raised \
-                                    -takefocus 1 -highlightthickness 1 -highlightcolor $win_frm_fg \
-                                    -menu .dlg_fmt.mb.bgpat.men
-    menu    .dlg_fmt.mb.bgpat.men -tearoff 0
-    .dlg_fmt.mb.bgpat.men add radiobutton -label "none - 100% filled" -value "none" -variable dlg_fmt(bgpat)
+    label   .dlg_fmt.mb.bg_lab -text "Background:"
+    grid    .dlg_fmt.mb.bg_lab -sticky w -column 0 -row $row
+    label   .dlg_fmt.mb.bgcol_lab -text "Color:" -font $font_normal
+    grid    .dlg_fmt.mb.bgcol_lab -sticky w -column 1 -row $row
+    Markup_ImageButton .dlg_fmt.mb.bgcol_mb bgcol
+    grid    .dlg_fmt.mb.bgcol_mb -sticky w -column 2 -row $row -padx 10 -pady 2
+    label   .dlg_fmt.mb.bgpat_lab -text "Pattern:" -font $font_normal
+    grid    .dlg_fmt.mb.bgpat_lab -sticky w -column 3 -row $row
+    Markup_ImageButton .dlg_fmt.mb.bgpat_mb bgpat
+    grid    .dlg_fmt.mb.bgpat_mb -sticky w -column 4 -row $row -padx 10 -pady 2
+    incr row
+
+    label   .dlg_fmt.mb.fgc_lab -text "Text:"
+    grid    .dlg_fmt.mb.fgc_lab -sticky w -column 0 -row $row
+    label   .dlg_fmt.mb.fgcol_lab -text "Color:" -font $font_normal
+    grid    .dlg_fmt.mb.fgcol_lab -sticky w -column 1 -row $row
+    Markup_ImageButton .dlg_fmt.mb.fgc_mb fgcol
+    grid    .dlg_fmt.mb.fgc_mb -sticky w -column 2 -row $row -padx 10 -pady 2
+    label   .dlg_fmt.mb.fgpat_lab -text "Pattern:" -font $font_normal
+    grid    .dlg_fmt.mb.fgpat_lab -sticky w -column 3 -row $row
+    Markup_ImageButton .dlg_fmt.mb.fgpat_mb fgpat
+    grid    .dlg_fmt.mb.fgpat_mb -sticky w -column 4 -row $row -padx 10 -pady 2
+    incr row
+
+    menu    .dlg_fmt.mb.bgpat_mb.men -tearoff 0
+    .dlg_fmt.mb.bgpat_mb.men add radiobutton -label "none - 100% filled" \
+                     -value "none" -variable dlg_fmt(bgpat) -command Markup_UpdateFormat
     foreach cmd {"75" "50" "25" "12"} {
-      .dlg_fmt.mb.bgpat.men add radiobutton -compound left -label "  $cmd% filled" -value $cmd -bitmap "gray$cmd"
+      .dlg_fmt.mb.bgpat_mb.men add radiobutton -compound left -label "  $cmd% filled" \
+                     -value "gray$cmd" -variable dlg_fmt(bgpat) -bitmap "gray$cmd" -command Markup_UpdateFormat
     }
-    grid    .dlg_fmt.mb.bgpat -sticky we -column 0 -row $row
 
-    menubutton  .dlg_fmt.mb.fgpat -text "Foreground pattern" -indicatoron 1 -borderwidth 2 -relief raised \
-                                    -takefocus 1 -highlightthickness 1 -highlightcolor $win_frm_fg \
-                                    -menu .dlg_fmt.mb.fgpat.men
-    menu    .dlg_fmt.mb.fgpat.men -tearoff 0
-    grid    .dlg_fmt.mb.fgpat -sticky we -column 1 -row $row
-    incr row
-
-    menubutton  .dlg_fmt.mb.ref -text "Relief" -indicatoron 1 -borderwidth 2 -relief raised \
-                                    -takefocus 1 -highlightthickness 1 -highlightcolor $win_frm_fg \
-                                    -menu .dlg_fmt.mb.ref.men
-    menu    .dlg_fmt.mb.ref.men -tearoff 0
-    foreach cmd {none raised sunken ridge groove solid} {
-      .dlg_fmt.mb.ref.men add radiobutton -label $cmd -variable dlg_fmt(relief) -value $cmd \
-                                          -command Markup_UpdateFormat
+    menu    .dlg_fmt.mb.fgpat_mb.men -tearoff 0
+    .dlg_fmt.mb.fgpat_mb.men add radiobutton -label "none - 100% filled" \
+                     -value "none" -variable dlg_fmt(fgpat) -command Markup_UpdateFormat
+    foreach cmd {"75" "50" "25" "12"} {
+      .dlg_fmt.mb.fgpat_mb.men add radiobutton -compound left -label "  $cmd% filled" \
+                     -value "gray$cmd" -variable dlg_fmt(fgpat) -bitmap "gray$cmd" -command Markup_UpdateFormat
     }
-    grid    .dlg_fmt.mb.ref -sticky we -column 0 -row $row
-    frame .dlg_fmt.mb.fb
-    label .dlg_fmt.mb.fb.lab -text "Borderwidth:"
-    spinbox .dlg_fmt.mb.fb.bdw -from 1 -to 9 -width 2 \
-                            -textvariable dlg_fmt(border) -command Markup_UpdateFormat
-    pack .dlg_fmt.mb.fb.lab .dlg_fmt.mb.fb.bdw -side left -padx 2
-    grid    .dlg_fmt.mb.fb -sticky w -column 1 -row $row
+
+    label   .dlg_fmt.mb.bd_lab -text "Border:"
+    grid    .dlg_fmt.mb.bd_lab -sticky w -column 0 -row $row
+    label   .dlg_fmt.mb.ref_lab -text "Relief:" -font $font_normal
+    grid    .dlg_fmt.mb.ref_lab -sticky w -column 1 -row $row
+    Markup_ImageButton .dlg_fmt.mb.ref_mb relief
+    grid    .dlg_fmt.mb.ref_mb -sticky w -column 2 -row $row -padx 10 -pady 2
+
+    menu    .dlg_fmt.mb.ref_mb.men -tearoff 0
+    foreach cmd {flat raised sunken ridge groove solid} {
+      .dlg_fmt.mb.ref_mb.men add radiobutton -label $cmd -variable dlg_fmt(relief) -value $cmd \
+                                             -command Markup_UpdateFormat
+    }
+
+    label   .dlg_fmt.mb.bwd_lab -text "Width:" -font $font_normal
+    grid    .dlg_fmt.mb.bwd_lab -sticky w -column 3 -row $row
+    spinbox .dlg_fmt.mb.bdw_sb -from 1 -to 9 -width 3 -borderwidth 1 \
+                               -textvariable dlg_fmt(border) -command Markup_UpdateFormat
+    bind    .dlg_fmt.mb.bdw_sb <Return> Markup_UpdateFormat
+    grid    .dlg_fmt.mb.bdw_sb -sticky w -column 4 -row $row -padx 10 -pady 2
     incr row
 
-    frame .dlg_fmt.mb.sp
-    label .dlg_fmt.mb.sp.lab -text "Line spacing:"
-    spinbox .dlg_fmt.mb.sp.sph -from 0 -to 999 -width 3 \
-                            -textvariable dlg_fmt(spacing) -command Markup_UpdateFormat
-    label .dlg_fmt.mb.sp.lab2 -text {[pixels]} -font $font_normal
-    pack .dlg_fmt.mb.sp.lab .dlg_fmt.mb.sp.sph .dlg_fmt.mb.sp.lab2 -side left -padx 2
-    grid    .dlg_fmt.mb.sp -sticky we -column 0 -row $row
+    label   .dlg_fmt.mb.lsp_lab -text "Line spacing:"
+    grid    .dlg_fmt.mb.lsp_lab -sticky w -column 0 -row $row
+    label   .dlg_fmt.mb.lsp2_lab -text "Dist.:" -font $font_normal
+    grid    .dlg_fmt.mb.lsp2_lab -sticky w -column 3 -row $row
+    spinbox .dlg_fmt.mb.lsp_sb -from 0 -to 999 -width 3 -borderwidth 1 \
+                               -textvariable dlg_fmt(spacing) -command Markup_UpdateFormat
+    bind    .dlg_fmt.mb.lsp_sb <Return> Markup_UpdateFormat
+    grid    .dlg_fmt.mb.lsp_sb -sticky w -column 4 -row $row -padx 10 -pady 2
     incr row
-    pack .dlg_fmt.mb -side top -padx 5 -pady 3
+    pack .dlg_fmt.mb -side top -padx 5 -pady 3 -anchor nw
+
+    button .dlg_fmt.cop -text "Edit color palette..." -command Palette_OpenDialog \
+                        -borderwidth 0 -relief flat -font [DeriveFont $font_normal -2 underline] \
+                        -foreground {#0000ff} -activeforeground {#0000ff} -padx 0 -pady 0
+    pack .dlg_fmt.cop -side top -anchor w -padx 5 -pady 4
 
     frame .dlg_fmt.f2
     button .dlg_fmt.f2.abort -text "Abort" -command {Markup_Save 0}
     button .dlg_fmt.f2.ok -text "Ok" -default active -command {Markup_Save 1}
-    pack .dlg_fmt.f2.abort .dlg_fmt.f2.ok -side left -padx 10 -pady 5
+    pack .dlg_fmt.f2.abort .dlg_fmt.f2.ok -side left -padx 10 -pady 4
     pack .dlg_fmt.f2 -side top
 
-    bind .dlg_fmt.f1 <Destroy> {+ unset -nocomplain dlg_fmt_shown}
+    bind .dlg_fmt.mb <Destroy> {+ unset -nocomplain dlg_fmt_shown}
     set dlg_fmt_shown 1
 
   } else {
@@ -2613,8 +3043,21 @@ proc Markup_OpenDialog {pat_idx} {
     raise .dlg_fmt
   }
 
+  Markup_InitConfig $pat_idx
+  Markup_UpdateFormat
+}
+
+
+#
+# This function is called when the mark-up dialog is opened to copy the
+# format parameters from the global patlist into the dialog's has array.
+#
+proc Markup_InitConfig {pat_idx} {
+  global patlist dlg_fmt
+
   set w [lindex $patlist $pat_idx]
-  set dlg_fmt(pat_idx) $pat_idx
+  set dlg_fmt(pat) [lindex $w 0]
+  set dlg_fmt(tagnam) [lindex $w 4]
   set dlg_fmt(bgcol) [lindex $w 6]
   set dlg_fmt(fgcol) [lindex $w 7]
   set dlg_fmt(bold) [lindex $w 8]
@@ -2625,65 +3068,107 @@ proc Markup_OpenDialog {pat_idx} {
   set dlg_fmt(relief) [lindex $w 13]
   set dlg_fmt(border) [lindex $w 14]
   set dlg_fmt(spacing) [lindex $w 15]
-
-  Markup_UpdateFormat
+  if {$dlg_fmt(bgpat) eq ""} {set dlg_fmt(bgpat) "none"}
+  if {$dlg_fmt(fgpat) eq ""} {set dlg_fmt(fgpat) "none"}
+  if {$dlg_fmt(relief) eq ""} {set dlg_fmt(relief) "flat"}
+  if {$dlg_fmt(relief) eq ""} {set dlg_fmt(relief) "flat"}
 }
 
-proc Markup_SelBgCol {col} {
-  set ::dlg_fmt(bgcol) $col
-  Markup_UpdateFormat
-}
-proc Markup_SelFgCol {col} {
-  set ::dlg_fmt(fgcol) $col
-  Markup_UpdateFormat
-}
 
-proc Markup_GetConfig {} {
+#
+# This function is called when the mark-up dialog is closed to build a
+# parameter list from the dialog's temporary hash array.
+#
+proc Markup_GetConfig {pat_idx} {
   global dlg_fmt patlist
 
-  set w [lindex $patlist $dlg_fmt(pat_idx)]
+  if {$pat_idx >= 0} {
+    set w [lindex $patlist $pat_idx]
+  } else {
+    set w [list {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}]
+  }
+
+  set bgpat $dlg_fmt(bgpat)
+  set fgpat $dlg_fmt(fgpat)
+  set relief $dlg_fmt(relief)
+  set border $dlg_fmt(border)
+  set spacing $dlg_fmt(spacing)
+  if {$bgpat eq "none"} {set bgpat ""}
+  if {$fgpat eq "none"} {set fgpat ""}
+  if {$relief eq "flat"} {set relief ""}
+  if {![regexp {^\d+$} $border]} {set border 1}
+  if {![regexp {^\d+$} $spacing]} {set spacing 0}
+
   set w [lreplace $w 6 15 \
     $dlg_fmt(bgcol) \
     $dlg_fmt(fgcol) \
     $dlg_fmt(bold) \
     $dlg_fmt(underline) \
     $dlg_fmt(overstrike) \
-    $dlg_fmt(bgpat) \
-    $dlg_fmt(fgpat) \
-    $dlg_fmt(relief) \
-    $dlg_fmt(border) \
-    $dlg_fmt(spacing)]
+    $bgpat \
+    $fgpat \
+    $relief \
+    $border \
+    $spacing]
+
   return $w
 }
 
+
+#
+# This function is bound to the "Ok" and "Abort" buttons in the mark-up dialog.
+#
 proc Markup_Save {do_save} {
   global dlg_fmt patlist
 
   if $do_save {
-    set w [Markup_GetConfig]
-    set patlist [lreplace $patlist $dlg_fmt(pat_idx) $dlg_fmt(pat_idx) $w]
+    # determine the edited pattern's index in the list (use the unique tag
+    # which doesn't change even if the list is reordered)
+    set tagnam $dlg_fmt(tagnam)
+    set idx 0
+    foreach w $patlist {
+      if {[lindex $w 4] eq $tagnam} {
+        set pat_idx $idx
+        break
+      }
+      incr idx
+    }
+    if [info exists pat_idx] {
+      set w [Markup_GetConfig $pat_idx]
+      set patlist [lreplace $patlist $pat_idx $pat_idx $w]
+      UpdateRcAfterIdle
 
-    # update hightlight color listbox
-    TagsList_Update $dlg_fmt(pat_idx)
+      # update hightlight color listbox
+      TagsList_Update $pat_idx
 
-    # update tag in the main window
-    set cfg [HighlightConfigure $w]
-    eval [linsert $cfg 0 .f1.t tag configure [lindex $w 4]]
+      # update tag in the main window
+      set cfg [HighlightConfigure $w]
+      eval [linsert $cfg 0 .f1.t tag configure $tagnam]
+    } else {
+      tk_messageBox -type ok -icon error -parent .dlg_fmt \
+                    -message "This element has already been deleted."
+      return
+    }
   }
   unset -nocomplain dlg_fmt
   destroy .dlg_fmt
 }
 
-proc Markup_UpdateFormat {} {
-  global dlg_fmt font_content
 
-  set cfg [HighlightConfigure [Markup_GetConfig]]
+#
+# This function is called whenever a format parameter is changed to update
+# the sample text and the control widgets.
+#
+proc Markup_UpdateFormat {} {
+  global dlg_fmt font_content col_bg_content col_fg_content
+
+  set cfg [HighlightConfigure [Markup_GetConfig -1]]
   eval [linsert $cfg 0 .dlg_fmt.sample tag configure sample]
 
   if {$dlg_fmt(relief) ne "none"} {
-    .dlg_fmt.mb.fb.bdw conf -state normal
+    .dlg_fmt.mb.bdw_sb conf -state normal
   } else {
-    .dlg_fmt.mb.fb.bdw conf -state disabled
+    .dlg_fmt.mb.bdw_sb conf -state disabled
   }
 
   # adjust spacing above first line to center the content vertically
@@ -2691,7 +3176,96 @@ proc Markup_UpdateFormat {} {
   set spc [expr $lh - $dlg_fmt(spacing)]
   if {$spc < 0} {set spc 0}
   .dlg_fmt.sample tag configure spacing -spacing1 $spc
+
+  # update the entry widgets
+  if {$dlg_fmt(bgcol) ne {}} {
+    .dlg_fmt.mb.bgcol_mb.c configure -background $dlg_fmt(bgcol)
+  } else {
+    .dlg_fmt.mb.bgcol_mb.c configure -background $col_bg_content
+  }
+  if {$dlg_fmt(fgcol) ne {}} {
+    .dlg_fmt.mb.fgc_mb.c configure -background $dlg_fmt(fgcol)
+  } else {
+    .dlg_fmt.mb.fgc_mb.c configure -background $col_fg_content
+  }
+  if {$dlg_fmt(bgpat) ne "none"} {
+    .dlg_fmt.mb.bgpat_mb.c itemconfigure all -bitmap $dlg_fmt(bgpat)
+  } else {
+    .dlg_fmt.mb.bgpat_mb.c itemconfigure all -bitmap {}
+  }
+  if {$dlg_fmt(fgpat) ne "none"} {
+    .dlg_fmt.mb.fgpat_mb.c itemconfigure all -bitmap $dlg_fmt(fgpat)
+  } else {
+    .dlg_fmt.mb.fgpat_mb.c itemconfigure all -bitmap {}
+  }
+  .dlg_fmt.mb.ref_mb.c.w configure -relief $dlg_fmt(relief)
 }
+
+
+#
+# This function is used during creation of the markup editor dialog to
+# create the widgets for color, pattern and relief selection. The widget
+# consists of a rectangle which displays the current choice and a button
+# which triggers a popup menu when pressed.
+#
+proc Markup_ImageButton {wid type} {
+  global dlg_fmt
+
+  frame ${wid} -relief sunken -borderwidth 1
+  canvas ${wid}.c -width [expr [image width img_dropdown] + 4] -height [image height img_dropdown] \
+                 -highlightthickness 0 -takefocus 0 -borderwidth 0
+  pack ${wid}.c -fill both -expand 1 -side left
+  button ${wid}.b -image img_dropdown -highlightthickness 0 -borderwidth 1 -relief raised
+  pack ${wid}.b -side left
+
+  if {[string match {*col} $type]} {
+    ${wid}.b configure -command [list Markup_PopupColorPalette $wid $type]
+  } elseif {[string match {*pat} $type]} {
+    ${wid}.c create bitmap 2 2 -anchor nw
+    ${wid}.b configure -command [list Markup_PopupPatternMenu ${wid}]
+  } elseif {[string equal {relief} $type]} {
+    frame ${wid}.c.w -width 10 -height 10 -borderwidth 2 -relief flat
+    ${wid}.c create window 3 3 -anchor nw -window ${wid}.c.w -width 12 -height 12
+    ${wid}.b configure -command [list Markup_PopupPatternMenu ${wid}]
+  }
+}
+
+
+#
+# This helper function is invoked when the "drop down" button is pressed
+# on a color selction widget: it opens the color palette menu directly
+# below the widget.
+#
+proc Markup_PopupColorPalette {wid type} {
+  global dlg_fmt
+
+  set rootx [winfo rootx $wid]
+  set rooty [expr [winfo rooty $wid] + [winfo height $wid]]
+  PaletteMenu_Popup .dlg_fmt $rootx $rooty [list Markup_UpdateColor $type] $dlg_fmt($type)
+}
+
+
+#
+# This helper function is invoked when the "drop down" button is pressed
+# on a pattern selction widget: it opens the associated menu directly
+# below the widget.
+#
+proc Markup_PopupPatternMenu {wid} {
+  set rootx [winfo rootx $wid]
+  set rooty [expr [winfo rooty $wid] + [winfo height $wid]]
+  tk_popup ${wid}.men $rootx $rooty {}
+}
+
+
+#
+# This helper function is invoked as callback after a color was selected
+# in the palette popup menu.
+#
+proc Markup_UpdateColor {type col} {
+  set ::dlg_fmt($type) $col
+  Markup_UpdateFormat
+}
+
 
 
 # ----------------------------------------------------------------------------
@@ -2738,30 +3312,13 @@ THIS PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT ANY 
 
 # ----------------------------------------------------------------------------
 #
-# This function is bound to configure events on dialog windows, i.e. called
-# when the window size or stacking changes. The function stores the new size
-# so that the same size can be used when the window is closed and re-opened.
-#
-proc TestCaseList_Resize {wid top cmp var} {
-  upvar {#0} $var size
-
-  if {$wid eq $cmp} {
-    set size "[winfo width $top]x[winfo height $top]"
-  }
-}
-
-
-#
-# This function loads a trace from a file or stdin.
+# This function loads a trace from a file or stdin (i.e. filename "-")
 # Afterwards color highlighting is initiated.
 #
 proc LoadFile {filename} {
-  global cur_filename
+  global cur_filename load_size_limit
 
-  set cur_filename $filename
-  .menubar.ctrl entryconfigure "Reload*" -state normal
-
-  if {$filename eq ""} {
+  if {$filename eq "-"} {
     if {[catch {
       while 1 {
         set data [read stdin]
@@ -2771,6 +3328,7 @@ proc LoadFile {filename} {
         .f1.t insert end $data
       }
       .f1.t see end
+      set cur_filename ""
       set result 1
     } cerr] != 0} {
       tk_messageBox -type ok -icon error -message "Read error on STDIN: $cerr"
@@ -2779,9 +3337,15 @@ proc LoadFile {filename} {
   } else {
     if {[catch {
       set file [open $filename r]
+      # TODO apply file length limit
+      file stat $filename sta
+      if {$sta(size) > $load_size_limit} {
+        seek $file [expr 0 - $load_size_limit] end
+      }
       .f1.t insert end [read $file]
       .f1.t see end
       close $file
+      set cur_filename $filename
       set result 1
     } cerr] != 0} {
       tk_messageBox -type ok -icon error -message "Failed to load \"$filename\": $cerr"
@@ -2802,11 +3366,13 @@ proc LoadFile {filename} {
       if [info exists dlg_mark_shown] {
         wm title .dlg_mark "Bookmark list [$cur_filename]"
       }
+      .menubar.ctrl entryconfigure "Reload*" -state normal
     } else {
       wm title . "Trace browser"
     }
     Mark_JumpPos
     HighlightInit
+    Mark_ReadFileAuto
   }
 }
 
@@ -2845,6 +3411,8 @@ proc MenuCmd_OpenFile {} {
     }
     # discard the current trace content
     .f1.t delete 1.0 end
+    # re-create the color tags
+    HighlightCreateTags
 
     global mark_list mark_list_modified
     array unset mark_list
@@ -2872,9 +3440,9 @@ proc UserQuit {} {
 # The function is called once during start-up.
 #
 proc LoadRcFile {isDefault} {
-  global patlist tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
+  global tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
   global dlg_mark_size dlg_tags_size main_win_geom
-  global font_content
+  global patlist col_palette font_content load_size_limit
   global rcfile_version myrcfile
 
   set error 0
@@ -2916,9 +3484,14 @@ proc LoadRcFile {isDefault} {
 #
 proc UpdateRcFile {} {
   global argv0 myrcfile rcfile_compat rcfile_version
+  global tid_update_rc_sec tid_update_rc_min
   global dlg_mark_size dlg_tags_size main_win_geom
-  global patlist tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
-  global font_content
+  global patlist col_palette font_content load_size_limit
+  global tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
+
+  after cancel $tid_update_rc_sec
+  after cancel $tid_update_rc_min
+  set tid_update_rc_min {}
 
   set tmpfile ${myrcfile}.tmp
 
@@ -2939,6 +3512,12 @@ proc UpdateRcFile {} {
     puts $rcfile [list set patlist {}]
     foreach val $patlist {
       puts $rcfile [list lappend patlist $val]
+    }
+
+    # dump color palette
+    puts $rcfile [list set col_palette {}]
+    foreach val $col_palette {
+      puts $rcfile [list lappend col_palette $val]
     }
 
     # dump search history
@@ -2965,6 +3544,9 @@ proc UpdateRcFile {} {
     # font setting
     puts $rcfile [list set font_content $font_content]
 
+    # misc
+    puts $rcfile [list set load_size_limit $load_size_limit]
+
     close $rcfile
 
     # move the new file over the old one
@@ -2973,7 +3555,25 @@ proc UpdateRcFile {} {
     }
 
   } else {
-     tk_messageBox -type ok -default ok -icon error -message "Could not create temporary rc file $tmpfile\n$errstr"
+    tk_messageBox -type ok -default ok -icon error -message "Could not create temporary rc file $tmpfile\n$errstr"
+  }
+}
+
+
+#
+# This function is used to trigger writing the RC file after changes.
+# The write is delayed by a few seconds to avoid writing the file multiple
+# times when multiple values are changed. This timer is restarted when
+# another change occurs during the delay, however only up to a limit.
+#
+proc UpdateRcAfterIdle {} {
+  global tid_update_rc_sec tid_update_rc_min
+
+  after cancel $tid_update_rc_sec
+  set tid_update_rc_sec [after 3000 UpdateRcFile]
+
+  if {$tid_update_rc_min eq ""} {
+    set tid_update_rc_min [after 60000 UpdateRcFile]
   }
 }
 
@@ -3030,11 +3630,17 @@ array set mark_list {}
 # It's used to offer automatic save upon quit
 set mark_list_modified 0
 
+# This variable contains the limit for file load
+set load_size_limit 2000000
+
 # These variables hold IDs of timers (i.e. scripts delayed by "after")
 # They are used to cancel the scripts when necessary
 set tid_search_inc {}
 set tid_search_hall {}
 set tid_high_init {}
+set tid_update_rc_sec {}
+set tid_update_rc_min {}
+set tid_status_line {}
 
 # These variable holds the font and color selections for the main text content.
 set font_content {helvetica 9 normal}
@@ -3043,12 +3649,15 @@ set col_fg_content {#000}
 set col_bg_find {#faee0a}
 set col_bg_findinc {#c8ff00}
 
-# This variable stores the geometry of the main window
+# These variables store the geometry of the main and dialog windows.
 set main_win_geom "640x480"
+set dlg_mark_size "500x250"
+set dlg_tags_size "400x300"
 
 # This variable stores a list of pre-defined colors.
 set col_palette [list \
   {#000000} \
+  {#4acbb5} \
   {#94ff80} \
   {#b3beff} \
   {#b3fff3} \
@@ -3061,6 +3670,7 @@ set col_palette [list \
   {#e6b3d9} \
   {#e6b3ff} \
   {#e6ccff} \
+  {#e73c39} \
   {#e7b3ff} \
   {#e9ff80} \
   {#efbf80} \
@@ -3107,7 +3717,6 @@ set patlist {
 # These variables are used by the bookmark list dialog.
 #set dlg_mark_list {}
 #unset dlg_mark_shown
-#unset dlg_mark_size
 
 # define limit for forwards compatibility
 set rcfile_compat 0x01000000
@@ -3125,11 +3734,10 @@ if {[catch {tk appname "trowser"}]} {
 LoadRcFile 1
 InitResources
 CreateMainWindow
+HighlightCreateTags
 update
 
-if {$argc == 0} {
-  LoadFile {}
-} elseif {$argc == 1} {
+if {$argc == 1} {
   LoadFile [lindex $argv 0]
 } else {
   puts stderr "Usage: $argv0 <file>"
