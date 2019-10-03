@@ -1,11 +1,12 @@
 
-- search list: new FN mode: FN delta in-between each line
+- command line options to read bookmarks or line list
+- search list: allow to pipe text through external command (grep -n)
 - search list: limit size of undo history?
-- during search in search list: lock manual remove/insert
+- search history: allow prev/next on multiple entries
+- bookmarks list not updated after adding/editing highlight patterns
 - allow vim key bindings in filter window (at least for scrolling)
-- newly added color highlight in main window: tags not added to filter win
-- progress bar on ALT-f in search list window
-  OR: optimize by searching for frame separators first
+- vim selection controls (ctrl-v et.al.)
+- undo/redo in bookmark list (removals)
 - pipe load: main menu "continue loading from STDIN" in tail mode doesn't
   give chance to switch to "head" mode
 
@@ -13,18 +14,23 @@
 - allow definition of stack of search patterns for search list?
   + to allow quick folding/unfolding in search result list
   + to replace find in highlight pattern dialog
-- search history should remember & display reg.exp. and case options
-- highlight color not updated in bookmarks and search results dialog after edit
-- initial highlight search has no line count limit -> too slow with reg-exp's
+  + PROPOSAL:
+    - like history dialog, but with checkbuttons
+    - can "undo" also older entries (i.e. not only oldest)
+    - each entry must contain all lines (including overlap)
+    - manual removal: removes from all entries (undo only via "u", not stack)
 - make "next" search interruptible?
   + place grab on progress bar with cancel button
-  + use "ESC" key - also for "search all"
+  + use "ESC" key
   + or use option to limit "search all" (menu cmd. or a la "bottom 1E6 only")
-- storing: offer to update old bookmark file w/o save dialog & confirmation
+- detect concurrent changes in RC file
+  + merge search history (& others?) during saving
+  + but: do not import search history
 - add info to bookmarks file to adjust bookmark position
   + use TDMA frame number
   + include buffer size limit and head/tail option
 - frame numbers: option for mode which works across cell change?
+  + OR new FN mode: FN delta in-between each line?
   + would require to count each frame number change between search matches
 
 - "b" across line start: should jump to start of last word, not eol
@@ -36,6 +42,7 @@
   - different search histories
 
 - pipe: title missing
+  + page mode: load one buffer's size at a time, allow user to browse
   + remove grab while waiting for user, display some data?
   + allow to use grep to determine stop of input skip
   + allow to keep dialog open after text insert?
@@ -59,6 +66,7 @@
   + cursor placement after start: top/bottom
   + allow to use vim compatible directions for search "n" / "N"
   + option to wrap-around search at file end
+  + storing: option to update old bookmark file w/o save dialog & confirmation
 
 Use balanced tree for search list?
 - isempty

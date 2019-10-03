@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.34 2009/03/19 20:39:10 tom Exp $
+# $Id: trowser.tcl,v 1.35 2009/03/20 20:49:33 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -433,17 +433,21 @@ proc HighlightLines {pat tagnam opt line} {
 # for single tags (e.g. modified highlight patterns or colors; currently not used
 # for search highlighting because a separate "cancel ID" is required.)
 #
-proc HighlightAll {pat tagnam opt {line 1}} {
+proc HighlightAll {pat tagnam opt {line 1} {loop_cnt 0}} {
   global tid_high_init block_bg_tasks
 
   if {$block_bg_tasks} {
     # background tasks are suspended - re-schedule with timer
-    set tid_high_init [after 100 [list HighlightAll $pat $tagnam $opt $line]]
+    set tid_high_init [after 100 [list HighlightAll $pat $tagnam $opt $line 0]]
+  } elseif {$loop_cnt > 10} {
+    # insert a small timer delay to allow for idle-driven interactive tasks (e.g. selections)
+    set tid_high_init [after 10 [list HighlightAll $pat $tagnam $opt $line 0]]
   } else {
 
     set line [HighlightLines $pat $tagnam $opt $line]
     if {$line >= 0} {
-      set tid_high_init [after idle [list HighlightAll $pat $tagnam $opt $line]]
+      incr loop_cnt
+      set tid_high_init [after idle [list HighlightAll $pat $tagnam $opt $line $loop_cnt]]
     } else {
       .f1.t configure -cursor top_left_arrow
       set tid_high_init {}
@@ -639,15 +643,25 @@ proc SearchHighlightUpdateCurrent {} {
 # This helper function calls the global search highlight function until
 # highlighting is complete.
 #
-proc SearchHighlightAll {pat tagnam opt {line 1}} {
-  global tid_search_hall
+proc SearchHighlightAll {pat tagnam opt {line 1} {loop_cnt 0}} {
+  global tid_search_hall block_bg_tasks
 
-  set line [HighlightLines $pat $tagnam $opt $line]
-  if {$line >= 0} {
-    set tid_search_hall [after idle [list SearchHighlightAll $pat $tagnam $opt $line]]
+  if {$block_bg_tasks} {
+    # background tasks are suspended - re-schedule with timer
+    set tid_search_hall [after 100 [list SearchHighlightAll $pat $tagnam $opt $line 0]]
+  } elseif {$loop_cnt > 10} {
+    # insert a small timer delay to allow for idle-driven interactive tasks (e.g. selections)
+    set tid_search_hall [after 10 [list SearchHighlightAll $pat $tagnam $opt $line 0]]
   } else {
-    set tid_search_hall {}
-    .f1.t configure -cursor top_left_arrow
+
+    set line [HighlightLines $pat $tagnam $opt $line]
+    if {$line >= 0} {
+      incr loop_cnt
+      set tid_search_hall [after idle [list SearchHighlightAll $pat $tagnam $opt $line $loop_cnt]]
+    } else {
+      set tid_search_hall {}
+      .f1.t configure -cursor top_left_arrow
+    }
   }
 }
 
@@ -8049,16 +8063,13 @@ proc DiscardContent {} {
   global patlist mark_list mark_list_modified
 
   # the following is a work-around for a performance issue in the text widget:
-  # deleting text with large numbers of tags is extremely slow, so we clear the tags first
-  set tag_idx 0
+  # deleting text with large numbers of tags is extremely slow, so we clear
+  # the tags first (needed for Tcl/Tk 8.4.7)
   foreach w $patlist {
-    .f1.t tag delete [lindex $w 4]
-    incr tag_idx
+    .f1.t tag remove [lindex $w 4] 1.0 end
   }
   # discard the current trace content
   .f1.t delete 1.0 end
-  # re-create the color tags
-  HighlightCreateTags
 
   SearchReset
 
@@ -8077,6 +8088,7 @@ proc DiscardContent {} {
 proc MenuCmd_Discard {is_fwd} {
   global cur_filename
 
+  PreemptBgTasks
   if {$is_fwd} {
     # delete everything below the line holding the cursor
     scan [.f1.t index "insert +1 lines linestart"] "%d.%d" first_l first_c
@@ -8100,6 +8112,8 @@ proc MenuCmd_Discard {is_fwd} {
       return
     }
   }
+  ResumeBgTasks
+
   # ask for confirmation, as this cannot be undone
   if {$count > 0} {
     if {$count == 1} {set pl ""} else {set pl "s"}
@@ -8119,16 +8133,35 @@ proc MenuCmd_Discard {is_fwd} {
 
     if {$answer eq "ok"} {
 
-      # perform the removal
-      .f1.t delete "${first_l}.${first_c}" "${last_l}.${last_c}"
+      if {[SearchList_SearchAbort]} {
+        SearchHighlightClear
 
-      SearchReset
-      global cur_jump_stack cur_jump_idx
-      set cur_jump_stack {}
-      set cur_jump_idx -1
+        # the following is a work-around for a performance issue in the text widget:
+        # deleting text with large numbers of tags is extremely slow, so we clear
+        # the tags first (needed as of Tcl/Tk 8.4.7 to .13)
+        global patlist
+        foreach w $patlist {
+          .f1.t tag remove [lindex $w 4] "${first_l}.${first_c}" "${last_l}.${last_c}"
+        }
+        # perform the removal
+        .f1.t delete "${first_l}.${first_c}" "${last_l}.${last_c}"
 
-      MarkList_AdjustLineNums [expr {$is_fwd ? 1 : $last_l}] [expr {$is_fwd ? $first_l : 0}]
-      SearchList_AdjustLineNums [expr {$is_fwd ? 1 : $last_l}] [expr {$is_fwd ? $first_l : 0}]
+        # re-start initial highlighting, it not complete yet
+        global tid_high_init
+        if {$tid_high_init ne ""} {
+          after cancel $tid_high_init
+          set tid_high_init {}
+          HighlightInit
+        }
+
+        SearchReset
+        global cur_jump_stack cur_jump_idx
+        set cur_jump_stack {}
+        set cur_jump_idx -1
+
+        MarkList_AdjustLineNums [expr {$is_fwd ? 1 : $last_l}] [expr {$is_fwd ? $first_l : 0}]
+        SearchList_AdjustLineNums [expr {$is_fwd ? 1 : $last_l}] [expr {$is_fwd ? $first_l : 0}]
+      }
     }
   }
 }
