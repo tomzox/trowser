@@ -151,49 +151,76 @@ proc CreateMainWindow {} {
   .f1.t tag lower sel
 
   bindtags .f1.t {.f1.t TextReadOnly . all}
-  # Ctrl+cursor and Ctrl-E/Y allow to shift the view up/down
+  # scrolling the view
   bind .f1.t <Control-Up> {YviewScroll -1; KeyClr; break}
   bind .f1.t <Control-Down> {YviewScroll 1; KeyClr; break}
   bind .f1.t <Control-e> {YviewScroll 1; KeyClr; break}
   bind .f1.t <Control-y> {YviewScroll -1; KeyClr; break}
   bind .f1.t <Control-d> {YviewScrollHalf 1; KeyClr; break}
   bind .f1.t <Control-u> {YviewScrollHalf -1; KeyClr; break}
-  bind .f1.t <Control-Left> {XviewScroll -1; KeyClr; break}
-  bind .f1.t <Control-Right> {XviewScroll 1; KeyClr; break}
+  bind .f1.t <Control-Left> {XviewScroll scroll 1 -1; KeyClr; break}
+  bind .f1.t <Control-Right> {XviewScroll scroll 1 1; KeyClr; break}
   bind .f1.t <Control-f> {event generate %W <Key-Next>; KeyClr; break}
   bind .f1.t <Control-b> {event generate %W <Key-Prior>; KeyClr; break}
-  bind .f1.t <Key-H> {CursorSetLine top; KeyClr; break}
-  bind .f1.t <Key-M> {CursorSetLine center; KeyClr; break}
-  bind .f1.t <Key-L> {CursorSetLine bottom; KeyClr; break}
   bind .f1.t <Key-space> {event generate %W <Key-Right>; KeyClr; break}
   bind .f1.t <Key-BackSpace> {event generate %W <Key-Left>; KeyClr; break}
-  # goto line or column
-  bind .f1.t <G> {CursorPosStore; .f1.t mark set insert end; .f1.t see insert; KeyClr; break}
-  bind .f1.t <Key-dollar> {.f1.t mark set insert "insert lineend"; .f1.t see insert; KeyClr; break}
+  KeyCmdBind "z-" {YviewSet bottom 0}
+  KeyCmdBind "zb" {YviewSet bottom 1}
+  KeyCmdBind "z." {YviewSet center 0}
+  KeyCmdBind "zz" {YviewSet center 1}
+  KeyCmdBind "zReturn" {YviewSet top 0}
+  KeyCmdBind "zt" {YviewSet top 1}
+  KeyCmdBind "zl" {XviewScroll scroll 1 1}
+  KeyCmdBind "zh" {XviewScroll scroll 1 -1}
+  KeyCmdBind "zL" {XviewScrollHalf 1}
+  KeyCmdBind "zH" {XviewScrollHalf -1}
+  KeyCmdBind "zs" {XviewSet left}
+  KeyCmdBind "ze" {XviewSet right}
+  # moving the cursor
+  KeyCmdBind "G" {CursorPosStore; .f1.t mark set insert end; .f1.t see insert}
+  KeyCmdBind "gg" {CursorPosStore; .f1.t mark set insert 1.0; .f1.t see insert}
+  KeyCmdBind "0" {CursorSetColumn left}
+  KeyCmdBind "$" {CursorSetColumn right}
   bind .f1.t <Control-g> {DisplayLineNumer; KeyClr; break}
   bind .f1.t <Key-Home> {if {%s == 0} {CursorSetColumn left; KeyClr; break}}
   bind .f1.t <Key-End> {if {%s == 0} {CursorSetColumn right; KeyClr; break}}
-  # search with "/", "?"; repeat search with n/N
-  bind .f1.t <Key-slash> {set tlb_last_dir 1; focus .f2.e; KeyClr; break}
-  bind .f1.t <Key-question> {set tlb_last_dir 0; focus .f2.e; KeyClr; break}
-  bind .f1.t <Key-n> {SearchNext 1; KeyClr; break}
-  bind .f1.t <Key-p> {SearchNext 0; KeyClr; break}
-  bind .f1.t <Key-N> {SearchNext 0; KeyClr; break}
-  bind .f1.t <Key-asterisk> {SearchWord 1; KeyClr; break}
-  bind .f1.t <Key-numbersign> {SearchWord 0; KeyClr; break}
-  bind .f1.t <Key-ampersand> {SearchHighlightClear; KeyClr; break}
+  KeyCmdBind "Return" {CursorMoveLine 1}
+  KeyCmdBind "+" {CursorMoveLine 1}
+  KeyCmdBind "-" {CursorMoveLine -1}
+  KeyCmdBind "H" {CursorSetLine top}
+  KeyCmdBind "M" {CursorSetLine center}
+  KeyCmdBind "L" {CursorSetLine bottom}
+  KeyCmdBind "w" {CursorMoveWord 1 0 0}
+  KeyCmdBind "e" {CursorMoveWord 1 0 1}
+  KeyCmdBind "b" {CursorMoveWord 0 0 0}
+  KeyCmdBind "W" {CursorMoveWord 1 1 0}
+  KeyCmdBind "E" {CursorMoveWord 1 1 1}
+  KeyCmdBind "B" {CursorMoveWord 0 1 0}
+  KeyCmdBind "ge" {CursorMoveWord 0 0 1}
+  KeyCmdBind "gE" {CursorMoveWord 0 1 1}
+  KeyCmdBind ";" {SearchCharInLine {} 1}
+  KeyCmdBind "," {SearchCharInLine {} -1}
+  # searching & repeating
+  KeyCmdBind "/" {set tlb_last_dir 1; focus .f2.e}
+  KeyCmdBind "?" {set tlb_last_dir 0; focus .f2.e}
+  KeyCmdBind "n" {SearchNext 1}
+  KeyCmdBind "p" {SearchNext 0}
+  KeyCmdBind "N" {SearchNext 0}
+  KeyCmdBind "*" {SearchWord 1}
+  KeyCmdBind "#" {SearchWord 0}
+  KeyCmdBind "&" {SearchHighlightClear}
   bind .f1.t <Alt-Key-f> {focus .f2.e; KeyClr; break}
   bind .f1.t <Alt-Key-n> {SearchNext 1; KeyClr; break}
   bind .f1.t <Alt-Key-p> {SearchNext 0; KeyClr; break}
   bind .f1.t <Alt-Key-h> {SearchHighlightOnOff; KeyClr; break}
   # bookmarks
   bind .f1.t <Double-Button-1> {if {%s == 0} {Mark_ToggleAtInsert; KeyClr; break}}
-  bind .f1.t <Key-m> {Mark_ToggleAtInsert; KeyClr; break}
-  # misc & catch-all
+  KeyCmdBind "m" {Mark_ToggleAtInsert}
+  # misc & catch-all (processes "KeyCmdBind" from above)
   bind .f1.t <Control-plus> {ChangeFontSize 1; KeyClr}
   bind .f1.t <Control-minus> {ChangeFontSize -1; KeyClr}
   bind .f1.t <FocusIn> {KeyClr}
-  bind .f1.t <Return> {if {[KeyCmd return]} break}
+  bind .f1.t <Return> {if {[KeyCmd Return]} break}
   bind .f1.t <KeyPress> {if {[KeyCmd %A]} break}
 
   # frame #2: search controls
@@ -957,30 +984,75 @@ proc Search_CompleteLeft {} {
 proc SearchWord {is_fwd} {
   global tlb_find tlb_regexp
 
-  if {[.f1.t bbox insert] ne ""} {
-    set pos [.f1.t index insert]
-    if {$pos ne ""} {
+  set pos [.f1.t index insert]
+  if {$pos ne ""} {
+    set dump [ExtractText $pos [list $pos lineend]]
+
+    if {[regexp {^[\w\-]+} $dump word]} {
+      # complete word to the left
+      set dump [ExtractText [list $pos linestart] $pos]
+      if {[regexp {\w+$} $dump word2]} {
+        set word "$word2$word"
+      }
+      set word [Search_EscapeSpecialChars $word]
+
+      # match on word boundaries
+      if $tlb_regexp {
+        set nword {}
+        append nword {\m} $word {\M}
+        set word $nword
+      }
+
+      set tlb_find $word
+      Search_AddHistory $tlb_find
+
+      Search $is_fwd 1
+    }
+  }
+}
+
+
+#
+# This function moves the cursor onto the next occurence of the given
+# character in the current line.
+#
+proc SearchCharInLine {char dir} {
+  global last_inline_char last_inline_dir
+
+  ClearStatusLine search_inline
+  if {$char ne ""} {
+    set last_inline_char $char
+    set last_inline_dir $dir
+  } else {
+    if [info exists last_inline_char]  {
+      set char $last_inline_char
+      set dir [expr $dir * $last_inline_dir]
+    } else {
+      DisplayStatusLine search_inline warn "No previous in-line character search"
+      return
+    }
+  }
+
+  set pos [.f1.t index insert]
+  if {$pos ne ""} {
+    if {$dir > 0} {
       set dump [ExtractText $pos [list $pos lineend]]
-
-      if {[regexp {^[\w\-]+} $dump word]} {
-        # complete word to the left
-        set dump [ExtractText [list $pos linestart] $pos]
-        if {[regexp {\w+$} $dump word2]} {
-          set word "$word2$word"
-        }
-        set word [Search_EscapeSpecialChars $word]
-
-        # match on word boundaries
-        if $tlb_regexp {
-          set nword {}
-          append nword {\m} $word {\M}
-          set word $nword
-        }
-
-        set tlb_find $word
-        Search_AddHistory $tlb_find
-
-        Search $is_fwd 1
+      set idx [string first $char $dump 1]
+      if {$idx != -1} {
+        .f1.t mark set insert [list insert + $idx chars]
+        .f1.t see insert
+      } else {
+        DisplayStatusLine search_inline warn "Character \"$char\" not found until line end"
+      }
+    } else {
+      set dump [ExtractText [list $pos linestart] $pos]
+      set len [string length $dump]
+      set idx [string last $char $dump]
+      if {$idx != -1} {
+        .f1.t mark set insert [list insert - [expr $len - $idx] chars]
+        .f1.t see insert
+      } else {
+        DisplayStatusLine search_inline warn "Character \"$char\" not found until line start"
       }
     }
   }
@@ -1163,12 +1235,12 @@ proc ChangeFontSize {delta} {
 # placed at the top, center or bottom of the viewable area, if possible.
 #
 proc YviewSet {where col} {
-  global font_normal
+  global font_content
 
   .f1.t see insert
   set pos [.f1.t bbox insert]
   if {[llength $pos] == 4} {
-    set fh [font metrics $font_normal -linespace]
+    set fh [font metrics $font_content -linespace]
     set wh [winfo height .f1.t]
 
     if {$where eq "top"} {
@@ -1193,51 +1265,10 @@ proc YviewSet {where col} {
     if {$col == 0} {
       .f1.t xview moveto 0
       .f1.t mark set insert [list insert linestart]
+      CursorMoveLine 0
     } else {
       .f1.t see insert
     }
-  }
-}
-
-
-#
-# This function scrolls the view horizontally by the given number of characters.
-# When the cursor is scrolled out of the window, it's placed in the last visible
-# column in scrolling direction.
-#
-proc XviewScroll {delta} {
-  global font_normal
-
-  set pos_old [.f1.t bbox insert]
-  .f1.t xview scroll $delta units
-
-  set pos_new [.f1.t bbox insert]
-
-  # check if cursor is fully visible
-  if {([llength $pos_new] != 4) || ([lindex $pos_new 2] == 0)} {
-    set ycoo [expr [lindex $pos_old 1] + ([lindex $pos_old 3] / 2)]
-    if {$delta < 0} {
-      .f1.t mark set insert "@[winfo width .f1.t],$ycoo"
-    } else {
-      .f1.t mark set insert [list "@1,$ycoo" + 1 chars]
-    }
-  }
-}
-
-
-#
-# This function moves the cursor into a given column in the current view.
-#
-proc CursorSetColumn {where} {
-  global font_normal
-
-  if {$where eq "left"} {
-    .f1.t xview moveto 0
-    .f1.t mark set insert [list insert linestart]
-
-  } elseif {$where eq "right"} {
-    .f1.t mark set insert [list insert lineend]
-    .f1.t see insert
   }
 }
 
@@ -1248,11 +1279,11 @@ proc CursorSetColumn {where} {
 # is placed in the last visible line in scrolling direction.
 #
 proc YviewScroll {delta} {
-  global font_normal
+  global font_content
 
   .f1.t yview scroll $delta units
 
-  set fh [font metrics $font_normal -linespace]
+  set fh [font metrics $font_content -linespace]
   set pos [.f1.t bbox insert]
 
   # check if cursor is fully visible
@@ -1271,9 +1302,9 @@ proc YviewScroll {delta} {
 # in the given direction.
 #
 proc YviewScrollHalf {dir} {
-  global font_normal
+  global font_content
 
-  set fh [font metrics $font_normal -linespace]
+  set fh [font metrics $font_content -linespace]
   if {$fh > 0} {
     set wh [expr int(([winfo height .f1.t] + $fh/2) / $fh)]
 
@@ -1286,7 +1317,7 @@ proc YviewScrollHalf {dir} {
 # This function moves the cursor into a given line in the current view.
 #
 proc CursorSetLine {where} {
-  global font_normal
+  global font_content
 
   CursorPosStore
 
@@ -1297,20 +1328,134 @@ proc CursorSetLine {where} {
     .f1.t mark set insert "@1,[expr [winfo height .f1.t] / 2]"
 
   } elseif {$where eq "bottom"} {
-    set fh [font metrics $font_normal -linespace]
-    .f1.t mark set insert "@1,[expr [winfo height .f1.t] - $fh/2]"
+    .f1.t mark set insert "@1,[winfo height .f1.t]"
+    # move cursor to the last fully visible line to avoid scrolling
+    set fh [font metrics $font_content -linespace]
+    set pos_new [.f1.t bbox insert]
+    if {([llength $pos_new] != 4) || ([lindex $pos_new 3] < $fh)} {
+      .f1.t mark set insert [list insert - 1 lines]
+    }
 
   } else {
     .f1.t mark set insert [list insert linestart]
   }
+  # place cursor on first non-blank character
+  CursorMoveLine 0
+}
+
+
+#
+# This function moves the cursor by the given number of lines and places
+# the cursor on the first non-blank character in that line. The delta may
+# be zero (e.g. to just place the cursor onto the first non-blank)
+#
+proc CursorMoveLine {delta} {
+  if {$delta > 0} {
+    .f1.t mark set insert [list insert linestart + $delta lines]
+  } elseif {$delta < 0} {
+    .f1.t mark set insert [list insert linestart $delta lines]
+  }
   .f1.t xview moveto 0
+
+  # forward to the first non-blank character
+  set dump [ExtractText insert [list insert lineend]]
+  if {[regexp {^\s*} $dump word]} {
+    .f1.t mark set insert [list insert + [string length $word] chars]
+  }
   .f1.t see insert
 }
 
 
 #
+# This function scrolls the view horizontally by the given number of characters.
+# When the cursor is scrolled out of the window, it's placed in the last visible
+# column in scrolling direction.
+#
+proc XviewScroll {how delta dir} {
+  set pos_old [.f1.t bbox insert]
+
+  if {$how eq "scroll"} {
+    .f1.t xview scroll [expr $dir * $delta] units
+  } else {
+    .f1.t xview moveto $delta
+  }
+
+  if {$pos_old ne ""} {
+    set pos_new [.f1.t bbox insert]
+
+    # check if cursor is fully visible
+    if {([llength $pos_new] != 4) || ([lindex $pos_new 2] == 0)} {
+      set ycoo [expr [lindex $pos_old 1] + ([lindex $pos_old 3] / 2)]
+      if {$dir < 0} {
+        .f1.t mark set insert "@[winfo width .f1.t],$ycoo"
+      } else {
+        .f1.t mark set insert [list "@1,$ycoo" + 1 chars]
+      }
+    }
+  }
+}
+
+
+#
+# This function scrolls the view horizontally by half the screen width
+# in the given direction.
+#
+proc XviewScrollHalf {dir} {
+  set xpos [.f1.t xview]
+  set w [winfo width .f1.t]
+  if {$w != 0} {
+    set fract_visible [expr [lindex $xpos 1] - [lindex $xpos 0]]
+    set off [expr [lindex $xpos 0] + $dir * (0.5 * $fract_visible)]
+    if {$off > 1} {set off 1}
+    if {$off < 0} {set off 0}
+  }
+  XviewScroll moveto $off $dir
+}
+
+
+#
+# This function adjusts the view so that the column holding the cursor is
+# placed at the left or right of the viewable area, if possible.
+#
+proc XviewSet {where} {
+  set xpos [.f1.t xview]
+  set coo [.f1.t bbox insert]
+  set w [winfo width .f1.t]
+  if {($coo ne "") && ($w != 0)} {
+    set fract_visible [expr [lindex $xpos 1] - [lindex $xpos 0]]
+    set fract_insert [expr (2.0 + [lindex $coo 0] + [lindex $coo 2]) / $w]
+
+    if {$where eq "left"} {
+      set off [expr [lindex $xpos 0] + ($fract_insert * $fract_visible)]
+      if {$off > 1} {set off 1}
+    } else {
+      set off [expr [lindex $xpos 0] - ((1 - $fract_insert) * $fract_visible)]
+      if {$off < 0} {set off 0}
+    }
+    .f1.t xview moveto $off
+    .f1.t see insert
+  }
+}
+
+
+#
+# This function moves the cursor into a given column in the current view.
+#
+proc CursorSetColumn {where} {
+  if {$where eq "left"} {
+    .f1.t xview moveto 0
+    .f1.t mark set insert [list insert linestart]
+
+  } elseif {$where eq "right"} {
+    .f1.t mark set insert [list insert lineend]
+    .f1.t see insert
+  }
+}
+
+
+#
 # This function moves the cursor onto the next or previous word.
-# (Same as "w", "W", "b" and "B" in vim)
+# (Same as "w", "b" et.al. in vim)
 #
 proc CursorMoveWord {is_fwd spc_only to_end} {
   set pos [.f1.t index insert]
@@ -1337,10 +1482,19 @@ proc CursorMoveWord {is_fwd spc_only to_end} {
       }
     } else {
       set dump [ExtractText [list $pos linestart] $pos]
+      set word ""
       if $spc_only {
-        set match [regexp {\S+\s*$} $dump word]
+        if $to_end {
+          set match [regexp {\s(\s+)$} $dump foo word]
+        } else {
+          set match [regexp {\S+\s*$} $dump word]
+        }
       } else {
-        set match [regexp {(\w+|\w+\W+)$} $dump word]
+        if $to_end {
+          set match [regexp {\w(\W+\w*)$} $dump foo word]
+        } else {
+          set match [regexp {(\w+|\w+\W+)$} $dump word]
+        }
       }
       if $match {
         .f1.t mark set insert [list insert - [string length $word] chars]
@@ -1381,18 +1535,31 @@ proc CursorPosStore {} {
 
 
 #
+# This helper function stores a key binding for the main text window.
+# These bindings are evaluated by function KeyCmd, which receives all
+# "plain" key press events from the main window (i.e. non-control keys)
+#
+proc KeyCmdBind {char cmd} {
+  global key_hash
+
+  set key_hash($char) $cmd
+}
+
+
+#
 # This function is bound to key presses in the main window. It's called
 # when none of the single-key bindings match. It's intended to handle
 # complex key sequences, but also has to handle single key bindings for
 # keys which can be part of sequences (e.g. "b" due to "zb")
 #
 proc KeyCmd {char} {
-  global last_key_char last_jump_orig
+  global key_hash last_key_char last_jump_orig
 
   set result 0
   if {$char ne ""} {
     if {$last_key_char eq "'"} {
       # single quote char: jump to marker or bookmark
+      ClearStatusLine keycmd
       if {$char eq "'"} {
         set tmp $last_jump_orig
         CursorPosStore
@@ -1410,68 +1577,47 @@ proc KeyCmd {char} {
         Mark_JumpNext 1
       } elseif {$char eq "-"} {
         Mark_JumpNext 0
+      } else {
+        DisplayStatusLine keycmd warn "Undefined key sequence \"'$char\""
       }
       set last_key_char {}
       set result 1
 
-    } elseif {$last_key_char eq "z"} {
-      # "z" sequence: position current view
-      if {$char eq "-"} {
-        YviewSet bottom 0
-      } elseif {$char eq "b"} {
-        YviewSet bottom 1
-      } elseif {$char eq "."} {
-        YviewSet center 0
-      } elseif {$char eq "z"} {
-        YviewSet center 1
-      } elseif {$char eq "return"} {
-        YviewSet top 0
-      } elseif {$char eq "t"} {
-        YviewSet top 1
+    } elseif {($last_key_char eq "z") || ($last_key_char eq "g")} {
+      ClearStatusLine keycmd
+      set char "$last_key_char$char"
+      if [info exists key_hash($char)] {
+        eval $key_hash($char)
+      } else {
+        DisplayStatusLine keycmd warn "Undefined key sequence \"$char\""
       }
+      set last_key_char {}
+      set result 1
+
+    } elseif {$last_key_char eq "f"} {
+      SearchCharInLine $char 1
+      set last_key_char {}
+      set result 1
+
+    } elseif {$last_key_char eq "F"} {
+      SearchCharInLine $char -1
       set last_key_char {}
       set result 1
 
     } else {
       set last_key_char {}
 
-      if {$char eq "0"} {
-        CursorSetColumn left
-        set result 1
+      if [info exists key_hash($char)] {
+        eval $key_hash($char)
 
-      } elseif {[regexp {[0-9]} $char]} {
+      } elseif {[regexp {[1-9]} $char]} {
         KeyCmd_OpenDialog any $char
         set last_key_char {}
         set result 1
 
-      } elseif {[regexp {[z']} $char]} {
+      } elseif {[regexp {[z'fFg]} $char]} {
         set last_key_char $char
         set result 1
-
-      } elseif {$char eq "-"} {
-        .f1.t mark set insert [list insert linestart - 1 lines]
-        .f1.t xview moveto 0
-        .f1.t see insert
-        set result 1
-
-      } elseif {$char eq "return"} {
-        .f1.t mark set insert [list insert linestart + 1 lines]
-        .f1.t xview moveto 0
-        .f1.t see insert
-        set result 1
-
-      } elseif {$char eq "w"} {
-        CursorMoveWord 1 0 0; set result 1
-      } elseif {$char eq "e"} {
-        CursorMoveWord 1 0 1; set result 1
-      } elseif {$char eq "b"} {
-        CursorMoveWord 0 0 0; set result 1
-      } elseif {$char eq "W"} {
-        CursorMoveWord 1 1 0; set result 1
-      } elseif {$char eq "E"} {
-        CursorMoveWord 1 1 1; set result 1
-      } elseif {$char eq "B"} {
-        CursorMoveWord 0 1 0; set result 1
       }
     }
   }
@@ -1726,8 +1872,9 @@ proc Mark_Toggle {line {txt {}}} {
   if {![info exists mark_list($line)]} {
     if {$txt eq ""} {
       set fn [ParseTdmaFn insert]
-      set mark_list($line) "FN:$fn "
-      append mark_list($line) [ExtractText "$line.0" "$line.0 lineend"]
+      set txt [ExtractText "$line.0" "$line.0 lineend"]
+      set txt [string trim $txt]
+      set mark_list($line) "FN:$fn $txt"
     } else {
       set mark_list($line) $txt
     }
@@ -1805,7 +1952,7 @@ proc Mark_JumpNext {is_fwd} {
 # previously from a file.
 #
 proc Mark_DeleteAll {} {
-  global mark_list
+  global mark_list mark_list_modified
 
   set count [array size mark_list]
   if {$count > 0} {
@@ -1816,6 +1963,7 @@ proc Mark_DeleteAll {} {
       foreach line [array names mark_list] {
         Mark_Toggle $line
       }
+      set mark_list_modified 0
     }
   } else {
     tk_messageBox -icon info -type ok -parent . -message "Your bookmark list is already empty."
@@ -1851,14 +1999,15 @@ proc Mark_ReadFile {filename} {
     close $file
 
     if {$line_num > 0} {
-      if {[array size mark_list] != 0} {
-        set mark_list_modified 1
-      }
+      set modif [expr $mark_list_modified || ([array size mark_list] != 0)]
       foreach {line txt} $bol {
         if {![info exists mark_list($line)]} {
           Mark_Toggle $line $txt
         }
       }
+      set mark_list_modified $modif
+
+      # update bookmark list dialog window, if opened
       MarkList_Fill
     }
   } else {
@@ -1935,15 +2084,19 @@ proc Mark_ReadFileAuto {} {
 #
 proc Mark_DefaultFile {trace_name} {
   set bok_name ""
-  # must use catch around mtime
+  # must use catch around call to "mtime"
   catch {
     set cur_mtime [file mtime $trace_name]
   }
   if [info exists cur_mtime] {
     set name "${trace_name}.bok"
     catch {
-      if {[file readable $name] && ([file mtime $name] >= $cur_mtime)} {
-        set bok_name $name
+      if {[file readable $name]} {
+        if {[file mtime $name] >= $cur_mtime} {
+          set bok_name $name
+        } else {
+          puts stderr "$::argv0: warning: bookmark file $name is older than content - not loaded"
+        }
       }
     }
     if {$bok_name eq ""} {
@@ -2791,7 +2944,7 @@ proc TagsList_CopyFromSearch {pat_idx} {
     set patlist [lreplace $patlist $pat_idx $pat_idx $w]
     UpdateRcAfterIdle
 
-    # update tag in the main window
+    # apply the tag to the text content
     .f1.t tag remove [lindex $w 4] 1.0 end
     set opt [Search_GetOptions [lindex $w 1] [lindex $w 2]]
     HighlightAll [lindex $w 0] [lindex $w 4] $opt
@@ -2991,7 +3144,7 @@ proc FontList_Quit {do_store} {
 # This function creates or raises the color color highlight edit dialog.
 #
 proc Markup_OpenDialog {pat_idx} {
-  global font_normal font_content col_bg_content col_fg_content
+  global font_normal font_bold font_content col_bg_content col_fg_content
   global dlg_fmt_shown dlg_fmt
   global patlist col_palette
 
@@ -3000,11 +3153,18 @@ proc Markup_OpenDialog {pat_idx} {
     wm title .dlg_fmt "Markup editor"
     wm group .dlg_fmt .dlg_tags
 
-    label .dlg_fmt.head -textvariable dlg_fmt(pat)
-    pack .dlg_fmt.head -side top -anchor c
+    entry .dlg_fmt.epat -width 12 -textvariable dlg_fmt(pat) -exportselection false \
+                        -justify center -font $font_bold -relief groove -borderwidth 2
+    pack .dlg_fmt.epat -side top -fill x -expand 1 -padx 20 -pady 4 -anchor c
+    frame .dlg_fmt.fop
+    checkbutton .dlg_fmt.fop.mcase -text "Match case" -variable dlg_fmt(mcase) -font $font_normal
+    checkbutton .dlg_fmt.fop.regexpt -text "Reg.Exp." -variable dlg_fmt(regexp) -font $font_normal
+    pack .dlg_fmt.fop.mcase .dlg_fmt.fop.regexpt -side left -padx 2
+    pack .dlg_fmt.fop -side top
+
     text .dlg_fmt.sample -height 5 -width 35 -font $font_content -wrap none \
                          -foreground $col_fg_content -background $col_bg_content \
-                         -relief sunken -borderwidth 2 -takefocus 0 -highlightthickness 0 \
+                         -relief sunken -borderwidth 1 -takefocus 0 -highlightthickness 0 \
                          -exportselection 0 -insertofftime 0
     pack .dlg_fmt.sample -side top -padx 5 -pady 6
     bindtags .dlg_fmt.sample {.dlg_fmt.sample TextReadOnly .dlg_fmt all}
@@ -3114,9 +3274,10 @@ proc Markup_OpenDialog {pat_idx} {
     pack .dlg_fmt.cop -side top -anchor w -padx 5 -pady 4
 
     frame .dlg_fmt.f2
-    button .dlg_fmt.f2.abort -text "Abort" -command {Markup_Save 0}
-    button .dlg_fmt.f2.ok -text "Ok" -default active -command {Markup_Save 1}
-    pack .dlg_fmt.f2.abort .dlg_fmt.f2.ok -side left -padx 10 -pady 4
+    button .dlg_fmt.f2.abort -text "Abort" -command {Markup_Save 0 1}
+    button .dlg_fmt.f2.apply -text "Apply" -command {Markup_Save 1 0}
+    button .dlg_fmt.f2.ok -text "Ok" -default active -command {Markup_Save 1 1}
+    pack .dlg_fmt.f2.abort .dlg_fmt.f2.apply .dlg_fmt.f2.ok -side left -padx 10 -pady 4
     pack .dlg_fmt.f2 -side top
 
     bind .dlg_fmt.mb <Destroy> {+ unset -nocomplain dlg_fmt_shown}
@@ -3129,6 +3290,8 @@ proc Markup_OpenDialog {pat_idx} {
 
   Markup_InitConfig $pat_idx
   Markup_UpdateFormat
+  .dlg_fmt.epat selection clear
+  .dlg_fmt.epat icursor end
 }
 
 
@@ -3141,6 +3304,8 @@ proc Markup_InitConfig {pat_idx} {
 
   set w [lindex $patlist $pat_idx]
   set dlg_fmt(pat) [lindex $w 0]
+  set dlg_fmt(regexp) [lindex $w 1]
+  set dlg_fmt(mcase) [lindex $w 2]
   set dlg_fmt(tagnam) [lindex $w 4]
   set dlg_fmt(bgcol) [lindex $w 6]
   set dlg_fmt(fgcol) [lindex $w 7]
@@ -3183,6 +3348,10 @@ proc Markup_GetConfig {pat_idx} {
   if {![regexp {^\d+$} $border]} {set border 1}
   if {![regexp {^\d+$} $spacing]} {set spacing 0}
 
+  set w [lreplace $w 0 2 \
+    $dlg_fmt(pat) \
+    $dlg_fmt(regexp) \
+    $dlg_fmt(mcase)]
   set w [lreplace $w 6 15 \
     $dlg_fmt(bgcol) \
     $dlg_fmt(fgcol) \
@@ -3202,7 +3371,7 @@ proc Markup_GetConfig {pat_idx} {
 #
 # This function is bound to the "Ok" and "Abort" buttons in the mark-up dialog.
 #
-proc Markup_Save {do_save} {
+proc Markup_Save {do_save do_quit} {
   global dlg_fmt patlist
 
   if $do_save {
@@ -3228,14 +3397,22 @@ proc Markup_Save {do_save} {
       # update tag in the main window
       set cfg [HighlightConfigure $w]
       eval [linsert $cfg 0 .f1.t tag configure $tagnam]
+
+      # apply the tag to the text content
+      .f1.t tag remove $tagnam 1.0 end
+      set opt [Search_GetOptions [lindex $w 1] [lindex $w 2]]
+      HighlightAll [lindex $w 0] $tagnam $opt
+
     } else {
       tk_messageBox -type ok -icon error -parent .dlg_fmt \
                     -message "This element has already been deleted."
       return
     }
   }
-  unset -nocomplain dlg_fmt
-  destroy .dlg_fmt
+  if $do_quit {
+    unset -nocomplain dlg_fmt
+    destroy .dlg_fmt
+  }
 }
 
 
@@ -3299,7 +3476,7 @@ proc Markup_ImageButton {wid type} {
   canvas ${wid}.c -width [expr [image width img_dropdown] + 4] -height [image height img_dropdown] \
                  -highlightthickness 0 -takefocus 0 -borderwidth 0
   pack ${wid}.c -fill both -expand 1 -side left
-  button ${wid}.b -image img_dropdown -highlightthickness 0 -borderwidth 1 -relief raised
+  button ${wid}.b -image img_dropdown -highlightthickness 1 -borderwidth 1 -relief raised
   pack ${wid}.b -side left
 
   if {[string match {*col} $type]} {
@@ -3670,29 +3847,125 @@ THIS PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT ANY 
 
 
 # ----------------------------------------------------------------------------
+proc OpenLoadPipeDialog {stop} {
+  global dlg_load_shown dlg_load_file_limit
+  global load_file_limit load_file_sum
+
+  if {![info exists dlg_load_shown]} {
+    toplevel .dlg_load
+    wm title .dlg_load "Loading from STDIN..."
+    wm group .dlg_load .
+    wm transient .dlg_load .
+
+    label .dlg_load.name -text "Loaded data:"
+    pack .dlg_load.name -side top -pady 8
+    label .dlg_load.sum -textvariable load_file_sum
+    pack .dlg_load.sum -side top -pady 8
+
+    set dlg_load_file_limit [expr $load_file_limit/(1024*1024)]
+    scale .dlg_load.maxl -from 1 -to 999 -orient horizontal -label "Load limit:" \
+                         -command {LoadPipe_SetLimit} -variable dlg_load_file_limit
+    pack .dlg_load.maxl -side top
+
+    radiobutton .dlg_load.ohead -text "head" -variable dlg_load_opt -value "head"
+    radiobutton .dlg_load.otail -text "tail" -variable dlg_load_opt -value "tail"
+    pack .dlg_load.ohead .dlg_load.otail -side top
+    pack .dlg_load.maxl -side top
+
+    frame .dlg_load.cmd
+    button .dlg_load.cmd.stop
+    button .dlg_load.cmd.ok -text "Continue"
+    pack .dlg_load.cmd.stop .dlg_load.cmd.ok -side left -padx 10
+    pack .dlg_load.cmd -side top -pady 5
+
+    set dlg_load_shown 1
+    bind .dlg_load.cmd <Destroy> {unset -nocomplain dlg_load_shown}
+    wm protocol .dlg_load WM_DELETE_WINDOW {}
+    grab .dlg_load
+  }
+  if $stop {
+    LoadPipe_CmdStop
+  } else {
+    LoadPipe_CmdContinue
+  }
+}
+
+proc LoadPipe_SetLimit {val} {
+  global load_file_limit
+  set load_file_limit [expr 1024*1024*$val]
+}
+
+proc LoadPipe_CmdContinue {} {
+  .dlg_load.cmd.stop configure -text "Stop" -command LoadPipe_CmdStop
+  .dlg_load.cmd.ok configure -state disabled
+  fileevent stdin readable LoadDateFromPipe
+}
+
+proc LoadPipe_CmdStop {} {
+  fileevent stdin readable {}
+  .dlg_load.cmd.stop configure -text "Abort" -command LoadPipe_CmdAbort
+  .dlg_load.cmd.ok configure -state normal -command LoadPipe_CmdContinue
+}
+
+proc LoadPipe_CmdAbort {} {
+  global load_file_complete
+  set load_file_complete ""
+  destroy .dlg_load
+}
+
+proc LoadDateFromPipe {} {
+  global load_file_complete load_file_limit load_file_sum
+
+  if {[catch {
+    set size 100000
+    if {$load_file_sum + $size > $load_file_limit} {
+      set size [expr $load_file_limit - $load_file_sum]
+    }
+    if {$size > 0} {
+      set data [read stdin $size]
+      .f1.t insert end $data
+      if {[string length $data] == 0} {
+        set load_file_complete ""
+        fileevent stdin readable {}
+      }
+      incr load_file_sum [string length $data]
+      puts "READ $load_file_sum"
+    } else {puts ZERO}
+
+  } cerr] != 0} {
+    fileevent stdin readable {}
+    set load_file_complete $cerr
+  }
+
+  if {![info exists load_file_complete] && ($load_file_sum >= $load_file_limit)} {
+    OpenLoadPipeDialog 1
+  }
+}
+
 #
 # This function loads a trace from a file or stdin (i.e. filename "-")
 # Afterwards color highlighting is initiated.
 #
 proc LoadFile {filename} {
   global cur_filename load_size_limit
+  global load_file_complete load_file_limit load_file_sum
 
   if {$filename eq "-"} {
-    if {[catch {
-      while 1 {
-        set data [read stdin]
-        if {[string length $data] == 0} {
-          break
-        }
-        .f1.t insert end $data
-      }
+    set cur_filename ""
+    set load_file_limit 20000000
+    set load_file_sum 0
+    set tid_load_dlg [after 1000 OpenLoadPipeDialog 0]
+    fconfigure stdin -blocking 0
+    fileevent stdin readable LoadDateFromPipe
+    vwait load_file_complete
+    if {$load_file_complete eq ""} {
       .f1.t see end
-      set cur_filename ""
       set result 1
-    } cerr] != 0} {
-      tk_messageBox -type ok -icon error -message "Read error on STDIN: $cerr"
+    } else {
+      tk_messageBox -type ok -icon error -message "Read error on STDIN: $load_file_complete"
       set result 0
     }
+    after cancel $tid_load_dlg
   } else {
     if {[catch {
       set file [open $filename r]
