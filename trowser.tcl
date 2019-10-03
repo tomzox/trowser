@@ -117,7 +117,7 @@ proc CreateMainWindow {} {
   .menubar.ctrl add command -label "Read bookmarks from file..." -command Mark_ReadFileFrom
   .menubar.ctrl add command -label "Save bookmarks to file..." -command Mark_SaveFileAs
   .menubar.ctrl add separator
-  .menubar.ctrl add command -label "Edit color highlighting..." -command Tags_OpenDialog
+  .menubar.ctrl add command -label "Edit color highlighting..." -command TagList_OpenDialog
   .menubar.ctrl add command -label "Font selection..." -command FontList_OpenDialog
   .menubar.ctrl add separator
   .menubar.ctrl add command -label "Quit" -command {destroy .; update}
@@ -125,6 +125,8 @@ proc CreateMainWindow {} {
   .menubar.mark add command -label "Toggle bookmark" -accelerator "m" -command Mark_ToggleAtInsert
   .menubar.mark add command -label "List bookmarks" -command MarkList_OpenDialog
   .menubar.mark add command -label "Delete all bookmarks" -command Mark_DeleteAll
+  .menubar.mark add separator
+  .menubar.mark add command -label "List search matches..." -command SearchList_Open
   .menubar.mark add separator
   .menubar.mark add command -label "Goto line..." -command {KeyCmd_OpenDialog goto}
   menu .menubar.help -tearoff 0
@@ -253,7 +255,8 @@ proc CreateMainWindow {} {
   bind .f2.e <Control-D> {Search_CompleteLeft; break}
   bind .f2.e <Control-x> {Search_RemoveFromHistory; break}
   bind .f2.e <Control-c> {SearchAbort; break}
-  bind .f2.e <Control-h> {TagsList_AddSearch .; break}
+  bind .f2.e <Control-h> {TagList_AddSearch .; break}
+  bind .f2.e <Control-l> {SearchList_Open; break}
   trace add variable tlb_find write SearchVarTrace
 
   wm protocol . WM_DELETE_WINDOW UserQuit
@@ -2290,19 +2293,20 @@ proc Mark_OfferSave {} {
 # the text against the color highlight patterns to assign foreground
 # and background colors.
 #
-proc MarkList_Insert {pos line} {
+proc MarkList_Insert {idx line} {
   global patlist mark_list
 
-  .dlg_mark.l insert $pos $mark_list($line)
-
+  set tag_list {}
   foreach tag [.f1.t tag names "$line.1"] {
-    if {[scan $tag "tag%d" tag_idx] == 1} {
-      set fg_col [.f1.t tag cget $tag -foreground]
-      set bg_col [.f1.t tag cget $tag -background]
-      .dlg_mark.l itemconfigure $pos -background $bg_col -foreground $fg_col
-      break
+    if {[regexp {^tag\d+$} $tag]} {
+      lappend tag_list $tag
     }
   }
+
+  set txt $mark_list($line)
+  append txt "\n"
+
+  .dlg_mark.l insert "[expr $idx + 1].0" $txt $tag_list
 }
 
 
@@ -2314,12 +2318,14 @@ proc MarkList_Fill {} {
 
   if [info exists dlg_mark_shown] {
     set dlg_mark_list {}
-    .dlg_mark.l delete 0 end
+    .dlg_mark.l delete 1.0 end
 
+    set idx 0
     foreach line [lsort -integer [array names mark_list]] {
       lappend dlg_mark_list $line
 
-      MarkList_Insert end $line
+      MarkList_Insert $idx $line
+      incr idx
     }
   }
 }
@@ -2330,7 +2336,7 @@ proc MarkList_Fill {} {
 # into the bookmark list dialog window.
 #
 proc MarkList_Add {line} {
-  global dlg_mark_shown mark_list dlg_mark_list
+  global dlg_mark_shown mark_list dlg_mark_list dlg_mark_sel
 
   if [info exists dlg_mark_shown] {
     set idx 0
@@ -2342,9 +2348,8 @@ proc MarkList_Add {line} {
     }
     set dlg_mark_list [linsert $dlg_mark_list $idx $line]
     MarkList_Insert $idx $line
-    .dlg_mark.l selection clear 0 end
-    .dlg_mark.l selection set $idx
-    .dlg_mark.l see $idx
+    .dlg_mark.l see "[expr $idx + 1].0"
+    TextSel_SetSelection dlg_mark_sel $idx
   }
 }
 
@@ -2354,32 +2359,16 @@ proc MarkList_Add {line} {
 # from the bookmark list dialog window.
 #
 proc MarkList_Delete {line} {
-  global dlg_mark_shown mark_list dlg_mark_list
+  global dlg_mark_shown mark_list dlg_mark_list dlg_mark_sel
 
   if [info exists dlg_mark_shown] {
-    set idx [lsearch -integer $dlg_mark_list $line]
+    set idx [lsearch -exact -integer $dlg_mark_list $line]
     if {$idx >= 0} {
       set dlg_mark_list [lreplace $dlg_mark_list $idx $idx]
-      .dlg_mark.l delete $idx
+      .dlg_mark.l delete "[expr $idx + 1].0" "[expr $idx + 2].0"
+      TextSel_SetSelection dlg_mark_sel {}
     }
   }
-}
-
-
-#
-# This helper function determines which line is selected in the
-# bookmark list dialog window.
-#
-proc MarkList_GetSelectedIdx {} {
-  global dlg_mark_list
-
-  set sel [.dlg_mark.l curselection]
-  if {([llength $sel] == 1) && ($sel < [llength $dlg_mark_list])} {
-    set idx $sel
-  } else {
-    set idx -1
-  }
-  return $idx
 }
 
 
@@ -2387,9 +2376,18 @@ proc MarkList_GetSelectedIdx {} {
 # This function is bound to the "delete" key and context menu entry to
 # allow the user to remove a bookmark via the bookmark list dialog.
 #
-proc MarkList_DeleteSelection {} {
-  set idx [MarkList_GetSelectedIdx]
-  if {$idx >= 0} {
+proc MarkList_RemoveSelection {} {
+  global dlg_mark_list dlg_mark_sel
+
+  set sel [TextSel_GetSelection dlg_mark_sel]
+
+  # translate list indices to text lines, because indices change during removal
+  set line_list {}
+  foreach idx $sel {
+    lappend line_list [lindex $dlg_mark_list $idx]
+  }
+  # remove bookmarks on all selected lines
+  foreach idx $line_list {
     MarkList_Remove $idx
   }
 }
@@ -2401,9 +2399,11 @@ proc MarkList_DeleteSelection {} {
 # The function opens an "overlay" window with an entry field.
 #
 proc MarkList_RenameSelection {} {
-  set idx [MarkList_GetSelectedIdx]
-  if {$idx >= 0} {
-    MarkList_OpenRename $idx
+  global dlg_mark_sel
+
+  set sel [TextSel_GetSelection dlg_mark_sel]
+  if {[llength $sel] == 1} {
+    MarkList_OpenRename $sel
   }
 }
 
@@ -2411,16 +2411,14 @@ proc MarkList_RenameSelection {} {
 #
 # This function is bound to changes of the selection in the bookmark list,
 # i.e. it's called when the user uses the cursor keys or mouse button to
-# select an entry.  The listbox is configured so that the user can select
-# at most one entry at a time. The text in the main window is scrolled to
-# display the line which contains the bookmark.
+# select an entry.  The view in the main window is set to display the line
+# which contains the bookmark. If more than one bookmark nothing is done.
 #
-proc MarkList_Selection {} {
+proc MarkList_SelectionChange {sel} {
   global dlg_mark_list
 
-  set idx [MarkList_GetSelectedIdx]
-  if {$idx >= 0} {
-    set line [lindex $dlg_mark_list $idx]
+  if {[llength $sel] == 1} {
+    set line [lindex $dlg_mark_list $sel]
     .f1.t mark set insert "$line.0"
     .f1.t see insert
     .f1.t tag remove sel 1.0 end
@@ -2430,23 +2428,32 @@ proc MarkList_Selection {} {
 
 
 #
-# This function removes a bookmark with the given index in the bookmark
-# list dialog.
+# This callback is used by the selection "library" to query the number of
+# elements in the list to determine the possible selection range.
 #
-proc MarkList_Remove {idx} {
+proc MarkList_GetLen {} {
+  global dlg_mark_list
+  return [llength $dlg_mark_list]
+}
+
+
+#
+# This function removes the bookmark at the given text line in the bookmark
+# list dialog and the text window.
+#
+proc MarkList_Remove {line} {
   global dlg_mark_shown dlg_mark_list mark_list mark_list_modified
 
-  if {[info exists dlg_mark_shown] &&
-      ($idx < [llength $dlg_mark_list])} {
+  if [info exists dlg_mark_shown] {
+    set idx [lsearch $dlg_mark_list $line]
+    if {$idx != -1} {
+      set dlg_mark_list [lreplace $dlg_mark_list $idx $idx]
+      .dlg_mark.l delete "[expr $idx + 1].0" "[expr $idx + 2].0"
 
-    set line [lindex $dlg_mark_list $idx]
-
-    set dlg_mark_list [lreplace $dlg_mark_list $idx $idx]
-    .dlg_mark.l delete $idx
-
-    set mark_list_modified 1
-    unset mark_list($line)
-    .f1.t delete "$line.0" "$line.1"
+      set mark_list_modified 1
+      unset mark_list($line)
+      .f1.t delete "$line.0" "$line.1"
+    }
   }
 }
 
@@ -2457,7 +2464,7 @@ proc MarkList_Remove {idx} {
 # closed the bookmark text entry dialog with "Return"
 #
 proc MarkList_Rename {idx txt} {
-  global dlg_mark_shown dlg_mark_list mark_list mark_list_modified
+  global dlg_mark_shown dlg_mark_list dlg_mark_sel mark_list mark_list_modified
 
   if {[info exists dlg_mark_shown] &&
       ($idx < [llength $dlg_mark_list])} {
@@ -2467,11 +2474,10 @@ proc MarkList_Rename {idx txt} {
       set mark_list($line) $txt
       set mark_list_modified 1
 
-      .dlg_mark.l delete $idx
+      .dlg_mark.l delete "[expr $idx + 1].0" "[expr $idx + 2].0"
       MarkList_Insert $idx $line
-      .dlg_mark.l selection clear 0 end
-      .dlg_mark.l selection set $idx
-      .dlg_mark.l see $idx
+      .dlg_mark.l see "[expr $idx + 1].0"
+      TextSel_SetSelection dlg_mark_sel $idx
     }
   }
 }
@@ -2481,16 +2487,17 @@ proc MarkList_Rename {idx txt} {
 # This function pops up a context menu for the bookmark list dialog.
 #
 proc MarkList_ContextMenu {xcoo ycoo} {
-  global dlg_mark_list
+  global dlg_mark_list dlg_mark_sel
 
-  set idx [.dlg_mark.l index "@$xcoo,$ycoo"]
-  if {([llength $idx] > 0) && ($idx < [llength $dlg_mark_list])} {
-    .dlg_mark.l selection clear 0 end
-    .dlg_mark.l selection set $idx
+  TextSel_ContextSelection dlg_mark_sel $xcoo $ycoo
 
+  set sel [TextSel_GetSelection dlg_mark_sel]
+  if {[llength $sel] > 0} {
     .dlg_mark.ctxmen delete 0 end
-    .dlg_mark.ctxmen add command -label "Rename marker" -command [list MarkList_OpenRename $idx]
-    .dlg_mark.ctxmen add command -label "Remove marker" -command [list MarkList_Remove $idx]
+    if {[llength $sel] == 1} {
+      .dlg_mark.ctxmen add command -label "Rename marker" -command [list MarkList_OpenRename $sel]
+    }
+    .dlg_mark.ctxmen add command -label "Remove marker" -command MarkList_RemoveSelection
 
     set rootx [expr [winfo rootx .dlg_mark] + $xcoo]
     set rooty [expr [winfo rooty .dlg_mark] + $ycoo]
@@ -2504,8 +2511,8 @@ proc MarkList_ContextMenu {xcoo ycoo} {
 # all currently defined bookmarks.
 #
 proc MarkList_OpenDialog {} {
-  global font_content col_bg_content col_fg_content
-  global cur_filename dlg_mark_shown dlg_mark_geom
+  global font_content col_bg_content col_fg_content patlist
+  global cur_filename dlg_mark_shown dlg_mark_sel dlg_mark_geom
 
   if {![info exists dlg_mark_shown]} {
     toplevel .dlg_mark
@@ -2516,19 +2523,27 @@ proc MarkList_OpenDialog {} {
     }
     wm group .dlg_mark .
 
-    listbox .dlg_mark.l -width 40 -height 10 -cursor top_left_arrow -font $font_content \
-                        -background $col_bg_content -foreground $col_fg_content \
-                        -selectmode browse -exportselection false \
-                        -yscrollcommand {.dlg_mark.sb set}
+    text .dlg_mark.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
+                     -foreground $col_fg_content -background $col_bg_content \
+                     -exportselection 0 -insertofftime 0 -yscrollcommand {.dlg_mark.sb set}
     pack .dlg_mark.l -side left -fill both -expand 1
     scrollbar .dlg_mark.sb -orient vertical -command {.dlg_mark.l yview} -takefocus 0
     pack .dlg_mark.sb -side left -fill y
 
+    bindtags .dlg_mark.l {.dlg_mark.l TextReadOnly . all}
+    TextSel_Init .dlg_mark.l dlg_mark_sel MarkList_SelectionChange MarkList_GetLen "browse"
+
+    foreach w $patlist {
+      set tagnam [lindex $w 4]
+      eval [linsert [HighlightConfigure $w] 0 .dlg_mark.l tag configure $tagnam]
+    }
+    .dlg_mark.l tag configure sel -bgstipple gray50 -foreground {} -lmargin1 20
+    .dlg_mark.l tag lower sel
+
     menu .dlg_mark.ctxmen -tearoff 0
 
-    bind .dlg_mark.l <<ListboxSelect>> {MarkList_Selection; break}
     bind .dlg_mark.l <Insert> {MarkList_RenameSelection; break}
-    bind .dlg_mark.l <Delete> {MarkList_DeleteSelection; break}
+    bind .dlg_mark.l <Delete> {MarkList_RemoveSelection; break}
     bind .dlg_mark.l <Escape> {destroy .dlg_mark; break}
     bind .dlg_mark.l <ButtonRelease-3> {MarkList_ContextMenu %x %y}
     focus .dlg_mark.l
@@ -2578,8 +2593,9 @@ proc MarkList_OpenRename {idx} {
   if {[info exists dlg_mark_shown] &&
       ($idx < [llength $dlg_mark_list])} {
 
-    set coo [.dlg_mark.l bbox $idx]
-    if {[llength $coo] > 0} {
+    .dlg_mark.l see "[expr $idx + 1].0"
+    set coo [.dlg_mark.l dlineinfo "[expr $idx + 1].0"]
+    if {[llength $coo] == 5} {
       catch {destroy .mren}
       toplevel .mren
       wm transient .mren .dlg_mark
@@ -2634,12 +2650,267 @@ proc MarkList_LeaveRename {} {
 
 # ----------------------------------------------------------------------------
 #
+# This function creates or raises a dialog window which contains all lines
+# matching a search.
+#
+proc SearchList_Open {} {
+  global font_content col_bg_content col_fg_content
+  global dlg_srch_shown dlg_srch_geom dlg_srch_sel dlg_srch_lines dlg_srch_show_fn
+
+  if {![info exists dlg_srch_shown]} {
+    toplevel .dlg_srch
+    wm title .dlg_srch "Search matches"
+    wm group .dlg_srch .
+
+    text .dlg_srch.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
+                        -foreground $col_fg_content -background $col_bg_content \
+                        -exportselection 0 -insertofftime 0 -yscrollcommand {.dlg_srch.sb set}
+    pack .dlg_srch.l -side left -fill both -expand 1
+    scrollbar .dlg_srch.sb -orient vertical -command {.dlg_srch.l yview} -takefocus 0
+    pack .dlg_srch.sb -side left -fill y
+
+    TextSel_Init .dlg_srch.l dlg_srch_sel SearchList_SelectionChange SearchList_GetLen "browse"
+
+    bindtags .dlg_srch.l {.dlg_srch.l TextReadOnly . all}
+    bind .dlg_srch.l <ButtonRelease-3> {SearchList_ContextMenu %x %y; break}
+    bind .dlg_srch.l <Delete> {SearchList_Remove; break}
+    focus .dlg_srch.l
+
+    menu .dlg_srch.ctxmen -tearoff 0
+
+    set dlg_srch_shown 1
+    bind .dlg_srch.l <Destroy> {+ SearchList_Close}
+    bind .dlg_srch <Configure> {ToplevelResized %W .dlg_srch .dlg_srch dlg_srch_geom}
+    wm geometry .dlg_srch $dlg_srch_geom
+    wm positionfrom .dlg_srch user
+
+    set dlg_srch_lines {}
+    set dlg_srch_show_fn 0
+
+  } else {
+    wm deiconify .dlg_srch
+    raise .dlg_srch
+  }
+
+  SearchList_Update 0
+}
+
+
+#
+# This function is bound to destruction events on the search list dialog window.
+# The function releases all dialog resources.
+#
+proc SearchList_Close {} {
+  global dlg_srch_sel dlg_srch_lines dlg_srch_shown
+  unset -nocomplain dlg_srch_sel dlg_srch_lines dlg_srch_shown
+}
+
+
+#
+# This function pops up a context menu for the search list dialog.
+#
+proc SearchList_ContextMenu {xcoo ycoo} {
+  global tlb_find
+  global dlg_srch_sel dlg_srch_lines dlg_srch_show_fn
+
+  TextSel_ContextSelection dlg_srch_sel $xcoo $ycoo
+  set sel [TextSel_GetSelection dlg_srch_sel]
+
+  .dlg_srch.ctxmen delete 0 end
+
+  set c 0
+  if {$tlb_find ne ""} {
+    .dlg_srch.ctxmen add command -label "Update with current search" -command {SearchList_Update 1}
+    .dlg_srch.ctxmen add command -label "Add current search" -command {SearchList_Update 0}
+    incr c 2
+  }
+  if {$c > 0} {.dlg_srch.ctxmen add separator}
+  .dlg_srch.ctxmen add checkbutton -label "Include TDMA frame numbers" \
+                                   -command SearchList_Fill -variable dlg_srch_show_fn
+  incr c 1
+
+  if {[llength $sel] > 0} {
+    if {$c > 0} {.dlg_srch.ctxmen add separator}
+    .dlg_srch.ctxmen add command -label "Remove selected lines" -command SearchList_Remove
+    incr c 1
+  }
+
+  if {$c > 0} {
+    set rootx [expr [winfo rootx .dlg_srch] + $xcoo]
+    set rooty [expr [winfo rooty .dlg_srch] + $ycoo]
+    tk_popup .dlg_srch.ctxmen $rootx $rooty 0
+  }
+}
+
+
+#
+# This function is bound to the "Remove selected lines" command in the
+# search list dialog's context menu.  All currently selected text lines
+# are removed from the search list.
+#
+proc SearchList_Remove {} {
+  global dlg_srch_sel dlg_srch_lines
+
+  set sel [TextSel_GetSelection dlg_srch_sel]
+  set sel [lsort -integer -decreasing -uniq $sel]
+  foreach idx $sel {
+    set line "[expr $idx + 1].0"
+    set dlg_srch_lines [lreplace $dlg_srch_lines $idx $idx]
+    .dlg_srch.l delete $line [list $line + 1 lines]
+  }
+  TextSel_SetSelection dlg_srch_sel {}
+}
+
+
+#
+# This function removes all content in the search list.
+#
+proc SearchList_Clear {} {
+  global dlg_srch_shown dlg_srch_lines
+
+  if [info exists dlg_srch_shown] {
+    set dlg_srch_lines {}
+    .dlg_srch.l delete 1.0 end
+  }
+}
+
+
+#
+# This function fills the search list dialog window with all lines matching
+# the current search pattern. Depending on the parameter the previous list
+# is cleared, or the new list is merged.
+#
+proc SearchList_Update {do_clear} {
+  global dlg_srch_sel dlg_srch_lines
+
+  if $do_clear {
+    set dlg_srch_lines {}
+  }
+  SearchList_Search
+  SearchList_Fill
+
+  if {[llength $dlg_srch_lines] > 0} {
+    set pos [.f1.t index insert]
+    if {[scan $pos "%d.%d" ins_line foo] == 2} {
+      set idx 0
+      set sel_idx -1
+      foreach line $dlg_srch_lines {
+        if {$line >= $ins_line} {
+          set sel_idx $idx
+          break
+        }
+        incr idx
+      }
+      if {$sel_idx == -1} {
+        set sel_idx [expr [llength $dlg_srch_lines] - 1]
+      }
+      .dlg_srch.l see "[expr $sel_idx + 1].0"
+    }
+  }
+}
+
+
+#
+# This function builds a list of line numbers which match the current
+# search. The list is merged with the global dialog's line list.
+#
+proc SearchList_Search {} {
+  global tlb_find tlb_regexp tlb_case tlb_last_dir
+  global dlg_srch_lines
+
+  if {$tlb_find ne ""} {
+    set line_list {}
+    set line 1
+    set opt [Search_GetOptions $tlb_regexp $tlb_case $tlb_last_dir]
+    set pos [.f1.t index end]
+    scan $pos "%d.%d" max_line char
+
+    # search matching text
+    while {($line < $max_line) &&
+           ([set pos [eval .f1.t search $opt -- {$tlb_find} "$line.0" end]] ne {})} {
+      scan $pos "%d.%d" line char
+
+      lappend line_list $line
+
+      incr line
+    }
+
+    set dlg_srch_lines [lsort -integer -uniq [concat $dlg_srch_lines $line_list]]
+  }
+}
+
+
+#
+# This function fills the search list dialog with all text lines indicated in
+# the dialog's line number list (note line numbers in this list start with 1)
+#
+proc SearchList_Fill {} {
+  global patlist dlg_srch_sel dlg_srch_lines dlg_srch_show_fn
+
+  .dlg_srch.l delete 1.0 end
+
+  # create highlight tags
+  foreach w $patlist {
+    eval [linsert [HighlightConfigure $w] 0 .dlg_srch.l tag configure [lindex $w 4]]
+  }
+
+  foreach line $dlg_srch_lines {
+    # copy text content and tags out of the main window
+    set line "$line.0"
+    set dump [ExtractText [list $line linestart] [list $line lineend]]
+    set tag_list [lsearch -all -inline -glob [.f1.t tag names $line] "tag*"]
+
+    if $dlg_srch_show_fn {
+      set fn [ParseTdmaFn $line]
+      .dlg_srch.l insert end "FN:$fn " {}
+    }
+
+    .dlg_srch.l insert end $dump $tag_list "\n" $tag_list
+  }
+
+  TextSel_SetSelection dlg_srch_sel {}
+}
+
+
+#
+# This function is a callback for selection changes in the search list dialog.
+# If a single line is selected, the view in the main window is changed to
+# display the respective line.
+#
+proc SearchList_SelectionChange {sel} {
+  global dlg_srch_sel dlg_srch_lines
+
+  if {[llength $sel] == 1} {
+    set idx [lindex $sel 0]
+    if {$idx < [llength $dlg_srch_lines]} {
+      set line [lindex $dlg_srch_lines $idx]
+      .f1.t mark set insert "$line.0"
+      .f1.t see insert
+      .f1.t tag remove sel 1.0 end
+      .f1.t tag add sel "$line.0" "[expr $line + 1].0"
+    }
+  }
+}
+
+
+#
+# This callback is used by the selection "library" to query the number of
+# elements in the list to determine the possible selection range.
+#
+proc SearchList_GetLen {} {
+  global dlg_srch_sel dlg_srch_lines
+  return [llength $dlg_srch_lines]
+}
+
+
+# ----------------------------------------------------------------------------
+#
 # This function creates or raises the color highlighting tags list dialog.
 # This dialog shows all currently defined tag assignments.
 #
-proc Tags_OpenDialog {} {
+proc TagList_OpenDialog {} {
   global font_content col_bg_content col_fg_content
-  global dlg_tags_shown dlg_tags_geom
+  global dlg_tags_shown dlg_tags_geom dlg_tags_sel
 
   if {![info exists dlg_tags_shown]} {
     toplevel .dlg_tags
@@ -2647,28 +2918,30 @@ proc Tags_OpenDialog {} {
     wm group .dlg_tags .
 
     frame .dlg_tags.f1
-    listbox .dlg_tags.f1.l -width 1 -height 1 -cursor top_left_arrow -font $font_content \
-                        -background $col_bg_content -foreground $col_fg_content \
-                        -selectmode extended -exportselection false \
-                        -yscrollcommand {.dlg_tags.f1.sb set}
+    text .dlg_tags.f1.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
+                        -foreground $col_fg_content -background $col_bg_content \
+                        -exportselection 0 -insertofftime 0 -yscrollcommand {.dlg_tags.f1.sb set}
     pack .dlg_tags.f1.l -side left -fill both -expand 1
     scrollbar .dlg_tags.f1.sb -orient vertical -command {.dlg_tags.f1.l yview} -takefocus 0
     pack .dlg_tags.f1.sb -side left -fill y
-    frame .dlg_tags.f1.f11
-    button .dlg_tags.f1.f11.b_up -image img_up -command TagsList_ShiftUp -state disabled
-    button .dlg_tags.f1.f11.b_down -image img_down -command TagsList_ShiftDown -state disabled
-    pack .dlg_tags.f1.f11.b_up .dlg_tags.f1.f11.b_down -side top -pady 2
-    pack .dlg_tags.f1.f11 -side left -fill y -pady 15
-    pack .dlg_tags.f1 -side top -fill both -expand 1
 
-    bind .dlg_tags.f1.l <<ListboxSelect>> {TagsList_Selection; break}
-    bind .dlg_tags.f1.l <Double-Button-1> {TagsList_DoubleClick %x %y; break}
-    bind .dlg_tags.f1.l <ButtonRelease-3> {TagsList_ContextMenu %x %y; break}
+    bindtags .dlg_tags.f1.l {.dlg_tags.f1.l TextReadOnly . all}
+    TextSel_Init .dlg_tags.f1.l dlg_tags_sel TagList_SelectionChange TagList_GetLen "extended"
+
+    bind .dlg_tags.f1.l <Double-Button-1> {TagList_DoubleClick %x %y; break}
+    bind .dlg_tags.f1.l <ButtonRelease-3> {TagList_ContextMenu %x %y; break}
     bind .dlg_tags.f1.l <Key-n> {Tags_Search 1; break}
     bind .dlg_tags.f1.l <Key-N> {Tags_Search 0; break}
     bind .dlg_tags.f1.l <Alt-Key-n> {Tags_Search 1; break}
     bind .dlg_tags.f1.l <Alt-Key-p> {Tags_Search 0; break}
     focus .dlg_tags.f1.l
+
+    frame .dlg_tags.f1.f11
+    button .dlg_tags.f1.f11.b_up -image img_up -command TagList_ShiftUp -state disabled
+    button .dlg_tags.f1.f11.b_down -image img_down -command TagList_ShiftDown -state disabled
+    pack .dlg_tags.f1.f11.b_up .dlg_tags.f1.f11.b_down -side top -pady 2
+    pack .dlg_tags.f1.f11 -side left -fill y -pady 15
+    pack .dlg_tags.f1 -side top -fill both -expand 1
 
     frame .dlg_tags.f2
     label .dlg_tags.f2.l -text "Find:"
@@ -2685,7 +2958,7 @@ proc Tags_OpenDialog {} {
     wm geometry .dlg_tags $dlg_tags_geom
     wm positionfrom .dlg_tags user
 
-    TagsList_Fill
+    TagList_Fill
 
   } else {
     wm deiconify .dlg_tags
@@ -2697,14 +2970,13 @@ proc Tags_OpenDialog {} {
 #
 # This function pops up a context menu for the color tags list dialog.
 #
-proc TagsList_ContextMenu {xcoo ycoo} {
-  global patlist tlb_find
+proc TagList_ContextMenu {xcoo ycoo} {
+  global patlist tlb_find dlg_tags_sel
 
-  set idx [.dlg_tags.f1.l index "@$xcoo,$ycoo"]
-  if {([llength $idx] > 0) && ($idx < [llength $patlist])} {
-    .dlg_tags.f1.l selection clear 0 end
-    .dlg_tags.f1.l selection set $idx
-    TagsList_Selection
+  TextSel_ContextSelection dlg_tags_sel $xcoo $ycoo
+
+  set sel [TextSel_GetSelection dlg_tags_sel]
+  if {[llength $sel] > 0} {
 
     if {$tlb_find ne ""} {
       set find_state normal
@@ -2713,13 +2985,16 @@ proc TagsList_ContextMenu {xcoo ycoo} {
     }
 
     .dlg_tags.ctxmen delete 0 end
-    .dlg_tags.ctxmen add command -label "Change background color" -command [list TagsList_EditColor $idx 0]
-    .dlg_tags.ctxmen add command -label "Edit markup..." -command [list Markup_OpenDialog $idx]
+    if {[llength $sel] == 1} {
+       .dlg_tags.ctxmen add command -label "Change background color" -command [list TagList_PopupColorPalette $sel 0]
+       .dlg_tags.ctxmen add command -label "Edit markup..." -command [list Markup_OpenDialog $sel]
+       .dlg_tags.ctxmen add separator
+       .dlg_tags.ctxmen add command -label "Copy to search field" -command [list TagList_CopyToSearch $sel]
+       .dlg_tags.ctxmen add command -label "Update from search field" -command [list TagList_CopyFromSearch $sel] -state $find_state
+    }
+    .dlg_tags.ctxmen add command -label "Add current search" -command {TagList_AddSearch .dlg_tags} -state $find_state
     .dlg_tags.ctxmen add separator
-    .dlg_tags.ctxmen add command -label "Add current search" -command {TagsList_AddSearch .dlg_tags} -state $find_state
-    .dlg_tags.ctxmen add command -label "Copy to search field" -command [list TagsList_CopyToSearch $idx]
-    .dlg_tags.ctxmen add command -label "Update from search field" -command [list TagsList_CopyFromSearch $idx] -state $find_state
-    .dlg_tags.ctxmen add command -label "Remove this entry" -command [list TagsList_Remove $idx]
+    .dlg_tags.ctxmen add command -label "Remove selected entries" -command [list TagList_Remove $sel]
 
     set rootx [expr [winfo rootx .dlg_tags] + $xcoo]
     set rooty [expr [winfo rooty .dlg_tags] + $ycoo]
@@ -2732,12 +3007,12 @@ proc TagsList_ContextMenu {xcoo ycoo} {
 # This function is bound to double mouse button clicks onto an entry in
 # the highlight list. The function opens the markup editor dialog.
 #
-proc TagsList_DoubleClick {xcoo ycoo} {
-  global patlist
+proc TagList_DoubleClick {xcoo ycoo} {
+  global patlist dlg_tags_sel
 
-  set idx [.dlg_tags.f1.l index "@$xcoo,$ycoo"]
-  if {([llength $idx] == 1) && ($idx < [llength $patlist])} {
-    Markup_OpenDialog $idx
+  set sel [TextSel_GetSelection dlg_tags_sel]
+  if {[llength $sel] == 1} {
+    Markup_OpenDialog $sel
   }
 }
 
@@ -2746,22 +3021,29 @@ proc TagsList_DoubleClick {xcoo ycoo} {
 # This function is bound to the "up" button next to the color highlight list.
 # Each selected item (selection may be non-consecutive) is shifted up by one line.
 #
-proc TagsList_ShiftUp {} {
-  global patlist
+proc TagList_ShiftUp {} {
+  global patlist dlg_tags_sel
 
-  set el [lsort -integer -increasing [.dlg_tags.f1.l curselection]]
-  if {[lindex $el 0] > 0} {
-    foreach index $el {
+  set sel [TextSel_GetSelection dlg_tags_sel]
+  set sel [lsort -integer -increasing $sel]
+  if {[lindex $sel 0] > 0} {
+    set new_sel {}
+    foreach idx $sel {
       # remove the item in the listbox widget above the shifted one
-      .dlg_tags.f1.l delete [expr $index - 1]
+      TagList_DisplayDelete [expr $idx - 1]
       # re-insert the just removed item below the shifted one
-      TagsList_Insert $index [expr $index - 1]
+      TagList_DisplayInsert $idx [expr $idx - 1]
 
       # perform the same exchange in the associated list
-      set patlist [lreplace $patlist [expr $index - 1] $index \
-                            [lindex $patlist $index] \
-                            [lindex $patlist [expr $index - 1]]]
+      set patlist [lreplace $patlist [expr $idx - 1] $idx \
+                            [lindex $patlist $idx] \
+                            [lindex $patlist [expr $idx - 1]]]
+
+      lappend new_sel [expr $idx - 1]
     }
+
+    # redraw selection
+    TextSel_SetSelection dlg_tags_sel $new_sel
   }
 }
 
@@ -2770,19 +3052,24 @@ proc TagsList_ShiftUp {} {
 # This function is bound to the "down" button next to the color highlight
 # list.  Each selected item is shifted down by one line.
 #
-proc TagsList_ShiftDown {} {
-  global patlist
+proc TagList_ShiftDown {} {
+  global patlist dlg_tags_sel
 
-  set el [lsort -integer -decreasing [.dlg_tags.f1.l curselection]]
-  if {[lindex $el 0] < [llength $patlist] - 1} {
-    foreach index $el {
-      .dlg_tags.f1.l delete [expr $index + 1]
-      TagsList_Insert $index [expr $index + 1]
+  set sel [TextSel_GetSelection dlg_tags_sel]
+  set sel [lsort -integer -decreasing $sel]
+  if {[lindex $sel 0] < [llength $patlist] - 1} {
+    set new_sel {}
+    foreach idx $sel {
+      TagList_DisplayDelete [expr $idx + 1]
+      TagList_DisplayInsert $idx [expr $idx + 1]
 
-      set patlist [lreplace $patlist $index [expr $index + 1] \
-                            [lindex $patlist [expr $index + 1]] \
-                            [lindex $patlist $index]]
+      set patlist [lreplace $patlist $idx [expr $idx + 1] \
+                            [lindex $patlist [expr $idx + 1]] \
+                            [lindex $patlist $idx]]
+
+      lappend new_sel [expr $idx + 1]
     }
+    TextSel_SetSelection dlg_tags_sel $new_sel
   }
 }
 
@@ -2793,10 +3080,11 @@ proc TagsList_ShiftDown {} {
 # for the tag in the main window and makes the line visible.
 #
 proc Tags_Search {is_fwd} {
-  global patlist
+  global patlist dlg_tags_sel
 
   set min_line -1
-  foreach pat_idx [.dlg_tags.f1.l curselection] {
+  set sel [TextSel_GetSelection dlg_tags_sel]
+  foreach pat_idx $sel {
 
     set w [lindex $patlist $pat_idx]
     set tagnam [lindex $w 4]
@@ -2828,9 +3116,9 @@ proc Tags_Search {is_fwd} {
 #
 # This function is bound to changes of the selection in the color tags list.
 #
-proc TagsList_Selection {} {
+proc TagList_SelectionChange {sel} {
+  global dlg_tags_sel
 
-  set sel [.dlg_tags.f1.l curselection]
   if {[llength $sel] >= 0} {
     .dlg_tags.f2.bn configure -state normal
     .dlg_tags.f2.bp configure -state normal
@@ -2846,52 +3134,80 @@ proc TagsList_Selection {} {
 
 
 #
+# This callback is used by the selection "library" to query the number of
+# elements in the list to determine the possible selection range.
+#
+proc TagList_GetLen {} {
+  global patlist
+  return [llength $patlist]
+}
+
+
+#
 # This function updates a color tag text in the listbox.
 #
-proc TagsList_Update {pat_idx} {
+proc TagList_Update {pat_idx} {
   global dlg_tags_shown patlist
 
   if [info exists dlg_tags_shown] {
     if {$pat_idx < [llength $patlist]} {
       set w [lindex $patlist $pat_idx]
 
-      .dlg_tags.f1.l delete $pat_idx
-      .dlg_tags.f1.l insert $pat_idx [lindex $w 0]
-      .dlg_tags.f1.l itemconfigure $pat_idx -background [lindex $w 6] -foreground [lindex $w 7]
-      .dlg_tags.f1.l see $pat_idx
+      TagList_Fill
+      TextSel_SetSelection dlg_tags_sel {}
+
+      .dlg_tags.f1.l see "[expr $pat_idx + 1].0"
     }
   }
 }
 
 
 #
-# This function inserts a color tag text into the listbox and sets its
-# foreground and background colors.
+# This function removes an entry from the listbox.
 #
-proc TagsList_Insert {pos pat_idx} {
-  global patlist
-
-  set w [lindex $patlist $pat_idx]
-
-  .dlg_tags.f1.l insert $pos [lindex $w 0]
-  .dlg_tags.f1.l itemconfigure $pos -background [lindex $w 6] -foreground [lindex $w 7]
+proc TagList_DisplayDelete {pat_idx} {
+  .dlg_tags.f1.l delete "[expr $idx + 1].0" "[expr $idx + 2].0"
 }
 
 
 #
-# This function fills the color tags list dialog window with all color tags.
+# This function inserts a color tag text into the listbox and applies its
+# highlight format options.
 #
-proc TagsList_Fill {} {
+proc TagList_DisplayInsert {pos pat_idx} {
+  global patlist
+
+  set w [lindex $patlist $pat_idx]
+
+  set txt [lindex $w 0]
+  append txt "\n"
+
+  .dlg_tags.f1.l insert "[expr $pos + 1].0" $txt [lindex $w 4]
+}
+
+
+#
+# This function fills the highlight pattern list dialog window with all
+# list entries.
+#
+proc TagList_Fill {} {
   global dlg_tags_shown patlist
 
   if [info exists dlg_tags_shown] {
-    .dlg_tags.f1.l delete 0 end
+    .dlg_tags.f1.l delete 1.0 end
 
     set idx 0
     foreach w $patlist {
-      TagsList_Insert end $idx
+      set tagnam [lindex $w 4]
+      eval [linsert [HighlightConfigure $w] 0 .dlg_tags.f1.l tag configure $tagnam]
+
+      TagList_DisplayInsert $idx $idx
       incr idx
     }
+
+    .dlg_tags.f1.l tag configure sel -bgstipple gray50 -foreground {} \
+                                     -relief solid -borderwidth 3 -spacing1 3 -spacing3 3
+    .dlg_tags.f1.l tag lower sel
   }
 }
 
@@ -2899,12 +3215,12 @@ proc TagsList_Fill {} {
 #
 # This function allows to edit a color assigned to a tags entry.
 #
-proc TagsList_EditColor {pat_idx is_fg} {
+proc TagList_PopupColorPalette {pat_idx is_fg} {
   global patlist
 
-  .dlg_tags.f1.l see $pat_idx
+  .dlg_tags.f1.l see "[expr $pat_idx + 1].0"
 
-  set cool [.dlg_tags.f1.l bbox $pat_idx]
+  set cool [.dlg_tags.f1.l dlineinfo "[expr $pat_idx + 1].0"]
   set rootx [expr [winfo rootx .dlg_tags] + [lindex $cool 0]]
   set rooty [expr [winfo rooty .dlg_tags] + [lindex $cool 1]]
 
@@ -2913,26 +3229,26 @@ proc TagsList_EditColor {pat_idx is_fg} {
   set def_col [lindex $w $col_idx]
 
   PaletteMenu_Popup .dlg_tags $rootx $rooty \
-                    [list TagsList_UpdateColor $pat_idx $is_fg] [lindex $w $col_idx]
+                    [list TagList_UpdateColor $pat_idx $is_fg] [lindex $w $col_idx]
 }
 
 
 #
-# This function is invoked after a background color change via the context menu.
+# This function is invoked after a direct color change via the popup color palette.
 # The new color is saved in the highlight list and applied to the main window
 # and the highlight dialog's list. NOTE: the color value my be an empty string
 # (color "none" refers to the default fore- and background colors)
 #
-proc TagsList_UpdateColor {pat_idx is_fg col} {
-  global patlist
+proc TagList_UpdateColor {pat_idx is_fg col} {
+  global patlist dlg_tags_sel
 
   set w [lindex $patlist $pat_idx]
   set col_idx [expr $is_fg ? 7 : 6]
 
   set w [lreplace $w $col_idx $col_idx $col]
-  if {[catch {.dlg_tags.f1.l itemconfigure $pat_idx -background [lindex $w 6] -foreground [lindex $w 7]}] == 0} {
+  if {[catch {.dlg_tags.f1.l tag configure [lindex $w 4] -background [lindex $w 6] -foreground [lindex $w 7]}] == 0} {
     # clear selection so that the color becomes visible
-    .dlg_tags.f1.l selection clear 0 end
+    TextSel_SetSelection dlg_tags_sel {}
 
     set patlist [lreplace $patlist $pat_idx $pat_idx $w]
     UpdateRcAfterIdle
@@ -2946,10 +3262,10 @@ proc TagsList_UpdateColor {pat_idx is_fg col} {
 # This function is invoked by the "Add current search" entry in the highlight
 # list's context menu.
 #
-proc TagsList_AddSearch {parent} {
+proc TagList_AddSearch {parent} {
   global tlb_find tlb_regexp tlb_case
   global col_bg_find col_bg_findinc
-  global dlg_tags_shown patlist
+  global dlg_tags_shown dlg_tags_sel patlist
 
   if {$tlb_find ne ""} {
     # search a free tag index
@@ -3000,8 +3316,9 @@ proc TagsList_AddSearch {parent} {
 
     if [info exists dlg_tags_shown] {
       # insert the entry into the listbox
-      TagsList_Insert end $pat_idx
-      .dlg_tags.f1.l see $pat_idx
+      TagList_Fill
+      TextSel_SetSelection dlg_tags_sel $pat_idx
+      .dlg_tags.f1.l see "[expr $pat_idx + 1].0"
     }
 
   } else {
@@ -3016,7 +3333,7 @@ proc TagsList_AddSearch {parent} {
 # This function is invoked by the "Copy to search field" command in the
 # highlight list's context menu.
 #
-proc TagsList_CopyToSearch {pat_idx} {
+proc TagList_CopyToSearch {pat_idx} {
   global patlist
   global tlb_find_focus tlb_find tlb_regexp tlb_case
 
@@ -3038,7 +3355,7 @@ proc TagsList_CopyToSearch {pat_idx} {
 # This function is invoked by the "Update from search field" command in the
 # highlight list's context menu.
 #
-proc TagsList_CopyFromSearch {pat_idx} {
+proc TagList_CopyFromSearch {pat_idx} {
   global tlb_find_focus tlb_find tlb_regexp tlb_case
   global patlist
 
@@ -3055,8 +3372,10 @@ proc TagsList_CopyFromSearch {pat_idx} {
     set opt [Search_GetOptions [lindex $w 1] [lindex $w 2]]
     HighlightAll [lindex $w 0] [lindex $w 4] $opt
 
-    TagsList_Fill
-    .dlg_tags.f1.l see $pat_idx
+    TagList_DisplayDelete $pat_idx
+    TagList_DisplayInsert $pat_idx $pat_idx
+    TextSel_SetSelection dlg_tags_sel $pat_idx
+    .dlg_tags.f1.l see "[expr $pat_idx + 1].0"
   }
 }
 
@@ -3065,21 +3384,32 @@ proc TagsList_CopyFromSearch {pat_idx} {
 # This function is invoked by the "Remove entry" command in the highlight
 # list's context menu.
 #
-proc TagsList_Remove {pat_idx} {
+proc TagList_Remove {pat_sel} {
   global patlist
 
-  set answer [tk_messageBox -type yesno -icon question -parent .dlg_tags \
-                -message "Really remove this entry? This cannot be undone"]
-  if {$answer eq "yes"} {
-    set w [lindex $patlist $pat_idx]
-    set patlist [lreplace $patlist $pat_idx $pat_idx]
-    UpdateRcAfterIdle
+  set cnt [llength $pat_sel]
+  if {$cnt > 0} {
+    if {$cnt == 1} {
+      set msg "Really remove this entry? This cannot be undone"
+    } else {
+      set msg "Really remove all $cnt selected entries? This cannot be undone"
+    }
+    set answer [tk_messageBox -type yesno -icon question -parent .dlg_tags -message $msg]
+    if {$answer eq "yes"} {
 
-    # remove the highlight in the main window
-    .f1.t tag delete [lindex $w 4]
+      foreach idx [lsort -integer -decreasing -unique $pat_sel] {
+        set w [lindex $patlist $idx]
+        set patlist [lreplace $patlist $idx $idx]
 
-    # remove the entry in the listbox
-    TagsList_Fill
+        # remove the highlight in the main window
+        .f1.t tag delete [lindex $w 4]
+      }
+      UpdateRcAfterIdle
+
+      # remove the entry in the listbox
+      TagList_Fill
+      TextSel_SetSelection dlg_tags_sel {}
+    }
   }
 }
 
@@ -3498,7 +3828,7 @@ proc Markup_Save {do_save do_quit} {
       UpdateRcAfterIdle
 
       # update hightlight color listbox
-      TagsList_Update $pat_idx
+      TagList_Update $pat_idx
 
       # update tag in the main window
       set cfg [HighlightConfigure $w]
@@ -3730,7 +4060,7 @@ proc Palette_ContextMenu {xcoo ycoo} {
 
   set cid [.dlg_cols.c find closest $xcoo $ycoo]
   if {$cid ne ""} {
-    set idx [lsearch -integer $dlg_cols_cid $cid]
+    set idx [lsearch -exact -integer $dlg_cols_cid $cid]
     if {$idx != -1} {
 
       .dlg_cols.ctxmen delete 0 end
@@ -3949,6 +4279,496 @@ THIS PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT ANY 
     wm deiconify .about
     raise .about
   }
+}
+
+
+# ----------------------------------------------------------------------------
+#
+# The following set of functions form a "library" which allow to use a text
+# widget in the way of a listbox, i.e. allow to select one or more lines.
+# The mouse bindings are similar to the listbox "extended" mode. The cursor
+# key bindings differ from the listbox, as there is no "active" element
+# (i.e. there's no separate cursor from the selection.)
+#
+
+#
+# This function is called after a text widget is created to add event
+# bindings for handling the selection and to initialize a global variable
+# with the selection state.
+#
+proc TextSel_Init {wid var cb_proc len_proc mode} {
+  upvar $var state
+
+  # initialize selection state struct:
+  # 0- text widget command name
+  # 1- callback to invoke after selection changes
+  # 2- callback which provides the content list length
+  # 3- ID of event handler for scrolling, or empty
+  # 4- scrolling speed
+  # 5- anchor element index
+  # 6- list of selected element indices
+  set state [list $wid $cb_proc $len_proc {} 0 -1 {}]
+
+  bind $wid <Control-ButtonPress-1> "TextSel_Pick $var %x %y; break"
+  bind $wid <Shift-ButtonPress-1> "TextSel_Resize $var %x %y; break"
+  bind $wid <ButtonPress-1> "TextSel_Button $var %x %y; break"
+  bind $wid <ButtonRelease-1> "TextSel_MotionEnd $var; break"
+  if {$mode eq "browse"} {
+    bind $wid <B1-Motion> "TextSel_Button $var %x %y; break"
+  } else {
+    bind $wid <B1-Motion> "TextSel_Motion $var %x %y; break"
+  }
+
+  bind $wid <Shift-Key-Up> "TextSel_KeyResize $var -1; break"
+  bind $wid <Shift-Key-Down> "TextSel_KeyResize $var 1; break"
+  bind $wid <Key-Up> "TextSel_KeyUpDown $var -1; break"
+  bind $wid <Key-Down> "TextSel_KeyUpDown $var 1; break"
+  bind $wid <Shift-Key-Home> "TextSel_KeyHomeEnd $var 0 1; break"
+  bind $wid <Shift-Key-End> "TextSel_KeyHomeEnd $var 1 1; break"
+  bind $wid <Key-Home> "TextSel_KeyHomeEnd $var 0 0; break"
+  bind $wid <Key-End> "TextSel_KeyHomeEnd $var 1 0; break"
+}
+
+
+#
+# This is an interface function which allows outside users to retrieve a
+# list of selected elements (i.e. a list of indices)
+#
+proc TextSel_GetSelection {var} {
+  upvar #0 $var state
+
+  return [lindex $state 6]
+}
+
+
+#
+# This is an interface function which allows to modify the selection
+# externally.
+#
+proc TextSel_SetSelection {var sel} {
+  upvar #0 $var state
+
+  if {[llength $sel] > 0} {
+    set state [lreplace $state 5 6 $sel $sel]
+  } else {
+    set state [lreplace $state 5 6 -1 {}]
+  }
+  TextSel_ShowSelection $var
+  eval [list [lindex $state 1] [lindex $state 6]]
+}
+
+
+#
+# This is an interface function which is used by context menus to check
+# if the item under the mouse pointer is included in the selection.
+# If not, the selection is set to consist only of the pointed item.
+#
+proc TextSel_ContextSelection {var xcoo ycoo} {
+  upvar #0 $var state
+
+  set line [TextSel_Coo2Line $var $xcoo $ycoo]
+  if {$line != -1} {
+    set sel [lindex $state 6]
+    if {[llength $sel] != 0} {
+      if {[lsearch -exact -integer $sel $line] == -1} {
+        # click was outside the current selection -> replace selection
+        TextSel_SetSelection $var $line
+      }
+    } else {
+      # nothing selected yet -> select element under the mouse pointer
+      TextSel_SetSelection $var $line
+    }
+  } else {
+    TextSel_SetSelection $var {}
+  }
+}
+
+
+#
+# This function is bound to button-press events in the text widget while
+# neither Control nor Shift keys are pressed.  A previous selection is
+# is cleared and the entry below the mouse (if any) is selected.
+#
+proc TextSel_Button {var xcoo ycoo} {
+  upvar #0 $var state
+
+  set line [TextSel_Coo2Line $var $xcoo $ycoo]
+  set len_cb [lindex $state 2]
+  set old_sel [lindex $state 6]
+  if {($line != -1) && ($line < [$len_cb])} {
+    # select the entry under the mouse pointer
+    set state [lreplace $state 5 6 $line $line]
+  } else {
+    # mouse pointer is not above a list entry -> clear selection
+    set state [lreplace $state 5 6 -1 {}]
+  }
+  # update display and invoke notification callback if the selection changed
+  if {$old_sel ne [lindex $state 6]} {
+    TextSel_ShowSelection $var
+    eval [list [lindex $state 1] [lindex $state 6]]
+  }
+  focus [lindex $state 0]
+}
+
+
+#
+# This function is bound to mouse pointer motion events in the text widget
+# while the mouse buttin is pressed down. This allows to change the extent
+# of the selection. The originally selected item ("anchor") always remains
+# selected.  If the pointer is moved above or below the widget borders,
+# the text is scrolled.
+#
+proc TextSel_Motion {var xcoo ycoo} {
+  upvar #0 $var state
+
+  # the anchor element is the one above which the mouse button was pressed
+  # (the check here is for fail-safety only, should always be fulfilled)
+  set anchor [lindex $state 5]
+  if {$anchor >= 0} {
+    set wid [lindex $state 0]
+    set wh [winfo height $wid]
+    # check if the mouse is still inside of the widget area
+    if {($ycoo >= 0) && ($ycoo < $wh)} {
+      # identify the item under the mouse pointer
+      set line [TextSel_Coo2Line $var $xcoo $ycoo]
+      if {$line != -1} {
+        # build list of all consecutive indices between the anchor and the mouse position
+        set sel [TextSel_IdxRange $anchor $line]
+        # update display and invoke notification callback if the selection changed
+        if {$sel ne [lindex $state 6]} {
+          set state [lreplace $state 6 6 $sel]
+          TextSel_ShowSelection $var
+          eval [list [lindex $state 1] [lindex $state 6]]
+        }
+      }
+      # cancel scrolling timer, as the mouse is now back inside the widget
+      if {[lindex $state 3] ne ""} {
+        after cancel [lindex $state 3]
+        set state [lreplace $state 3 3 ""]
+      }
+
+    } else {
+      # mouse is outside of the text widget - start scrolling
+      # scrolling speed is determined by how far the mouse is outside
+      set fh [font metrics [$wid cget -font] -linespace]
+      if {$ycoo < 0} {
+        set delta [expr 0 - $ycoo]
+      } else {
+        set delta [expr $ycoo - $wh]
+      }
+      set delay [expr 500 - int($delta / $fh) * 100]
+      if {$delay > 500} {set delay 500}
+      if {$delay <  50} {set delay  50}
+      if {[lindex $state 3] eq ""} {
+        # start timer and remember it's ID to be able to cancel it later
+        set tid [after $delay [list TextSel_MotionScroll $var [expr ($ycoo < 0) ? -1 : 1]]]
+        set state [lreplace $state 3 4 $tid $delay]
+      } else {
+        # timer already active - just update the delay
+        set state [lreplace $state 4 4 $delay]
+      }
+    }
+  }
+}
+
+
+#
+# This timer event handler is activated when the mouse is moved outside of
+# the text widget while the mouse button is pressed. The handler re-installs
+# itself and is only stopped when the button is released of the mouse is
+# moved back inside the widget area.  The function scrolls by one line.
+# Scrolling speed is varied by means of the delay time.
+#
+proc TextSel_MotionScroll {var delta} {
+  upvar #0 $var state
+
+  # check if the widget still exists
+  set wid [lindex $state 0]
+  if {[info exists state] && ([info commands $wid] ne "")} {
+
+    # scroll up or down by one line
+    $wid yview scroll $delta units
+
+    # extend the selection to the end of the viewable area
+    if {$delta < 0} {
+      TextSel_Motion $var 0 0
+    } else {
+      TextSel_Motion $var 0 [expr [winfo height $wid] - 1]
+    }
+
+    # install the timer gain (possibly with a changed delay if the mouse was moved)
+    set delay [lindex $state 4]
+    set tid [after $delay [list TextSel_MotionScroll $var $delta]]
+    set state [lreplace $state 3 3 $tid]
+  }
+}
+
+
+#
+# This function is boud to mouse button release events and stops a
+# possible on-going scrolling timer.
+#
+proc TextSel_MotionEnd {var} {
+  upvar #0 $var state
+
+  if {[lindex $state 3] ne ""} {
+    after cancel [lindex $state 3]
+    set state [lreplace $state 3 3 ""]
+  }
+}
+
+
+#
+# This function is bound to mouse button events while the Control key is
+# pressed. The item below the mouse pointer is toggled in the selection.
+# Otherwise the selection is left unchanged.  Note this operation always
+# clears the "anchor" element, i.e. the selection cannot be modified
+# using "Shift-Click" afterwards.
+#
+proc TextSel_Pick {var xcoo ycoo} {
+  upvar #0 $var state
+
+  set line [TextSel_Coo2Line $var $xcoo $ycoo]
+  if {$line != -1} {
+    set sel [lindex $state 6]
+    set sel_len [llength $sel]
+    # check if the item is already selected
+    set pick_idx [lsearch -exact -integer $sel $line]
+    if {$pick_idx != -1} {
+      # already selected -> remove from selection
+      set sel [lreplace $sel $pick_idx $pick_idx]
+    } else {
+      lappend sel $line
+    }
+    if {[llength $sel] > 1} {
+      set state [lreplace $state 5 6 -1 $sel]
+    } else {
+      set state [lreplace $state 5 6 $pick_idx $sel]
+    }
+    TextSel_ShowSelection $var
+    eval [list [lindex $state 1] [lindex $state 6]]
+  }
+}
+
+
+#
+# This function is bound to mouse button events while the Shift key is
+# pressed. The selection is changed to cover all items starting at the
+# anchor item and the item under the mouse pointer.  If no anchor is
+# defined, the selection is reset and only the item under the mouse is
+# selected.
+#
+proc TextSel_Resize {var xcoo ycoo} {
+  upvar #0 $var state
+
+  set line [TextSel_Coo2Line $var $xcoo $ycoo]
+  if {$line != -1} {
+    set anchor [lindex $state 5]
+    if {$anchor != -1} {
+      set sel [TextSel_IdxRange $anchor $line]
+      set state [lreplace $state 6 6 $sel]
+      TextSel_ShowSelection $var
+      eval [list [lindex $state 1] [lindex $state 6]]
+    } else {
+      TextSel_Button $var $xcoo $ycoo
+    }
+  }
+}
+
+
+#
+# This function is bound to the up/down cursor keys. If no selection
+# exists, the viewable first item in cursor direction is selected.
+# If a selection exists, it's cleared and the item next to the
+# previous selection in cursor direction is selected.
+#
+proc TextSel_KeyUpDown {var delta} {
+  upvar #0 $var state
+
+  set wid [lindex $state 0]
+  set len_cb [lindex $state 2]
+  set content_len [$len_cb]
+  if {$content_len > 0} {
+    set sel [lsort -integer -increasing [lindex $state 6]]
+    if {[llength $sel] != 0} {
+      # selection already exists -> determine item below or above
+      if {$delta < 0} {
+        set line [lindex $sel 0]
+      } else {
+        set line [lindex $sel end]
+      }
+      # determine the newly selected item
+      incr line $delta
+
+      if {($line >= 0) && ($line < $content_len)} {
+        # set selection on the new line
+        set state [lreplace $state 5 6 $line $line]
+
+        TextSel_ShowSelection $var
+        $wid see "[expr $line + 1].0"
+        eval [list [lindex $state 1] [lindex $state 6]]
+
+      } elseif {[llength $sel] > 1} {
+        # selection already includes last line - restrict selection to this single line
+        if {$delta < 0} {
+          set line 0
+        } else {
+          set line [expr $content_len - 1]
+        }
+        set state [lreplace $state 5 6 $line $line]
+
+        TextSel_ShowSelection $var
+        $wid see "[expr $line + 1].0"
+        eval [list [lindex $state 1] [lindex $state 6]]
+      }
+
+    } else {
+      # no selection exists yet -> select first or last viewable item
+      if {$delta > 0} {
+        set idx {@1,1}
+      } else {
+        set idx "@1,[expr [winfo height $wid] - 1]"
+      }
+      set pos [$wid index $idx]
+      if {([scan $pos "%d.%d" line char] == 2) && ($line > 0)} {
+        incr line -1
+        if {$line >= $content_len} {set line [expr $content_len - 1]}
+        set state [lreplace $state 5 6 $line $line]
+
+        TextSel_ShowSelection $var
+        $wid see "[expr $line + 1].0"
+        eval [list [lindex $state 1] [lindex $state 6]]
+      }
+    }
+  }
+}
+
+
+#
+# This function is bound to the up/down cursor keys while the Shift key
+# is pressed. The selection is changed to cover all items starting at the
+# anchor item and the next item above or below the current selection.
+#
+proc TextSel_KeyResize {var delta} {
+  upvar #0 $var state
+
+  set wid [lindex $state 0]
+  set len_cb [lindex $state 2]
+  set content_len [$len_cb]
+  set anchor [lindex $state 5]
+  if {$anchor >= 0} {
+    set sel [lsort -integer -increasing [lindex $state 6]]
+    # decide if we manipulate the upper or lower end of the selection:
+    # use the opposite side of the anchor element
+    if {$anchor == [lindex $sel end]} {
+      set line [lindex $sel 0]
+    } else {
+      set line [lindex $sel end]
+    }
+    incr line $delta
+    if {($line >= 0) && ($line < $content_len)} {
+      set sel [TextSel_IdxRange $anchor $line]
+      set state [lreplace $state 6 6 $sel]
+
+      TextSel_ShowSelection $var
+      $wid see "[expr $line + 1].0"
+      eval [list [lindex $state 1] [lindex $state 6]]
+    }
+  }
+}
+
+
+#
+# This function is bound to the "Home" and "End" keys.  While the Shift
+# key is not pressed, the first or last element in the list are selected.
+# If the Shift key is pressed, the selection is extended to include all
+# items between the anchor and the first or last item.
+#
+proc TextSel_KeyHomeEnd {var is_end is_resize} {
+  upvar #0 $var state
+
+  set wid [lindex $state 0]
+  set len_cb [lindex $state 2]
+  set anchor [lindex $state 5]
+
+  set content_len [$len_cb]
+  if {$content_len > 0} {
+    if $is_end {
+      set line [expr $content_len - 1]
+    } else {
+      set line 0
+    }
+    if {$is_resize == 0} {
+      set state [lreplace $state 5 6 $line $line]
+    } else {
+      if {$anchor >= 0} {
+        set sel [TextSel_IdxRange $anchor $line]
+        set state [lreplace $state 6 6 $sel]
+      }
+    }
+    TextSel_ShowSelection $var
+    $wid see "[expr $line + 1].0"
+    eval [list [lindex $state 1] [lindex $state 6]]
+  }
+}
+
+
+#
+# This helper function is used to build a list of all indices between
+# (and including) two given values in increasing order.
+#
+proc TextSel_IdxRange {start end} {
+  if {$start > $end} {
+    set tmp $start
+    set start $end
+    set end $tmp
+  }
+  for {set idx $start} {$idx <= $end} {incr idx} {
+    lappend sel $idx
+  }
+  return $sel
+}
+
+
+#
+# This function displays a selection in the text widget by adding the
+# "sel" tag to all selected lines.  (Note the view is not affected, i.e.
+# the selection may be outside of the viewable area.)
+#
+proc TextSel_ShowSelection {var} {
+  upvar #0 $var state
+
+  set wid [lindex $state 0]
+  set sel [lindex $state 6]
+
+  # first remove any existing highlight
+  $wid tag remove sel "1.0" end
+
+  # select each selected line (may be non-consecutive)
+  foreach line $sel {
+    $wid tag add sel "[expr $line + 1].0" "[expr $line + 2].0"
+  }
+}
+
+
+#
+# This function determines the line under the mouse pointer.
+# If the pointer is not above a content line, -1 is returned.
+#
+proc TextSel_Coo2Line {var xcoo ycoo} {
+  upvar #0 $var state
+
+  set wid [lindex $state 0]
+  set len_cb [lindex $state 2]
+
+  set pos [$wid index "@$xcoo,$ycoo"]
+  if {([scan $pos "%d.%d" line foo] == 2) &&
+      ($line >= 1) && ($line - 1 < [$len_cb])} {
+    incr line -1
+  } else {
+    set line -1
+  }
+  return $line
 }
 
 
@@ -4316,6 +5136,8 @@ proc InitContent {} {
   CursorPosStore
   # read bookmarks from the default file
   Mark_ReadFileAuto
+  # clear search match list
+  SearchList_Clear
   # start color highlighting in the background
   HighlightInit
 }
@@ -4400,7 +5222,7 @@ proc UserQuit {} {
 #
 proc LoadRcFile {isDefault} {
   global tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
-  global dlg_mark_geom dlg_tags_geom main_win_geom
+  global dlg_mark_geom dlg_srch_geom dlg_tags_geom main_win_geom
   global patlist col_palette font_content load_buf_size load_buf_size_opt
   global rcfile_version myrcfile
 
@@ -4449,7 +5271,7 @@ proc LoadRcFile {isDefault} {
 proc UpdateRcFile {} {
   global argv0 myrcfile rcfile_compat rcfile_version
   global tid_update_rc_sec tid_update_rc_min
-  global dlg_mark_geom dlg_tags_geom main_win_geom
+  global dlg_mark_geom dlg_srch_geom dlg_tags_geom main_win_geom
   global patlist col_palette font_content load_buf_size
   global tlb_hist tlb_hist_maxlen tlb_case tlb_regexp tlb_hall
 
@@ -4497,12 +5319,9 @@ proc UpdateRcFile {} {
     puts $rcfile [list set tlb_hist_maxlen $tlb_hist_maxlen]
 
     # dialog sizes
-    if [info exists dlg_mark_geom] {
-      puts $rcfile [list set dlg_mark_geom $dlg_mark_geom]
-    }
-    if [info exists dlg_tags_geom] {
-      puts $rcfile [list set dlg_tags_geom $dlg_tags_geom]
-    }
+    puts $rcfile [list set dlg_mark_geom $dlg_mark_geom]
+    puts $rcfile [list set dlg_srch_geom $dlg_srch_geom]
+    puts $rcfile [list set dlg_tags_geom $dlg_tags_geom]
     puts $rcfile [list set main_win_geom $main_win_geom]
 
     # font setting
@@ -4698,6 +5517,7 @@ set col_bg_findinc {#c8ff00}
 set main_win_geom "684x480"
 set dlg_mark_geom "500x250"
 set dlg_tags_geom "400x300"
+set dlg_srch_geom "648x250"
 
 # This variable stores a list of pre-defined colors.
 set col_palette [list \
