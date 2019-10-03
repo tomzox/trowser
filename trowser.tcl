@@ -1,9 +1,9 @@
 #!/bin/sh
 # the next line restarts using wish \
-exec wish8.4 "$0" -- "$@"
+exec wish "$0" -- "$@"
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007 Tom Zoerner. All rights reserved.
+# Copyright (C) 2007-2008 Tom Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ exec wish8.4 "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.22 2007/12/15 14:41:41 tom Exp $
+# $Id: trowser.tcl,v 1.23 2008/04/01 18:30:47 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -142,83 +142,54 @@ proc CreateMainWindow {} {
   .f1.t tag lower sel
 
   bindtags .f1.t {.f1.t TextReadOnly . all}
+
   # commands to scroll the X/Y view
-  bind .f1.t <Control-Up> {YviewScroll .f1.t -1; KeyClr; break}
-  bind .f1.t <Control-Down> {YviewScroll .f1.t 1; KeyClr; break}
-  bind .f1.t <Control-e> {YviewScroll .f1.t 1; KeyClr; break}
-  bind .f1.t <Control-y> {YviewScroll .f1.t -1; KeyClr; break}
-  bind .f1.t <Control-d> {YviewScrollHalf .f1.t 1; KeyClr; break}
-  bind .f1.t <Control-u> {YviewScrollHalf .f1.t -1; KeyClr; break}
-  bind .f1.t <Control-Left> {XviewScroll .f1.t scroll 1 -1; KeyClr; break}
-  bind .f1.t <Control-Right> {XviewScroll .f1.t scroll 1 1; KeyClr; break}
-  bind .f1.t <Control-f> {event generate %W <Key-Next>; KeyClr; break}
-  bind .f1.t <Control-b> {event generate %W <Key-Prior>; KeyClr; break}
+  KeyBinding_UpDown .f1.t
+  KeyBinding_LeftRight .f1.t
+
   bind .f1.t <Key-space> {event generate %W <Key-Right>; KeyClr; break}
   bind .f1.t <Key-BackSpace> {event generate %W <Key-Left>; KeyClr; break}
-  KeyCmdBind "z-" {YviewSet bottom 0}
-  KeyCmdBind "zb" {YviewSet bottom 1}
-  KeyCmdBind "z." {YviewSet center 0}
-  KeyCmdBind "zz" {YviewSet center 1}
-  KeyCmdBind "zReturn" {YviewSet top 0}
-  KeyCmdBind "zt" {YviewSet top 1}
-  KeyCmdBind "zl" {XviewScroll .f1.t scroll 1 1}
-  KeyCmdBind "zh" {XviewScroll .f1.t scroll 1 -1}
-  KeyCmdBind "zL" {XviewScrollHalf .f1.t 1}
-  KeyCmdBind "zH" {XviewScrollHalf .f1.t -1}
-  KeyCmdBind "zs" {XviewSet .f1.t left}
-  KeyCmdBind "ze" {XviewSet .f1.t right}
   # commands to move the cursor
-  KeyCmdBind "G" {CursorPosStore; .f1.t mark set insert "end -1 lines linestart"; CursorMoveLine 0}
-  KeyCmdBind "gg" {CursorPosStore; .f1.t mark set insert 1.0; CursorMoveLine 0}
-  KeyCmdBind "0" {CursorSetColumn left}
-  KeyCmdBind "^" {CursorSetColumn left; CursorMoveLine 0}
-  KeyCmdBind "$" {CursorSetColumn right}
   bind .f1.t <Control-g> {DisplayLineNumer; KeyClr; break}
-  bind .f1.t <Key-Home> {if {%s == 0} {CursorSetColumn left; KeyClr; break}}
-  bind .f1.t <Key-End> {if {%s == 0} {CursorSetColumn right; KeyClr; break}}
-  KeyCmdBind "Return" {CursorMoveLine 1}
-  KeyCmdBind "+" {CursorMoveLine 1}
-  KeyCmdBind "-" {CursorMoveLine -1}
-  KeyCmdBind "h" {event generate .f1.t <Left>}
-  KeyCmdBind "l" {event generate .f1.t <Right>}
-  KeyCmdBind "k" {event generate .f1.t <Up>}
-  KeyCmdBind "j" {event generate .f1.t <Down>}
-  KeyCmdBind "H" {CursorSetLine top}
-  KeyCmdBind "M" {CursorSetLine center}
-  KeyCmdBind "L" {CursorSetLine bottom}
-  KeyCmdBind "w" {CursorMoveWord 1 0 0}
-  KeyCmdBind "e" {CursorMoveWord 1 0 1}
-  KeyCmdBind "b" {CursorMoveWord 0 0 0}
-  KeyCmdBind "W" {CursorMoveWord 1 1 0}
-  KeyCmdBind "E" {CursorMoveWord 1 1 1}
-  KeyCmdBind "B" {CursorMoveWord 0 1 0}
-  KeyCmdBind "ge" {CursorMoveWord 0 0 1}
-  KeyCmdBind "gE" {CursorMoveWord 0 1 1}
-  KeyCmdBind ";" {SearchCharInLine {} 1}
-  KeyCmdBind "," {SearchCharInLine {} -1}
+  bind .f1.t <Key-Home> {if {%s == 0} {CursorSetColumn .f1.t left; KeyClr; break}}
+  bind .f1.t <Key-End> {if {%s == 0} {CursorSetColumn .f1.t right; KeyClr; break}}
+  KeyCmdBind .f1.t "h" {event generate .f1.t <Left>}
+  KeyCmdBind .f1.t "l" {event generate .f1.t <Right>}
+  KeyCmdBind .f1.t "Return" {CursorMoveLine .f1.t 1}
+  KeyCmdBind .f1.t "w" {CursorMoveWord 1 0 0}
+  KeyCmdBind .f1.t "e" {CursorMoveWord 1 0 1}
+  KeyCmdBind .f1.t "b" {CursorMoveWord 0 0 0}
+  KeyCmdBind .f1.t "W" {CursorMoveWord 1 1 0}
+  KeyCmdBind .f1.t "E" {CursorMoveWord 1 1 1}
+  KeyCmdBind .f1.t "B" {CursorMoveWord 0 1 0}
+  KeyCmdBind .f1.t "ge" {CursorMoveWord 0 0 1}
+  KeyCmdBind .f1.t "gE" {CursorMoveWord 0 1 1}
+  KeyCmdBind .f1.t ";" {SearchCharInLine {} 1}
+  KeyCmdBind .f1.t "," {SearchCharInLine {} -1}
   # commands for searching & repeating
-  KeyCmdBind "/" {set tlb_last_dir 1; focus .f2.e}
-  KeyCmdBind "?" {set tlb_last_dir 0; focus .f2.e}
-  KeyCmdBind "n" {SearchNext 1}
-  KeyCmdBind "N" {SearchNext 0}
-  KeyCmdBind "*" {SearchWord 1}
-  KeyCmdBind "#" {SearchWord 0}
-  KeyCmdBind "&" {SearchHighlightClear}
-  KeyCmdBind "i" {SearchList_Open; SearchList_CopyCurrentLine}
+  KeyCmdBind .f1.t "/" {SearchEnter 1}
+  KeyCmdBind .f1.t "?" {SearchEnter 0}
+  KeyCmdBind .f1.t "n" {SearchNext 1}
+  KeyCmdBind .f1.t "N" {SearchNext 0}
+  KeyCmdBind .f1.t "*" {SearchWord 1}
+  KeyCmdBind .f1.t "#" {SearchWord 0}
+  KeyCmdBind .f1.t "&" {SearchHighlightClear}
+  KeyCmdBind .f1.t "i" {SearchList_Open 1; SearchList_CopyCurrentLine}
   bind .f1.t <Alt-Key-f> {focus .f2.e; KeyClr; break}
   bind .f1.t <Alt-Key-n> {SearchNext 1; KeyClr; break}
   bind .f1.t <Alt-Key-p> {SearchNext 0; KeyClr; break}
   bind .f1.t <Alt-Key-h> {SearchHighlightOnOff; KeyClr; break}
   bind .f1.t <Alt-Key-a> {SearchAll; KeyClr; break}
+  bind .f1.t <Alt-Key-w> {ToggleLineWrap; break}
   # event bindings to manage bookmarks
   bind .f1.t <Double-Button-1> {if {%s == 0} {Mark_ToggleAtInsert; KeyClr; break}}
-  KeyCmdBind "m" {Mark_ToggleAtInsert}
+  KeyCmdBind .f1.t "m" {Mark_ToggleAtInsert}
   # misc & catch-all (processes "KeyCmdBind" from above)
   bind .f1.t <Control-plus> {ChangeFontSize 1; KeyClr}
   bind .f1.t <Control-minus> {ChangeFontSize -1; KeyClr}
   bind .f1.t <FocusIn> {KeyClr}
-  bind .f1.t <Return> {if {[KeyCmd Return]} break}
-  bind .f1.t <KeyPress> {if {[KeyCmd %A]} break}
+  bind .f1.t <Return> {if {[KeyCmd .f1.t Return]} break}
+  bind .f1.t <KeyPress> {if {[KeyCmd .f1.t %A]} break}
 
   # frame #2: search controls
   frame .f2 -borderwidth 2 -relief raised
@@ -699,7 +670,7 @@ proc Search_Atomic {is_fwd is_changed} {
     set tlb_last_dir $is_fwd
     set search_opt [Search_GetOptions $tlb_find $tlb_regexp $tlb_case $tlb_last_dir]
     set start_pos [Search_GetBase $is_fwd 0]
-    CursorPosStore
+    CursorPosStore .f1.t
 
     if $is_fwd {
       set search_range [list $start_pos [.f1.t index end]]
@@ -713,7 +684,8 @@ proc Search_Atomic {is_fwd is_changed} {
       while 1 {
         set pos [eval .f1.t search $search_opt -count match_len -- {$tlb_find} $search_range]
 
-        # work-around for backwards search: make sure the matching text is entirely left of the cursor
+        # work-around for backwards search:
+        # make sure the matching text is entirely to the left side of the cursor
         if {($pos ne "") && [SearchOverlapCheck $is_fwd $start_pos $pos $match_len]} {
           # match overlaps: search further backwards
           set search_range [lreplace $search_range 0 0 $pos]
@@ -820,7 +792,7 @@ proc SearchIncrement {is_fwd is_changed} {
       if {![info exists tlb_inc_base]} {
         set tlb_inc_base [Search_GetBase $is_fwd 1]
         set tlb_inc_view [list [lindex [.f1.t xview] 0] [lindex [.f1.t yview] 0]]
-        CursorPosStore
+        CursorPosStore .f1.t
       }
       if {$is_changed} {
         .f1.t tag remove findinc 1.0 end
@@ -1008,16 +980,24 @@ proc SearchNext {is_fwd} {
 # in a separate dialog window.
 #
 proc SearchAll {} {
-  global tlb_find
+  global tlb_find tlb_last_wid
 
   if {$tlb_find ne ""} {
     if [SearchExprCheck 1] {
       SearchList_Open
       SearchList_AddMatches
+
       Search_AddHistory $tlb_find
     }
   } else {
     SearchList_Open
+  }
+
+  if {[focus -displayof .] eq ".f2.e"} {
+    focus .f1.t
+    if {$tlb_last_wid ne ""} {
+      focus $tlb_last_wid
+    }
   }
 }
 
@@ -1062,11 +1042,33 @@ proc SearchInit {} {
 
 
 #
+# This function is called to move keyboard focus into the search entry field.
+# The focus change will trigger the "init" function.  The caller can pass a
+# widget to which focus is passed when leaving the search via the Return or
+# Escape keys.
+#
+proc SearchEnter {is_fwd {wid ""}} {
+  global tlb_last_dir tlb_last_wid
+
+  set tlb_last_dir $is_fwd
+  focus .f2.e
+
+  set tlb_last_wid $wid
+  if {$tlb_last_wid ne ""} {
+    # raise the search entry field above the caller's window
+    if {[regsub {^(\.[^\.]*).*} $tlb_last_wid {\1} top_wid]} {
+      raise . $top_wid
+    }
+  }
+}
+
+
+#
 # This function is bound to the FocusOut event in the search entry field.
 # It resets the incremental search state.
 #
 proc SearchLeave {} {
-  global tlb_find tlb_hall tlb_inc_base tlb_inc_view tlb_find_focus
+  global tlb_find tlb_hall tlb_inc_base tlb_inc_view tlb_find_focus tlb_last_wid
   global tlb_hist_pos tlb_hist_prefix
   global tid_search_inc
 
@@ -1078,8 +1080,10 @@ proc SearchLeave {} {
   # ignore if the keyboard focus is leaving towards another application
   if {[focus -displayof .] ne {}} {
 
-    unset -nocomplain tlb_inc_base tlb_inc_view tlb_hist_pos tlb_hist_prefix
+    unset -nocomplain tlb_inc_base tlb_inc_view
+    unset -nocomplain tlb_hist_pos tlb_hist_prefix
     Search_AddHistory $tlb_find
+    set tlb_last_wid {}
     set tlb_find_focus 0
   }
 
@@ -1096,13 +1100,21 @@ proc SearchLeave {} {
 # The search highlighting is removed and the search text is deleted.
 #
 proc SearchAbort {} {
-  global tlb_find
+  global tlb_find tlb_last_wid
 
   Search_AddHistory $tlb_find
   set tlb_find {}
   SearchReset
   # note more clean-up is triggered via the focus-out event
   focus .f1.t
+
+  if {$tlb_last_wid ne ""} {
+    focus $tlb_last_wid
+    # raise the caller's window above the main window
+    if {[regsub {^(\.[^\.]*).*} $tlb_last_wid {\1} top_wid]} {
+      raise $top_wid .
+    }
+  }
 }
 
 
@@ -1113,7 +1125,7 @@ proc SearchAbort {} {
 # focus is switched to the main window.
 #
 proc SearchReturn {} {
-  global tlb_find tlb_hist tlb_last_dir
+  global tlb_find tlb_hist tlb_last_dir tlb_last_wid
   global tid_search_inc
 
   if {$tid_search_inc ne {}} {
@@ -1139,15 +1151,24 @@ proc SearchReturn {} {
       # incremental search not completed -> start regular search
       if {[SearchNext $tlb_last_dir] eq ""} {
         global tlb_inc_view tlb_inc_base
-        .f1.t xview moveto [lindex $tlb_inc_view 0]
-        .f1.t yview moveto [lindex $tlb_inc_view 1]
-        .f1.t mark set insert $tlb_inc_base
-        .f1.t see insert
+        if [info exists tlb_inc_base] {
+          .f1.t xview moveto [lindex $tlb_inc_view 0]
+          .f1.t yview moveto [lindex $tlb_inc_view 1]
+          .f1.t mark set insert $tlb_inc_base
+          .f1.t see insert
+        }
       }
     }
 
     # note this implicitly triggers the leave event
     focus .f1.t
+    if {$tlb_last_wid ne ""} {
+      focus $tlb_last_wid
+      # raise the caller's window above the main window
+      if {[regsub {^(\.[^\.]*).*} $tlb_last_wid {\1} top_wid]} {
+        raise $top_wid .
+      }
+    }
   }
 }
 
@@ -1171,8 +1192,7 @@ proc Search_AddHistory {txt} {
 
     # maintain max. stack depth
     if {[llength $tlb_hist] > $tlb_hist_maxlen} {
-      set off [expr [llength $tlb_hist] - $tlb_hist_maxlen - 1]
-      set tlb_hist [lreplace $tlb_hist 0 $off]
+      set tlb_hist [lrange $tlb_hist 0 [expr $tlb_hist_maxlen - 1]]
     }
 
     UpdateRcAfterIdle
@@ -1595,9 +1615,54 @@ proc ChangeFontSize {delta} {
 
   set new [DeriveFont $font_content $delta]
 
-  if {[catch {.f1.t configure -font $new}] == 0} {
-    set font_content $new
+  set cerr [ApplyFont $new]
+  if {$cerr ne ""} {
+    DisplayStatusLine font error "Failed to apply the new font: $cerr"
+  } else {
+    ClearStatusLine font
+  }
+}
+
+
+#
+# This function is called after a new fonct has been configured to apply
+# the new font in the main window, text highlight tags and dialog texts.
+# The function returns 1 on success and saves the font setting in the RC.
+#
+proc ApplyFont {name} {
+  global font_content
+
+  if {[catch {.f1.t configure -font $name} cerr] == 0} {
+    set cerr {}
+
+    # save to rc
+    set font_content $name
     UpdateRcAfterIdle
+
+    # apply font change to dialogs
+    catch {.dlg_mark.l configure -font $font_content}
+    catch {.dlg_hist.f1.l configure -font $font_content}
+    catch {.dlg_srch.f1.l configure -font $font_content}
+    catch {.dlg_tags.f1.l configure -font $font_content}
+
+    # update font in highlight tags (in case some contain font modifiers)
+    HighlightCreateTags
+    SearchList_CreateHighlightTags
+  }
+  return $cerr
+}
+
+
+#
+# This function is bound to ALT-w and toggles wrapping of long lines
+# in the main window.
+#
+proc ToggleLineWrap {} {
+  set cur [.f1.t cget -wrap]
+  if {$cur eq "none"} {
+    .f1.t configure -wrap char
+  } else {
+    .f1.t configure -wrap none
   }
 }
 
@@ -1606,14 +1671,14 @@ proc ChangeFontSize {delta} {
 # This function adjusts the view so that the line holding the cursor is
 # placed at the top, center or bottom of the viewable area, if possible.
 #
-proc YviewSet {where col} {
+proc YviewSet {wid where col} {
   global font_content
 
-  .f1.t see insert
-  set pos [.f1.t bbox insert]
+  $wid see insert
+  set pos [$wid bbox insert]
   if {[llength $pos] == 4} {
     set fh [font metrics $font_content -linespace]
-    set wh [winfo height .f1.t]
+    set wh [winfo height $wid]
 
     if {$where eq "top"} {
       set delta [expr int([lindex $pos 1] / $fh)]
@@ -1629,17 +1694,17 @@ proc YviewSet {where col} {
     }
 
     if {$delta > 0} {
-      .f1.t yview scroll $delta units
+      $wid yview scroll $delta units
     } elseif {$delta < 0} {
-      .f1.t yview scroll $delta units
+      $wid yview scroll $delta units
     }
 
     if {$col == 0} {
-      .f1.t xview moveto 0
-      .f1.t mark set insert [list insert linestart]
-      CursorMoveLine 0
+      $wid xview moveto 0
+      $wid mark set insert [list insert linestart]
+      CursorMoveLine $wid 0
     } else {
-      .f1.t see insert
+      $wid see insert
     }
   }
 }
@@ -1688,31 +1753,31 @@ proc YviewScrollHalf {wid dir} {
 #
 # This function moves the cursor into a given line in the current view.
 #
-proc CursorSetLine {where} {
+proc CursorSetLine {wid where} {
   global font_content
 
-  CursorPosStore
+  CursorPosStore $wid
 
   if {$where eq "top"} {
-    .f1.t mark set insert {@1,1}
+    $wid mark set insert {@1,1}
 
   } elseif {$where eq "center"} {
-    .f1.t mark set insert "@1,[expr int([winfo height .f1.t] / 2)]"
+    $wid mark set insert "@1,[expr int([winfo height $wid] / 2)]"
 
   } elseif {$where eq "bottom"} {
-    .f1.t mark set insert "@1,[winfo height .f1.t] linestart"
+    $wid mark set insert "@1,[winfo height $wid] linestart"
     # move cursor to the last fully visible line to avoid scrolling
     set fh [font metrics $font_content -linespace]
-    set pos_new [.f1.t bbox insert]
+    set pos_new [$wid bbox insert]
     if {([llength $pos_new] != 4) || ([lindex $pos_new 3] < $fh)} {
-      .f1.t mark set insert [list insert - 1 lines]
+      $wid mark set insert [list insert - 1 lines]
     }
 
   } else {
-    .f1.t mark set insert [list insert linestart]
+    $wid mark set insert [list insert linestart]
   }
   # place cursor on first non-blank character
-  CursorMoveLine 0
+  CursorMoveLine $wid 0
 }
 
 
@@ -1721,20 +1786,20 @@ proc CursorSetLine {where} {
 # the cursor on the first non-blank character in that line. The delta may
 # be zero (e.g. to just place the cursor onto the first non-blank)
 #
-proc CursorMoveLine {delta} {
+proc CursorMoveLine {wid delta} {
   if {$delta > 0} {
-    .f1.t mark set insert [list insert linestart + $delta lines]
+    $wid mark set insert [list insert linestart + $delta lines]
   } elseif {$delta < 0} {
-    .f1.t mark set insert [list insert linestart $delta lines]
+    $wid mark set insert [list insert linestart $delta lines]
   }
-  .f1.t xview moveto 0
+  $wid xview moveto 0
 
   # forward to the first non-blank character
   set dump [ExtractText insert [list insert lineend]]
   if {[regexp {^\s*} $dump word]} {
-    .f1.t mark set insert [list insert + [string length $word] chars]
+    $wid mark set insert [list insert + [string length $word] chars]
   }
-  .f1.t see insert
+  $wid see insert
 }
 
 
@@ -1813,14 +1878,14 @@ proc XviewSet {wid where} {
 #
 # This function moves the cursor into a given column in the current view.
 #
-proc CursorSetColumn {where} {
+proc CursorSetColumn {wid where} {
   if {$where eq "left"} {
-    .f1.t xview moveto 0
-    .f1.t mark set insert [list insert linestart]
+    $wid xview moveto 0
+    $wid mark set insert [list insert linestart]
 
   } elseif {$where eq "right"} {
-    .f1.t mark set insert [list insert lineend]
-    .f1.t see insert
+    $wid mark set insert [list insert lineend]
+    $wid see insert
   }
 }
 
@@ -1884,11 +1949,9 @@ proc CursorMoveWord {is_fwd spc_only to_end} {
 #
 proc ExtractText {pos1 pos2} {
   set dump {}
-  foreach {key val idx} [.f1.t dump -text -image $pos1 $pos2] {
+  foreach {key val idx} [.f1.t dump -text $pos1 $pos2] {
     if {$key eq "text"} {
       append dump $val
-    } elseif {$key eq "image"} {
-      append dump " "
     }
   }
   return $dump
@@ -1899,10 +1962,12 @@ proc ExtractText {pos1 pos2} {
 # This function stores the current cusor position and view before making
 # a "large jump", i.e. performing a search or goto command.
 #
-proc CursorPosStore {} {
+proc CursorPosStore {wid} {
   global last_jump_orig
 
-  set last_jump_orig [.f1.t index insert]
+  if {$wid eq ".f1.t"} {
+    set last_jump_orig [.f1.t index insert]
+  }
 }
 
 
@@ -1911,8 +1976,10 @@ proc CursorPosStore {} {
 # These bindings are evaluated by function KeyCmd, which receives all
 # "plain" key press events from the main window (i.e. non-control keys)
 #
-proc KeyCmdBind {char cmd} {
-  global key_hash
+proc KeyCmdBind {wid char cmd} {
+  set var_name "keys"
+  append var_name [regsub -all {\.} $wid "_"]
+  upvar #0 $var_name key_hash
 
   set key_hash($char) $cmd
 }
@@ -1924,8 +1991,12 @@ proc KeyCmdBind {char cmd} {
 # complex key sequences, but also has to handle single key bindings for
 # keys which can be part of sequences (e.g. "b" due to "zb")
 #
-proc KeyCmd {char} {
-  global key_hash last_key_char last_jump_orig
+proc KeyCmd {wid char} {
+  global last_key_char last_jump_orig
+
+  set var_name "keys"
+  append var_name [regsub -all {\.} $wid "_"]
+  upvar #0 $var_name key_hash
 
   set result 0
   if {$char ne ""} {
@@ -1934,17 +2005,17 @@ proc KeyCmd {char} {
       ClearStatusLine keycmd
       if {$char eq "'"} {
         set tmp $last_jump_orig
-        CursorPosStore
-        .f1.t mark set insert $tmp
-        .f1.t see insert
+        CursorPosStore .f1.t
+        $wid mark set insert $tmp
+        $wid see insert
       } elseif {$char eq "^"} {
-        CursorPosStore
-        .f1.t mark set insert 1.0
-        CursorMoveLine 0
+        CursorPosStore .f1.t
+        $wid mark set insert 1.0
+        CursorMoveLine $wid 0
       } elseif {$char eq "$"} {
-        CursorPosStore
-        .f1.t mark set insert "end -1 lines linestart"
-        CursorMoveLine 0
+        CursorPosStore .f1.t
+        $wid mark set insert "end -1 lines linestart"
+        CursorMoveLine $wid 0
       } elseif {$char eq "+"} {
         Mark_JumpNext 1
       } elseif {$char eq "-"} {
@@ -2005,6 +2076,61 @@ proc KeyCmd {char} {
 proc KeyClr {} {
   global last_key_char
   set last_key_char {}
+}
+
+
+#
+# This function adds key bindings for scrolling vertically
+# to the given text widget.
+#
+proc KeyBinding_UpDown {wid} {
+  bind $wid <Control-Up> {YviewScroll %W -1; KeyClr; break}
+  bind $wid <Control-Down> {YviewScroll %W 1; KeyClr; break}
+  bind $wid <Control-f> {event generate %W <Key-Next>; KeyClr; break}
+  bind $wid <Control-b> {event generate %W <Key-Prior>; KeyClr; break}
+  bind $wid <Control-e> {YviewScroll %W 1; KeyClr; break}
+  bind $wid <Control-y> {YviewScroll %W -1; KeyClr; break}
+  bind $wid <Control-d> {YviewScrollHalf %W 1; KeyClr; break}
+  bind $wid <Control-u> {YviewScrollHalf %W -1; KeyClr; break}
+
+  KeyCmdBind $wid "z-" [list YviewSet $wid bottom 0]
+  KeyCmdBind $wid "zb" [list YviewSet $wid bottom 1]
+  KeyCmdBind $wid "z." [list YviewSet $wid center 0]
+  KeyCmdBind $wid "zz" [list YviewSet $wid center 1]
+  KeyCmdBind $wid "zReturn" [list YviewSet $wid top 0]
+  KeyCmdBind $wid "zt" [list YviewSet $wid top 1]
+
+  KeyCmdBind $wid "+" [list CursorMoveLine $wid 1]
+  KeyCmdBind $wid "-" [list CursorMoveLine $wid -1]
+  KeyCmdBind $wid "k" [list event generate $wid <Up>]
+  KeyCmdBind $wid "j" [list event generate $wid <Down>]
+  KeyCmdBind $wid "H" [list CursorSetLine $wid top]
+  KeyCmdBind $wid "M" [list CursorSetLine $wid center]
+  KeyCmdBind $wid "L" [list CursorSetLine $wid bottom]
+
+  KeyCmdBind $wid "G" "CursorPosStore $wid; $wid mark set insert {end -1 lines linestart}; CursorMoveLine $wid 0"
+  KeyCmdBind $wid "gg" "CursorPosStore $wid; $wid mark set insert 1.0; CursorMoveLine $wid 0"
+}
+
+
+#
+# This function adds key bindings for scrolling horizontally
+# to the given text widget.
+#
+proc KeyBinding_LeftRight {wid} {
+  bind $wid <Control-Left> {XviewScroll %W scroll 1 -1; KeyClr; break}
+  bind $wid <Control-Right> {XviewScroll %W scroll 1 1; KeyClr; break}
+
+  KeyCmdBind $wid "zl" [list XviewScroll $wid scroll 1 1]
+  KeyCmdBind $wid "zh" [list XviewScroll $wid scroll 1 -1]
+  KeyCmdBind $wid "zL" [list XviewScrollHalf $wid 1]
+  KeyCmdBind $wid "zH" [list XviewScrollHalf $wid -1]
+  KeyCmdBind $wid "zs" [list XviewSet $wid left]
+  KeyCmdBind $wid "ze" [list XviewSet $wid right]
+
+  KeyCmdBind $wid "0" [list CursorSetColumn $wid left]
+  KeyCmdBind $wid "^" [list CursorSetColumn $wid left; CursorMoveLine $wid 0]
+  KeyCmdBind $wid "$" [list CursorSetColumn $wid right]
 }
 
 
@@ -2106,7 +2232,7 @@ proc KeyCmd_ExecGoto {} {
   # check if the content is a valid line number
   set foo 0
   if {[catch {incr foo $keycmd_ent}] == 0} {
-    CursorPosStore
+    CursorPosStore .f1.t
 
     # note: line range check not required, text widget does not complain
     if {$keycmd_ent >= 0} {
@@ -2114,7 +2240,7 @@ proc KeyCmd_ExecGoto {} {
     } else {
       set keycmd_ent [expr 1 - $keycmd_ent]
       catch {.f1.t mark set insert "end - $keycmd_ent lines linestart"}
-      CursorMoveLine 0
+      CursorMoveLine .f1.t 0
     }
     .f1.t see insert
     KeyCmd_Leave
@@ -2315,6 +2441,8 @@ proc Mark_ToggleAtInsert {} {
 proc Mark_Line {line} {
   global tlb_last_hall
 
+  CursorPosStore .f1.t
+
   # move the cursor into the specified line
   .f1.t mark set insert "$line.0"
   .f1.t see insert
@@ -2355,7 +2483,7 @@ proc Mark_JumpNext {is_fwd} {
       }
     }
     if {[info exists goto]} {
-      CursorPosStore
+      CursorPosStore .f1.t
       .f1.t mark set insert "${goto}.0"
       .f1.t see insert
       .f2.e xview moveto 0
@@ -2887,7 +3015,8 @@ proc MarkList_OpenDialog {} {
 
     text .dlg_mark.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
                      -foreground $col_fg_content -background $col_bg_content \
-                     -exportselection 0 -insertofftime 0 -yscrollcommand {.dlg_mark.sb set}
+                     -exportselection 0 -insertofftime 0 -yscrollcommand {.dlg_mark.sb set} \
+                     -insertwidth [expr 2 * [font measure $font_content " "]]
     pack .dlg_mark.l -side left -fill both -expand 1
     scrollbar .dlg_mark.sb -orient vertical -command {.dlg_mark.l yview} -takefocus 0
     pack .dlg_mark.sb -side left -fill y
@@ -2899,7 +3028,7 @@ proc MarkList_OpenDialog {} {
       set tagnam [lindex $w 4]
       eval [linsert [HighlightConfigure $w] 0 .dlg_mark.l tag configure $tagnam]
     }
-    .dlg_mark.l tag configure sel -bgstipple gray50 -foreground {}
+    .dlg_mark.l tag configure sel -bgstipple gray75 -foreground {}
     .dlg_mark.l tag lower sel
 
     menu .dlg_mark.ctxmen -tearoff 0
@@ -2922,6 +3051,7 @@ proc MarkList_OpenDialog {} {
   } else {
     wm deiconify .dlg_mark
     raise .dlg_mark
+    focus .dlg_mark.l
   }
   ResumeBgTasks
 }
@@ -3078,6 +3208,7 @@ proc SearchHistory_Open {} {
   } else {
     wm deiconify .dlg_hist
     raise .dlg_hist
+    focus .dlg_hist.f1.l
   }
   ResumeBgTasks
 }
@@ -3291,10 +3422,11 @@ proc SearchHistory_GetLen {} {
 # matching one or more search expressions.  The user can also freely add or
 # remove lines from the list.
 #
-proc SearchList_Open {} {
+proc SearchList_Open {{no_raise 0}} {
   global font_content col_bg_content col_fg_content cur_filename
-  global dlg_srch_shown dlg_srch_geom dlg_srch_sel dlg_srch_lines
+  global dlg_srch_shown dlg_srch_geom dlg_srch_sel dlg_srch_lines dlg_srch_fns
   global dlg_srch_highlight dlg_srch_show_fn dlg_srch_fn_delta dlg_srch_fn_root
+  global dlg_srch_undo dlg_srch_redo
 
   PreemptBgTasks
   if {![info exists dlg_srch_shown]} {
@@ -3317,7 +3449,10 @@ proc SearchList_Open {} {
     .dlg_srch.menubar.ctrl add separator
     .dlg_srch.menubar.ctrl add command -label "Clear all" -command SearchList_Clear
     .dlg_srch.menubar.ctrl add command -label "Close" -command {destroy .dlg_srch}
-    menu .dlg_srch.menubar.edit -tearoff 0 -postcommand MenuPosted
+    menu .dlg_srch.menubar.edit -tearoff 0 -postcommand SearchList_MenuPosted
+    .dlg_srch.menubar.edit add command -label "Undo" -command SearchList_Undo
+    .dlg_srch.menubar.edit add command -label "Redo" -command SearchList_Redo
+    .dlg_srch.menubar.edit add separator
     .dlg_srch.menubar.edit add command -label "Add main window search matches" -command SearchList_AddMatches
     .dlg_srch.menubar.edit add command -label "Remove main window search matches" -command SearchList_RemoveMatches
     .dlg_srch.menubar.edit add separator
@@ -3332,7 +3467,9 @@ proc SearchList_Open {} {
     frame .dlg_srch.f1
     text .dlg_srch.f1.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
                         -foreground $col_fg_content -background $col_bg_content \
-                        -exportselection 0 -insertofftime 0 -yscrollcommand {.dlg_srch.f1.sb set}
+                        -exportselection 0 -insertofftime 0 \
+                        -insertwidth [expr 2 * [font measure $font_content " "]] \
+                        -yscrollcommand {.dlg_srch.f1.sb set}
     pack .dlg_srch.f1.l -side left -fill both -expand 1
     scrollbar .dlg_srch.f1.sb -orient vertical -command {.dlg_srch.f1.l yview} -takefocus 0
     pack .dlg_srch.f1.sb -side left -fill y
@@ -3343,9 +3480,16 @@ proc SearchList_Open {} {
     bindtags .dlg_srch.f1.l {.dlg_srch.f1.l TextSel . all}
     bind .dlg_srch.f1.l <ButtonRelease-3> {SearchList_ContextMenu %x %y; break}
     bind .dlg_srch.f1.l <Delete> {SearchList_RemoveSelection; break}
-    bind .dlg_srch.f1.l <Key-n> {SearchNext 1; break}
-    bind .dlg_srch.f1.l <Key-N> {SearchNext 0; break}
-    bind .dlg_srch.f1.l <Key-ampersand> {SearchHighlightClear; break}
+    bind .dlg_srch.f1.l <Control-plus> {ChangeFontSize 1; KeyClr}
+    bind .dlg_srch.f1.l <Control-minus> {ChangeFontSize -1; KeyClr}
+    KeyCmdBind .dlg_srch.f1.l "/" {SearchEnter 1 .dlg_srch.f1.l}
+    KeyCmdBind .dlg_srch.f1.l "?" {SearchEnter 0 .dlg_srch.f1.l}
+    KeyCmdBind .dlg_srch.f1.l "n" {Search_list_SearchNext 1}
+    KeyCmdBind .dlg_srch.f1.l "N" {Search_list_SearchNext 0}
+    KeyCmdBind .dlg_srch.f1.l "&" {SearchHighlightClear}
+    KeyCmdBind .dlg_srch.f1.l "Return" {CursorMoveLine .dlg_srch.f1.l 1}
+    KeyCmdBind .dlg_srch.f1.l "u" SearchList_Undo
+    bind .dlg_srch.f1.l <Control-Key-r> SearchList_Redo
     bind .dlg_srch.f1.l <Alt-Key-h> {set dlg_srch_highlight [expr !$dlg_srch_highlight]; SearchList_ToggleHighlight; break}
     bind .dlg_srch.f1.l <Alt-Key-f> {set dlg_srch_show_fn [expr !$dlg_srch_show_fn]; SearchList_ToggleTickNo; break}
     bind .dlg_srch.f1.l <Alt-Key-d> {set dlg_srch_fn_delta [expr !$dlg_srch_fn_delta]; SearchList_ToggleTickNo; break}
@@ -3359,17 +3503,18 @@ proc SearchList_Open {} {
     wm geometry .dlg_srch $dlg_srch_geom
     wm positionfrom .dlg_srch user
 
-    set dlg_srch_lines {}
+    # reset options to default values
     set dlg_srch_show_fn 0
     set dlg_srch_fn_delta 0
-    set dlg_srch_fn_root 0
     set dlg_srch_highlight 0
 
-    SearchList_ResetContent
+    SearchList_Init
+    SearchList_CreateHighlightTags
 
-  } else {
+  } elseif {!$no_raise} {
     wm deiconify .dlg_srch
     raise .dlg_srch
+    focus .dlg_srch.f1.l
   }
   ResumeBgTasks
 }
@@ -3380,11 +3525,81 @@ proc SearchList_Open {} {
 # The function stops background processes and releases all dialog resources.
 #
 proc SearchList_Close {} {
-  global dlg_srch_sel dlg_srch_lines dlg_srch_shown
+  global dlg_srch_sel dlg_srch_lines dlg_srch_fns dlg_srch_shown
 
   SearchList_SearchAbort
 
   unset -nocomplain dlg_srch_sel dlg_srch_lines dlg_srch_shown
+  unset -nocomplain dlg_srch_undo dlg_srch_redo
+  array unset dlg_srch_fns
+}
+
+
+#
+# This function removes all content in the search list.
+#
+proc SearchList_Clear {} {
+  global dlg_srch_shown dlg_srch_lines dlg_srch_sel
+  global dlg_srch_undo dlg_srch_redo
+
+  if [info exists dlg_srch_shown] {
+    SearchList_SearchAbort
+
+    if {[llength $dlg_srch_lines] > 0} {
+      lappend dlg_srch_undo [list -1 $dlg_srch_lines]
+      set dlg_srch_redo {}
+    }
+    set dlg_srch_lines {}
+    .dlg_srch.f1.l delete 1.0 end
+
+    TextSel_SetSelection dlg_srch_sel {}
+  }
+}
+
+
+#
+# This function clears the content and resets the dialog state variables.
+# The function is used when the window is newly opened or a new file is loaded.
+#
+proc SearchList_Init {} {
+  global dlg_srch_shown dlg_srch_lines dlg_srch_fns dlg_srch_fn_root
+  global dlg_srch_undo dlg_srch_redo
+
+  if [info exists dlg_srch_shown] {
+    set dlg_srch_lines {}
+    set dlg_srch_undo {}
+    set dlg_srch_redo {}
+    set dlg_srch_fn_root 0
+    array unset dlg_srch_fns
+
+    SearchList_Clear
+  }
+}
+
+
+#
+# This function is called when the "edit" menu in the search list dialog is opened.
+#
+proc SearchList_MenuPosted {} {
+  global dlg_srch_undo dlg_srch_redo
+
+  if {[llength $dlg_srch_undo] > 0} {
+    .dlg_srch.menubar.edit entryconfigure "Undo*" -state normal
+    set cmd [lindex $dlg_srch_undo end]
+    if {[lindex $cmd] > 0} { set op "addition" } else { set op "removal" }
+    .dlg_srch.menubar.edit entryconfigure "Undo*" -label "Undo ($op of [llength [lindex $cmd 1]] lines)"
+  } else {
+    .dlg_srch.menubar.edit entryconfigure "Undo*" -state disabled -label "Undo"
+  }
+  if {[llength $dlg_srch_redo] > 0} {
+    .dlg_srch.menubar.edit entryconfigure "Redo*" -state normal
+    set cmd [lindex $dlg_srch_redo end]
+    if {[lindex $cmd] > 0} { set op "addition" } else { set op "removal" }
+    .dlg_srch.menubar.edit entryconfigure "Redo*" -label "Redo ($op of [llength [lindex $cmd 1]] lines)"
+  } else {
+    .dlg_srch.menubar.edit entryconfigure "Redo*" -state disabled -label "Redo"
+  }
+  MenuPosted
 }
 
 
@@ -3452,28 +3667,53 @@ proc SearchList_ContextMenu {xcoo ycoo} {
 #
 proc SearchList_RemoveSelection {} {
   global dlg_srch_sel dlg_srch_lines
+  global dlg_srch_undo dlg_srch_redo
 
   set sel [TextSel_GetSelection dlg_srch_sel]
   set sel [lsort -integer -decreasing -uniq $sel]
+  set line_list {}
   foreach idx $sel {
-    set line "[expr $idx + 1].0"
+    lappend line_list [lindex $dlg_srch_lines $idx]
     set dlg_srch_lines [lreplace $dlg_srch_lines $idx $idx]
-    .dlg_srch.f1.l delete $line [list $line + 1 lines]
+    set line "[expr $idx + 1].0"
+    .dlg_srch.f1.l delete $line "$line +1 lines"
   }
   TextSel_SetSelection dlg_srch_sel {}
+
+  if {[llength $line_list] > 0} {
+    lappend dlg_srch_undo [list -1 $line_list]
+    set dlg_srch_redo {}
+  }
 }
 
 
 #
-# This function removes all content in the search list.
+# This function is bound to "n", "N" in the search filter dialog. The function
+# starts a regular search in the main window, but repeats until a matching
+# line is found which is also listed in the filter dialog.
 #
-proc SearchList_Clear {} {
-  global dlg_srch_shown dlg_srch_lines
+proc Search_list_SearchNext {is_fwd} {
+  global dlg_srch_sel dlg_srch_lines
 
-  if [info exists dlg_srch_shown] {
-    SearchList_SearchAbort
-    set dlg_srch_lines {}
-    .dlg_srch.f1.l delete 1.0 end
+  if $is_fwd {
+    .f1.t mark set insert "insert lineend"
+  } else {
+    .f1.t mark set insert "insert linestart"
+  }
+
+  while 1 {
+    set found [SearchNext $is_fwd]
+    if {$found ne ""} {
+      # check if the found line is also listed in the search list
+      scan $found "%d" line
+      set idx [SearchList_GetLineIdx $line]
+      if {[lindex $dlg_srch_lines $idx] == $line} {
+        TextSel_SetSelection dlg_srch_sel $idx
+        break
+      }
+    } else {
+      break
+    }
   }
 }
 
@@ -3516,6 +3756,74 @@ proc SearchList_ToggleHighlight {} {
   } else {
     # search highlighting was enabled: remove highlight tag in the search list dialog
     .dlg_srch.f1.l tag remove find 1.0 end
+  }
+}
+
+
+#
+# This helper function performs a command for "undo" and "redo"
+#
+proc SearchList_InvertCmd {op line_list mode} {
+  global dlg_srch_lines dlg_srch_sel
+
+  if {$op * $mode < 0} {
+    # undo insertion, i.e. delete lines again
+    foreach line $line_list {
+      set idx [SearchList_GetLineIdx $line]
+      if {[lindex $dlg_srch_lines $idx] == $line} {
+        set dlg_srch_lines [lreplace $dlg_srch_lines $idx $idx]
+        set pos "[expr $idx + 1].0"
+        .dlg_srch.f1.l delete $pos "$pos +1 lines"
+      }
+    }
+
+  } elseif {$op * $mode > 0} {
+    # re-insert previously removed lines
+    foreach line $line_list {
+      set idx [SearchList_GetLineIdx $line]
+      if {[lindex $dlg_srch_lines $idx] != $line} {
+        set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
+        set pos "[expr $idx + 1].0"
+        SearchList_InsertLine $line $pos
+      }
+    }
+  }
+  if [info exists pos] {
+    .dlg_srch.f1.l see $pos
+  }
+  TextSel_SetSelection dlg_srch_sel {}
+}
+
+
+#
+# This function is bound to the "Undo" menu command any keyboard shortcut.
+# This reverts the last modification of the line list (i.e. last removal or
+# addition, either via search or manually.)
+#
+proc SearchList_Undo {} {
+  global dlg_srch_undo dlg_srch_redo
+
+  if {[llength $dlg_srch_undo] > 0} {
+    set cmd [lindex $dlg_srch_undo end]
+    set dlg_srch_undo [lrange $dlg_srch_undo 0 end-1]
+    SearchList_InvertCmd [lindex $cmd 0] [lindex $cmd 1] -1
+    lappend dlg_srch_redo $cmd
+  }
+}
+
+
+#
+# This function is bound to the "Redo" menu command any keyboard shortcut.
+# This reverts the last "undo", if any.
+#
+proc SearchList_Redo {} {
+  global dlg_srch_undo dlg_srch_redo
+
+  if {[llength $dlg_srch_redo] > 0} {
+    set cmd [lindex $dlg_srch_redo end]
+    set dlg_srch_redo [lrange $dlg_srch_redo 0 end-1]
+    SearchList_InvertCmd [lindex $cmd 0] [lindex $cmd 1] 1
+    lappend dlg_srch_undo $cmd
   }
 }
 
@@ -3567,7 +3875,7 @@ proc SearchList_GetLineIdx {ins_line} {
   if {$end > 0} {
     set idx [expr $end >> 1]
     incr end -1
-    while {1} {
+    while 1 {
       set el [lindex $dlg_srch_lines $idx]
       if {$el < $ins_line} {
         set min $idx
@@ -3624,6 +3932,7 @@ proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx} {
     scan [.f1.t index end] "%d" max_line
     set start_t [clock clicks -milliseconds]
     set pat [lindex $pat_list $pat_idx]
+    set line_list {}
 
     while {($line < $max_line) &&
            ([set pos [eval .f1.t search $opt -- {$pat} "$line.0" end]] ne "")} {
@@ -3632,11 +3941,13 @@ proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx} {
       set idx [SearchList_GetLineIdx $line]
       if $do_add {
         if {[lindex $dlg_srch_lines $idx] != $line} {
+          lappend line_list $line
           set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
           SearchList_InsertLine $line "[expr $idx + 1].0"
         }
       } else {
         if {[lindex $dlg_srch_lines $idx] == $line} {
+          lappend line_list $line
           set dlg_srch_lines [lreplace $dlg_srch_lines $idx $idx]
           .dlg_srch.f1.l delete "[expr $idx + 1].0" "[expr $idx + 2].0"
         }
@@ -3647,6 +3958,11 @@ proc SearchList_BgSearchLoop {pat_list opt do_add line pat_idx} {
       if {([clock clicks -milliseconds] >= $start_t + 100) && ($line < $max_line)} {
         break
       }
+    }
+
+    if {[llength $line_list] > 0} {
+      global dlg_srch_undo
+      lappend dlg_srch_undo [list [expr $do_add ? 1:-1] $line_list]
     }
 
     if {($line < $max_line) && ($pos ne "")} {
@@ -3786,6 +4102,7 @@ proc SearchList_SearchAbort {} {
 #
 proc SearchList_AddMainSelection {} {
   global dlg_srch_shown dlg_srch_lines
+  global dlg_srch_undo dlg_srch_redo
 
   if [info exists dlg_srch_shown] {
     set pos12 {1.0 1.0}
@@ -3794,14 +4111,21 @@ proc SearchList_AddMainSelection {} {
       scan [lindex $pos12 1] "%d.%d" line_2 char
       if {$char == 0} {incr line_2 -1}
 
+      set line_list {}
       for {set line $line_1} {$line <= $line_2} {incr line} {
         set idx [SearchList_GetLineIdx $line]
         if {[lindex $dlg_srch_lines $idx] != $line} {
           set dlg_srch_lines [linsert $dlg_srch_lines $idx $line]
           set pos "[expr $idx + 1].0"
           SearchList_InsertLine $line $pos
+          lappend line_list $line
         }
         .dlg_srch.f1.l see $pos
+      }
+
+      if {[llength $line_list] > 0} {
+        lappend dlg_srch_undo [list 1 $line_list]
+        set dlg_srch_redo {}
       }
     }
   }
@@ -3815,6 +4139,7 @@ proc SearchList_AddMainSelection {} {
 #
 proc SearchList_CopyCurrentLine {} {
   global dlg_srch_shown dlg_srch_lines
+  global dlg_srch_undo dlg_srch_redo
 
   if [info exists dlg_srch_shown] {
     set pos12 [.f1.t tag nextrange sel 1.0]
@@ -3830,6 +4155,9 @@ proc SearchList_CopyCurrentLine {} {
         set pos "[expr $idx + 1].0"
         SearchList_InsertLine $line $pos
         .dlg_srch.f1.l see $pos
+
+        lappend dlg_srch_undo [list 1 $line]
+        set dlg_srch_redo {}
       }
     }
   }
@@ -3840,24 +4168,26 @@ proc SearchList_CopyCurrentLine {} {
 # This function clears the contents of the list and creates the tags.
 # This is used for initialisation and to prepare for a re-fill.
 #
-proc SearchList_ResetContent {} {
-  global patlist fmt_find dlg_srch_sel
+proc SearchList_CreateHighlightTags {} {
+  global patlist fmt_find dlg_srch_sel dlg_srch_shown
 
-  # remove content & selection
-  .dlg_srch.f1.l delete 1.0 end
+  if [info exists dlg_srch_shown] {
+    # create highlight tags
+    foreach w $patlist {
+      eval [linsert [HighlightConfigure $w] 0 .dlg_srch.f1.l tag configure [lindex $w 4]]
+    }
 
-  TextSel_SetSelection dlg_srch_sel {}
+    # create text tag for search highlights
+    eval [linsert [HighlightConfigure $fmt_find] 0 .dlg_srch.f1.l tag configure find]
+    .dlg_srch.f1.l tag raise find
 
-  # create highlight tags
-  foreach w $patlist {
-    eval [linsert [HighlightConfigure $w] 0 .dlg_srch.f1.l tag configure [lindex $w 4]]
+    # raise sel above highlight tag, but below find
+    .dlg_srch.f1.l tag configure sel -bgstipple gray75 -foreground {}
+    .dlg_srch.f1.l tag lower sel
+
+    # create tag to invisibly mark prefixes (used to exclude the text from search and mark-up)
+    .dlg_srch.f1.l tag configure prefix
   }
-
-  # create text tag for search highlights
-  eval [linsert [HighlightConfigure $fmt_find] 0 .dlg_srch.f1.l tag configure find]
-  .dlg_srch.f1.l tag raise find
-  # create tag to invisibly mark prefixes (used to exclude the text from search and mark-up)
-  .dlg_srch.f1.l tag configure prefix
 }
 
 
@@ -3897,15 +4227,21 @@ proc SearchList_HighlightClear {} {
 # main window's text line becomes visible.
 #
 proc SearchList_MatchView {line} {
-  global dlg_srch_shown dlg_srch_lines
+  global dlg_srch_shown dlg_srch_lines dlg_srch_sel
 
   if [info exists dlg_srch_shown] {
     set idx [SearchList_GetLineIdx $line]
     if {$idx < [llength $dlg_srch_lines]} {
       .dlg_srch.f1.l see "$idx.0"
       .dlg_srch.f1.l see "[expr $idx + 1].0"
+      .dlg_srch.f1.l mark set insert "[expr $idx + 1].0"
+
+      if {[lindex $dlg_srch_lines $idx] == $line} {
+        TextSel_SetSelection dlg_srch_sel $idx 0
+      }
     } else {
       .dlg_srch.f1.l see end
+      .dlg_srch.f1.l mark set insert end
     }
   }
 }
@@ -3915,7 +4251,7 @@ proc SearchList_MatchView {line} {
 # This functions copies a line from the main text into the search list.
 #
 proc SearchList_InsertLine {txt_line ins_pos} {
-  global dlg_srch_show_fn dlg_srch_fn_delta dlg_srch_fn_root
+  global dlg_srch_fns dlg_srch_show_fn dlg_srch_fn_delta dlg_srch_fn_root
   global tick_str_prefix
 
   # copy text content and tags out of the main window
@@ -3924,19 +4260,24 @@ proc SearchList_InsertLine {txt_line ins_pos} {
   set tag_list [lsearch -all -inline -glob [.f1.t tag names $txt_line] "tag*"]
 
   if {$dlg_srch_fn_delta || $dlg_srch_show_fn} {
-    set fn [ParseFrameTickNo $txt_line]
+    if [info exists dlg_srch_fns($txt_line)] {
+      set fn $dlg_srch_fns($txt_line)
+    } else {
+      set fn [ParseFrameTickNo $txt_line]
+      set dlg_srch_fns($txt_line) $fn
+    }
     if {[catch {expr $fn + 0}]} {
-      #set fn 0
+      set fn 0
     }
     if {$dlg_srch_fn_delta && $dlg_srch_show_fn} {
-      set prefix "  $tick_str_prefix$fn:[expr $fn-$dlg_srch_fn_root] "
+      set prefix "   $tick_str_prefix$fn:[expr $fn-$dlg_srch_fn_root] "
     } elseif $dlg_srch_show_fn {
-      set prefix "  $tick_str_prefix$fn "
+      set prefix "   $tick_str_prefix$fn "
     } elseif $dlg_srch_fn_delta {
-      set prefix "  $tick_str_prefix[expr $fn-$dlg_srch_fn_root] "
+      set prefix "   $tick_str_prefix[expr $fn-$dlg_srch_fn_root] "
     }
   } else {
-    set prefix "  "
+    set prefix "   "
   }
   .dlg_srch.f1.l insert $ins_pos $prefix prefix "$dump\n" $tag_list
 }
@@ -3949,7 +4290,10 @@ proc SearchList_InsertLine {txt_line ins_pos} {
 proc SearchList_Fill {} {
   global dlg_srch_lines
 
-  SearchList_ResetContent
+  # remove content & selection
+  .dlg_srch.f1.l delete 1.0 end
+
+  TextSel_SetSelection dlg_srch_sel {}
 
   foreach txt_line $dlg_srch_lines {
     SearchList_InsertLine $txt_line end 
@@ -4028,11 +4372,12 @@ proc SearchList_SaveFile {filename line_no} {
       close $file
 
     } cerr] != 0} {
-      tk_messageBox -icon error -type ok -parent . \
+      tk_messageBox -icon error -type ok -parent .dlg_srch \
                     -message "Error while into \"$filename\": $cerr"
     }
   } else {
-    tk_messageBox -icon error -type ok -parent . -message "Failed to create output file: $cerr"
+    tk_messageBox -icon error -type ok -parent .dlg_srch \
+                  -message "Failed to create output file: $cerr"
   }
 }
 
@@ -4045,10 +4390,11 @@ proc SearchList_SaveFile {filename line_no} {
 proc SearchList_SaveFileAs {line_no} {
   global dlg_srch_lines
 
+  PreemptBgTasks
   if {[llength $dlg_srch_lines] > 0} {
     set def_name ""
 
-    set filename [tk_getSaveFile -parent . -filetypes {{all {*.*}} {Text {*.txt}}} \
+    set filename [tk_getSaveFile -parent .dlg_srch -filetypes {{all {*.*}} {Text {*.txt}}} \
                                  -title "Select output file" \
                                  -initialfile [file tail $def_name] \
                                  -initialdir [file dirname $def_name]]
@@ -4056,8 +4402,10 @@ proc SearchList_SaveFileAs {line_no} {
       SearchList_SaveFile $filename $line_no
     }
   } else {
-    tk_messageBox -icon info -type ok -parent . -message "The search results list is empty."
+    tk_messageBox -icon info -type ok -parent .dlg_srch \
+                  -message "The search results list is empty."
   }
+  ResumeBgTasks
 }
 
 # ----------------------------------------------------------------------------
@@ -4078,7 +4426,8 @@ proc TagList_OpenDialog {} {
     frame .dlg_tags.f1
     text .dlg_tags.f1.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
                         -foreground $col_fg_content -background $col_bg_content \
-                        -exportselection 0 -insertofftime 0 -yscrollcommand {.dlg_tags.f1.sb set}
+                        -exportselection 0 -insertofftime 0 -yscrollcommand {.dlg_tags.f1.sb set} \
+                        -insertwidth [expr 2 * [font measure $font_content " "]]
     pack .dlg_tags.f1.l -side left -fill both -expand 1
     scrollbar .dlg_tags.f1.sb -orient vertical -command {.dlg_tags.f1.l yview} -takefocus 0
     pack .dlg_tags.f1.sb -side left -fill y
@@ -4269,7 +4618,7 @@ proc Tags_Search {is_fwd} {
     }
   }
   if {$min_line > 0} {
-    CursorPosStore
+    CursorPosStore .f1.t
     Mark_Line $min_line
   } else {
     if $is_fwd {
@@ -4399,7 +4748,7 @@ proc TagList_Fill {} {
     }
 
     # configure appearance of selected rows
-    .dlg_tags.f1.l tag configure sel -bgstipple gray50 -foreground {}
+    .dlg_tags.f1.l tag configure sel -bgstipple gray75 -foreground {}
     .dlg_tags.f1.l tag lower sel
   }
 }
@@ -4695,6 +5044,7 @@ proc FontList_OpenDialog {} {
   } else {
     wm deiconify .dlg_font
     raise .dlg_font
+    focus .dlg_font.f1.fams
   }
   ResumeBgTasks
 }
@@ -4765,17 +5115,15 @@ proc FontList_Quit {do_store} {
       if $dlg_font_bold {
         lappend name bold
       }
-      if {[catch {.f1.t configure -font $name} cerr] != 0} {
-        tk_messageBox -type ok -icon error -parent .dlg_font -message "Selected font is unavailable: $cerr"
-        return
+
+      set cerr [ApplyFont $name]
+      if {$cerr ne ""} {
+        tk_messageBox -type ok -icon error -parent .dlg_font \
+                      -message "Selected font is unavailable: $cerr"
       }
-
-      # save to rc
-      set font_content $name
-      UpdateRcAfterIdle
-
     } else {
-      tk_messageBox -type ok -icon error -parent .dlg_font -message "No font is selected - Use \"Abort\" to leave without selection"
+      tk_messageBox -type ok -icon error -parent .dlg_font \
+                    -message "No font is selected - Use \"Abort\" to leave without changes."
       return
     }
   }
@@ -4810,14 +5158,15 @@ proc Markup_OpenDialog {pat_idx} {
     text .dlg_fmt.sample -height 5 -width 35 -font $font_content -wrap none \
                          -foreground $col_fg_content -background $col_bg_content \
                          -relief sunken -borderwidth 1 -takefocus 0 -highlightthickness 0 \
-                         -exportselection 0 -insertofftime 0
+                         -exportselection 0 -insertofftime 0 \
+                         -insertwidth [expr 2 * [font measure $font_content " "]]
     pack .dlg_fmt.sample -side top -padx 5 -pady 6
     bindtags .dlg_fmt.sample {.dlg_fmt.sample TextReadOnly .dlg_fmt all}
 
     set lh [font metrics $font_content -linespace]
     .dlg_fmt.sample tag configure spacing -spacing1 $lh
     .dlg_fmt.sample tag configure margin -lmargin1 17
-    .dlg_fmt.sample tag configure sel -bgstipple gray50
+    .dlg_fmt.sample tag configure sel -bgstipple gray75
     .dlg_fmt.sample tag lower sel
     .dlg_fmt.sample tag configure sample
     .dlg_fmt.sample insert 1.0 "Text line above\n" {margin spacing} \
@@ -5468,7 +5817,7 @@ proc OpenAboutDialog {} {
     label .about.name -text "Trace Browser"
     pack .about.name -side top -pady 8
 
-    label .about.copyr1 -text "Copyright (C) 2007 Tom Zoerner" -font $font_normal
+    label .about.copyr1 -text "Copyright (C) 2007, 2008 Tom Zoerner" -font $font_normal
     pack .about.copyr1 -side top
 
     message .about.m -font $font_normal -text {
@@ -5492,6 +5841,7 @@ You should have received a copy of the GNU General Public License along with thi
   } else {
     wm deiconify .about
     raise .about
+    focus .about.dismiss 
   }
   ResumeBgTasks
 }
@@ -5543,16 +5893,11 @@ proc TextSel_Init {wid var cb_proc len_proc mode} {
   bind $wid <Key-Home> "TextSel_KeyHomeEnd $var 0 0; break"
   bind $wid <Key-End> "TextSel_KeyHomeEnd $var 1 0; break"
 
-  bind $wid <Control-Up> {YviewScroll %W -1; KeyClr; break}
-  bind $wid <Control-Down> {YviewScroll %W 1; KeyClr; break}
-  bind $wid <Control-e> {YviewScroll %W 1; KeyClr; break}
-  bind $wid <Control-y> {YviewScroll %W -1; KeyClr; break}
-  bind $wid <Control-d> {YviewScrollHalf %W 1; KeyClr; break}
-  bind $wid <Control-u> {YviewScrollHalf %W -1; KeyClr; break}
-  bind $wid <Control-Left> {XviewScroll %W scroll 1 -1; KeyClr; break}
-  bind $wid <Control-Right> {XviewScroll %W scroll 1 1; KeyClr; break}
-  bind $wid <Control-f> {event generate %W <Key-Next>; KeyClr; break}
-  bind $wid <Control-b> {event generate %W <Key-Prior>; KeyClr; break}
+  #KeyBinding_UpDown $wid
+  #KeyBinding_LeftRight $wid
+  #bind $wid <FocusIn> {KeyClr}
+  #bind $wid <Return> "if {\[KeyCmd $wid Return\]} break"
+  #bind $wid <KeyPress> "if {\[KeyCmd $wid %A\]} break"
 
   bind $wid <Key-Prior> "TextSel_SetSelection $var {}"
   bind $wid <Key-Next> "TextSel_SetSelection $var {}"
@@ -5574,7 +5919,7 @@ proc TextSel_GetSelection {var} {
 # This is an interface function which allows to modify the selection
 # externally.
 #
-proc TextSel_SetSelection {var sel} {
+proc TextSel_SetSelection {var sel {callback 1}} {
   upvar #0 $var state
 
   if {[llength $sel] > 0} {
@@ -5583,7 +5928,10 @@ proc TextSel_SetSelection {var sel} {
     set state [lreplace $state 6 6 {}]
   }
   TextSel_ShowSelection $var
-  eval [list [lindex $state 1] [lindex $state 6]]
+
+  if {$callback} {
+    eval [list [lindex $state 1] [lindex $state 6]]
+  }
 }
 
 
@@ -5983,6 +6331,7 @@ proc TextSel_ShowSelection {var} {
 
   set wid [lindex $state 0]
   set sel [lindex $state 6]
+  set anchor [lindex $state 5]
 
   # first remove any existing highlight
   $wid tag remove sel "1.0" end
@@ -5990,6 +6339,10 @@ proc TextSel_ShowSelection {var} {
   # select each selected line (may be non-consecutive)
   foreach line $sel {
     $wid tag add sel "[expr $line + 1].0" "[expr $line + 2].0"
+  }
+
+  if {$anchor != -1} {
+    $wid mark set insert "[expr $anchor + 1].0"
   }
 }
 
@@ -6431,12 +6784,10 @@ proc InitContent {} {
   .f1.t configure -cursor top_left_arrow
   # set cursor to the end of file
   .f1.t mark set insert "end"
-  CursorMoveLine 0
-  CursorPosStore
+  CursorMoveLine .f1.t 0
+  CursorPosStore .f1.t
   # read bookmarks from the default file
   Mark_ReadFileAuto
-  # clear search match list
-  SearchList_Clear
   # start color highlighting in the background
   HighlightInit
 }
@@ -6467,6 +6818,8 @@ proc DiscardContent {} {
   array unset mark_list
   set mark_list_modified 0
   MarkList_Fill
+
+  SearchList_Init
 }
 
 
@@ -6974,6 +7327,11 @@ set tlb_last_dir 1
 # This variable indicates if the search entry field has keyboard focus.
 set tlb_find_focus 0
 
+# This variable contains the name of the widget which had input focus before
+# the focus was moved into the search entry field. Focus will return there
+# after Return or Escape
+set tlb_last_wid {}
+
 # These variables hold the cursor position and Y-view from before the start of an
 # incremental search (they are used to move the cursor back to the start position)
 #unset tlb_inc_base
@@ -7022,7 +7380,7 @@ set block_bg_tasks 0
 
 # These variables hold the font and color definitions for the main text content.
 set font_content {helvetica 9 normal}
-set col_bg_content {#dcdcdf}
+set col_bg_content {#e2e2e8}
 set col_fg_content {#000}
 
 # These variables hold the markup definitions for search match highlighting.
