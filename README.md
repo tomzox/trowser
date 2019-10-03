@@ -1,13 +1,13 @@
 # Trowser
 
 trowser is a browser for large line-oriented text files with color
-highlighting, written in Tcl/Tk.  It's meant as an alternative to "less".
+highlighting, written in [Tcl/Tk](http://tcl.tk/). It's meant as an alternative to "less".
 Compared to less, trowser adds color highlighting, a persistent search history,
 graphical bookmarking, separate search result (i.e. filter) windows and
 flexible skipping of input from pipes to STDIN.  Trowser has a graphical
 interface, but is designed to allow browsing via the keyboard at least to the
 same extent as less. Key bindings and the cursor positioning concept are
-derived from vim.
+derived mainly from vim.
 
 Note: in this context "line-oriented" denotes that each line of text is
 considered a data unit.  Color highlighting (including search matches)
@@ -15,11 +15,11 @@ will always apply the highlight to the complete text line.
 
 ## Screenshots
 
-<A HREF="images/screenshot-main.png" TARGET="_blank" type=image/png"><IMG ALIGN="center" SRC="images/screenthumb-main.png" ALT="thumbnail main window" BORDER="10"></A>
-<A HREF="images/screenshot-highlight.png" TARGET="_blank" type=image/png"><IMG ALIGN="center" SRC="images/screenthumb-highlight.png" ALT="thumbnail highlighting" BORDER="10"></A>
-<A HREF="images/screenshot-search.png" TARGET="_blank" type=image/png"><IMG ALIGN="center" SRC="images/screenthumb-search.png" ALT="thumbnail searching" BORDER="10"></A>
-<A HREF="images/screenshot-bookmarks.png" TARGET="_blank" type=image/png"><IMG ALIGN="center" SRC="images/screenthumb-bookmarks.png" ALT="thumbnail bookmarks" BORDER="10"></A>
-<A HREF="images/screenshot-pipe.png" TARGET="_blank" type=image/png"><IMG ALIGN="center" SRC="images/screenthumb-pipe.png" ALT="thumbnail loading from pipe" BORDER="10"></A>
+[![thumbnail main window][images/screenthumb-main.png]][images/screenshot-main.png]
+[![thumbnail highlighting][images/screenthumb-highlight.png]][images/screenshot-highlight.png]
+[![thumbnail searching][images/screenthumb-search.png]][images/screenshot-search.png]
+[![thumbnail bookmarks][images/screenthumb-bookmarks.png]][images/screenshot-bookmarks.png]
+[![thumbnail loading from pipe][images/screenthumb-pipe.png]][images/screenshot-pipe.png]
 
 The screenshots (click on them to get a larger version) show some of the main features:
 
@@ -40,8 +40,7 @@ with a blue dot in the first screenshot);
 input stream exceeds the buffer size to allow skipping excessive input data.
 </UL>
 
-
-For details and options please refer to the [manual page](manual.html)
+For details and options please refer to the [manual page](manual.pod)
 
 ## Rationale
 
@@ -72,7 +71,7 @@ extending or adapting the functionality for your own needs.
 
 ## Installing
 
-Supported platforms: trowser can be used on all platforms which are
+Software Requirements: trowser can be used on all platforms which are
 supported by the Tcl/Tk interpreter, i.e. all UNIX variants, Linux,
 Mac, and even MS Windows. On the other hand, this means a prerequisite
 is installing the Tcl/Tk interpreter:
@@ -87,16 +86,17 @@ In principle manual installation on UNIX-like systems is very simple:
 Just copy the script into /usr/bin (optionally you can remove the ".tcl"
 appendix) and the manual page to /usr/share/man/man1. Example:
 
-```console
+```
     cp trowser.tcl /usr/bin/trowser
     cp trowser.1 /usr/share/man/man1/trowser.1
 ```
 
-However much cleaner is properly installing the files using a package.
+However it's recommended to properly install the files using a package,
+as this will also take care of dependencies and allow easy removal.
 If you're using a Debian, Ubuntu or a compatible Linux distribution, you
 can create a package using script `create_deb.sh` in the repository.
-It will copy the required files into a local sub-directory `deb` and
-then create a package `deb/trowser_1.3-3.deb` which can be installed.
+The script will copy the required files into a local sub-directory `deb`
+and then create a package `deb/trowser_1.3-3.deb` which can be installed.
 In summary:
 
 ```
@@ -107,7 +107,9 @@ In summary:
 The software is released under the
 [GNU General Public License, version 3](http://www.fsf.org/copyleft/gpl.html)
 
-## Trouble-shooting
+Originally the project homepage was <http://www.nefkom.net/tomzo/prj/trowser/>
+
+## Troubleshooting
 
 If trowser fails to start or aborts with an interpreter error, you should
 check if Tcl/Tk is installed and has the required version by entering the

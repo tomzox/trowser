@@ -629,7 +629,7 @@ the next invocation unless overridden.
 
 This option can be used to specify an alternate configuration file.
 When this option is not present, the configuration file is stored in
-the home directory, see L<FILES>.
+the home directory, see section FILES.
 
 =back
 
@@ -653,6 +653,8 @@ During updates to this file, trowser temporarily creates a file called
 C<.trowserc.XXXXX.tmp> in the home directory, where "XXXXX" is a random
 number. The old file is then replaced with this new file. This procedure
 will obviously fail if your home directory is not writable.
+
+=back
 
 =head1 CAVEATS
 
@@ -706,13 +708,11 @@ L<perlre(1)>
 
 =head1 AUTHOR
 
-Written by Tom Zoerner L<mailto:tomzo@users.sourceforge.net>
-
-The official homepage is L<http://www.nefkom.net/tomzo/prj/trowser/>
+Written T.Zoerner L<mailto:tomzo@users.sourceforge.net>
 
 =head1 COPYRIGHT
 
-Copyright 2007-2009 Tom Zoerner. All rights reserved.
+Copyright 2007-2009 T.Zoerner. All rights reserved.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
