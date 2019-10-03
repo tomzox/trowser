@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.30 2009/03/12 21:11:08 tom Exp $
+# $Id: trowser.tcl,v 1.31 2009/03/17 18:18:59 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -338,13 +338,14 @@ proc HighlightInit {} {
 
     .f1.t tag add margin 1.0 end
 
+    .f1.t configure -cursor watch
+
     # trigger highlighting for the 1st pattern in the background
     set tid_high_init [after 50 HighlightInitBg 0 $cid 0 0]
-    .f1.t configure -cursor watch
 
     # apply highlighting on the text in the visible area (this is quick)
     # use the yview callback to redo highlighting in case the user scrolls
-    Highlight_YviewRedirect 1
+    Highlight_YviewRedirect
   }
 }
 
@@ -391,7 +392,6 @@ proc HighlightInitBg {pat_idx cid line loop_cnt} {
   } else {
     catch {destroy .hipro}
     .f1.t configure -cursor top_left_arrow
-    Highlight_YviewRedirect 0
     set tid_high_init {}
   }
 }
@@ -471,35 +471,42 @@ proc HighlightVisible {pat tagnam opt} {
   }
 }
 
+
 #
 # This callback is installed to the main text widget's yview. It is used
-# to detect changes in the view to update highlighting if the initial
-# highlighting task is not complete yet. The event is forwarded to the
-# vertical scrollbar.
+# to detect changes in the view to update highlighting if the highlighting
+# task is not complete yet. The event is forwarded to the vertical scrollbar.
 #
 proc Highlight_YviewCallback {frac1 frac2} {
-  global tid_high_init patlist
+  global tid_high_init tid_search_hall
 
   if {$tid_high_init ne ""} {
+    global patlist
     foreach w $patlist {
       set opt [Search_GetOptions [lindex $w 0] [lindex $w 1] [lindex $w 2]]
       HighlightVisible [lindex $w 0] [lindex $w 4] $opt
     }
   }
+  if {$tid_search_hall ne ""} {
+    global tlb_cur_hall_opt
+    HighlightVisible [lindex $tlb_cur_hall_opt 0] find [lindex $tlb_cur_hall_opt 1]
+  }
+
+  # automatically remove the redirect if no longer needed
+  if {($tid_high_init eq "") && ($tid_search_hall eq "")} {
+    .f1.t configure -yscrollcommand {.f1.sb set}
+  }
   .f1.sb set $frac1 $frac2
 }
+
 
 #
 # This function redirect the yview callback from the scrollbar into the
 # above function, or to undo the change. This is used to install a
-# redirection for the duration of the initial highlighting task.
+# redirection for the duration of the initial or search highlighting task.
 #
-proc Highlight_YviewRedirect {enable} {
-  if {$enable} {
-    .f1.t configure -yscrollcommand Highlight_YviewCallback
-  } else {
-    .f1.t configure -yscrollcommand {.f1.sb set}
-  }
+proc Highlight_YviewRedirect {} {
+  .f1.t configure -yscrollcommand Highlight_YviewCallback
 }
 
 
@@ -554,7 +561,7 @@ proc HighlightConfigure {w} {
 # during regular search reset.
 #
 proc SearchHighlightClear {} {
-  global tlb_last_hall tid_search_hall
+  global tlb_cur_hall_opt tid_search_hall
 
   after cancel $tid_search_hall
   set tid_search_hall {}
@@ -562,7 +569,7 @@ proc SearchHighlightClear {} {
 
   .f1.t tag remove find 1.0 end
   .f1.t tag remove findinc 1.0 end
-  set tlb_last_hall {}
+  set tlb_cur_hall_opt {{} {}}
 
   SearchList_HighlightClear
 }
@@ -574,36 +581,55 @@ proc SearchHighlightClear {} {
 # is en-/disabled, when the search string is modified or when search options
 # are changed.
 #
-proc SearchHighlightUpdate {} {
-  global tlb_find tlb_regexp tlb_case tlb_hall tlb_last_hall
-  global tid_search_hall tlb_last_hall
+proc SearchHighlightUpdate {pat opt} {
+  global tlb_hall tlb_cur_hall_opt tid_search_hall
 
-  if {$tlb_find ne ""} {
+  if {$pat ne ""} {
     if {$tlb_hall} {
-      if {[SearchExprCheck $tlb_find $tlb_regexp 1]} {
-        set opt [Search_GetOptions $tlb_find $tlb_regexp $tlb_case]
+      set opt [lsearch -all -inline -regexp -not $opt {^-(forwards|backwards)$}]
+      if {[focus -displayof .] ne ".f2.e"} {
+        if {([lindex $tlb_cur_hall_opt 0] ne $pat) ||
+            ([lindex $tlb_cur_hall_opt 1] ne $opt)} {
+          # display "busy" cursor until highlighting is finished
+          .f1.t configure -cursor watch
 
-        HighlightVisible $tlb_find find $opt
+          # kill background highlight process for obsolete pattern
+          after cancel $tid_search_hall
 
-        if {$tlb_last_hall ne $tlb_find} {
-          if {[focus -displayof .] ne ".f2.e"} {
+          # start highlighting in the background
+          set tlb_cur_hall_opt [list $pat $opt]
+          set tid_search_hall [after 10 [list SearchHighlightAll $pat find $opt]]
 
-            # display "busy" cursor until highlighting is finished
-            .f1.t configure -cursor watch
+          # apply highlighting on the text in the visible area (this is quick)
+          # (note this is required in addition to the redirect below)
+          HighlightVisible $pat find $opt
 
-            # kill background highlight process for obsolete pattern
-            after cancel $tid_search_hall
-
-            # start highlighting in the background
-            set tlb_last_hall {}
-            set tid_search_hall [after 10 [list SearchHighlightAll $tlb_find find $opt]]
-          }
-        } else {
-          HighlightVisible $tlb_find find $opt
+          # use the yview callback to redo highlighting in case the user scrolls
+          Highlight_YviewRedirect
         }
+      } else {
+        HighlightVisible $pat find $opt
       }
     } else {
       SearchHighlightClear
+    }
+  }
+}
+
+
+#
+# This is a wrapper for the above function which works on the current
+# pattern in the search entry field.
+#
+proc SearchHighlightUpdateCurrent {} {
+  global tlb_hall tlb_find tlb_regexp tlb_case
+
+  if {$tlb_hall} {
+    if {$tlb_find ne ""} {
+      if {[SearchExprCheck $tlb_find $tlb_regexp 1]} {
+        set opt [Search_GetOptions $tlb_find $tlb_regexp $tlb_case]
+        SearchHighlightUpdate $tlb_find $opt
+      }
     }
   }
 }
@@ -614,7 +640,7 @@ proc SearchHighlightUpdate {} {
 # highlighting is complete.
 #
 proc SearchHighlightAll {pat tagnam opt {line 1}} {
-  global tid_search_hall tlb_last_hall
+  global tid_search_hall
 
   set line [HighlightLines $pat $tagnam $opt $line]
   if {$line >= 0} {
@@ -622,7 +648,6 @@ proc SearchHighlightAll {pat tagnam opt {line 1}} {
   } else {
     set tid_search_hall {}
     .f1.t configure -cursor top_left_arrow
-    set tlb_last_hall $pat
   }
 }
 
@@ -638,7 +663,7 @@ proc SearchHighlightOnOff {} {
   set tlb_hall [expr {!$tlb_hall}]
   UpdateRcAfterIdle
 
-  SearchHighlightUpdate
+  SearchHighlightUpdateCurrent
 }
 
 
@@ -655,7 +680,7 @@ proc SearchHighlightSettingChange {} {
 
   SearchHighlightClear
   if {$tlb_hall} {
-    SearchHighlightUpdate
+    SearchHighlightUpdateCurrent
   }
 }
 
@@ -694,12 +719,12 @@ proc Search_Background {pat is_fwd opt start is_changed callback} {
       set tid_search_inc [after idle [list Search_Background $pat $is_fwd $opt $next $is_changed $callback]]
     } else {
       set tid_search_inc {}
-      Search_HandleMatch $pos $match_len $pat $is_changed
+      Search_HandleMatch $pos $match_len $pat $opt $is_changed
       eval [list $callback $pos $pat $is_fwd $is_changed]
     }
   } else {
     set tid_search_inc {}
-    Search_HandleMatch "" 0 $pat $is_changed
+    Search_HandleMatch "" 0 $pat $opt $is_changed
     eval [list $callback "" $pat $is_fwd $is_changed]
   }
 }
@@ -711,7 +736,7 @@ proc Search_Background {pat is_fwd opt start is_changed callback} {
 # is found, the cursor is moved there and the line is highlighed.
 #
 proc Search_Atomic {pat is_re use_case is_fwd is_changed} {
-  global tlb_hall tlb_last_hall tlb_last_dir
+  global tlb_hall tlb_last_dir
 
   set pos ""
   if {($pat ne "") && [SearchExprCheck $pat $is_re 1]} {
@@ -746,7 +771,7 @@ proc Search_Atomic {pat is_re use_case is_fwd is_changed} {
       set pos ""
     }
     # update cursor position and highlight
-    Search_HandleMatch $pos $match_len $pat $is_changed
+    Search_HandleMatch $pos $match_len $pat $search_opt $is_changed
 
   } else {
     # empty or invalid expression: just remove old highlights
@@ -784,11 +809,11 @@ proc SearchOverlapCheck {is_fwd start_pos pos match_len} {
 # highlight all matches is started.  If no match is found, any previously
 # applies highlights are removed.
 #
-proc Search_HandleMatch {pos match_len pat is_changed} {
-  global tlb_find_line tlb_hall tlb_last_hall
+proc Search_HandleMatch {pos match_len pat opt is_changed} {
+  global tlb_find_line tlb_hall tlb_cur_hall_opt
 
   if {($pos ne "") || $is_changed} {
-    if {!$tlb_hall || ($tlb_last_hall ne $pat)} {
+    if {!$tlb_hall || ([lindex $tlb_cur_hall_opt 0] ne $pat)} {
       SearchHighlightClear
     } else {
       .f1.t tag remove findinc 1.0 end
@@ -807,7 +832,24 @@ proc Search_HandleMatch {pos match_len pat is_changed} {
     SearchList_MatchView $tlb_find_line
   }
   if {$tlb_hall} {
-    SearchHighlightUpdate
+    SearchHighlightUpdate $pat $opt
+  }
+}
+
+
+#
+# This function displays a message if no match was found for a search
+# pattern. This is split off from the search function so that some
+# callers can override the message.
+#
+proc Search_HandleNoMatch {pat is_fwd} {
+  if {$pat ne ""} {
+    set pat ": $pat"
+  }
+  if {$is_fwd} {
+    DisplayStatusLine search warn "No match until end of file$pat"
+  } else {
+    DisplayStatusLine search warn "No match until start of file$pat"
   }
 }
 
@@ -1009,23 +1051,20 @@ proc SearchNext {is_fwd} {
 
   ClearStatusLine search
 
-  if {$tlb_find eq ""} {
-    # empty expression: repeat last search
-    if {[llength $tlb_history] > 0} {
-      set hl [lindex $tlb_history 0]
-      set tlb_find [lindex $hl 0]
-    }
-  }
-
   if {$tlb_find ne ""} {
     set found [Search_Atomic $tlb_find $tlb_regexp $tlb_case $is_fwd 0]
     if {$found eq ""} {
-      if {$is_fwd} {
-        DisplayStatusLine search warn "No match until end of file"
-      } else {
-        DisplayStatusLine search warn "No match until start of file"
-      }
+      Search_HandleNoMatch $tlb_find $is_fwd
     }
+
+  } elseif {[llength $tlb_history] > 0} {
+    # empty expression: repeat last search
+    set hl [lindex $tlb_history 0]
+    set found [Search_Atomic [lindex $hl 0] [lindex $hl 1] [lindex $hl 2] $is_fwd 0]
+    if {$found eq ""} {
+      Search_HandleNoMatch [lindex $hl 0] $is_fwd
+    }
+
   } else {
     DisplayStatusLine search error "No pattern defined for search repeat"
     set found ""
@@ -1051,6 +1090,7 @@ proc SearchAll {raise_win direction} {
 
     # make focus return and cursor jump back to original position
     if {$tlb_find_focus} {
+      SearchHighlightClear
       SearchReset
 
       # note more clean-up is triggered via the focus-out event
@@ -1076,11 +1116,11 @@ proc SearchAll {raise_win direction} {
 # the search string is empty or a search is aborted with the Escape key.
 #
 proc SearchReset {} {
-  global tlb_find tlb_last_hall tlb_last_dir tlb_inc_base tlb_inc_view
+  global tlb_find tlb_cur_hall_opt tlb_last_dir tlb_inc_base tlb_inc_view
 
   .f1.t tag remove find 1.0 end
   .f1.t tag remove findinc 1.0 end
-  set tlb_last_hall {}
+  set tlb_cur_hall_opt {{} {}}
 
   if {[info exists tlb_inc_base]} {
     .f1.t xview moveto [lindex $tlb_inc_view 0]
@@ -1122,6 +1162,9 @@ proc SearchEnter {is_fwd {wid ""}} {
   set tlb_find {}
   focus .f2.e
 
+  # clear "highlight all" since search pattern is reset above
+  SearchHighlightClear
+
   set tlb_last_wid $wid
   if {$tlb_last_wid ne ""} {
     # raise the search entry field above the caller's window
@@ -1150,17 +1193,17 @@ proc SearchLeave {} {
   # ignore if the keyboard focus is leaving towards another application
   if {[focus -displayof .] ne {}} {
 
+    if {[SearchExprCheck $tlb_find $tlb_regexp 0]} {
+      if {$tlb_hall} {
+        SearchHighlightUpdateCurrent
+      }
+      Search_AddHistory $tlb_find $tlb_regexp $tlb_case
+    }
+
     unset -nocomplain tlb_inc_base tlb_inc_view
     unset -nocomplain tlb_hist_pos tlb_hist_prefix
-    Search_AddHistory $tlb_find $tlb_regexp $tlb_case
     set tlb_last_wid {}
     set tlb_find_focus 0
-  }
-
-  if {$tlb_hall} {
-    if {[SearchExprCheck $tlb_find $tlb_regexp 0]} {
-      SearchHighlightUpdate
-    }
   }
 }
 
@@ -1172,7 +1215,10 @@ proc SearchLeave {} {
 proc SearchAbort {} {
   global tlb_find tlb_regexp tlb_case tlb_last_wid
 
-  Search_AddHistory $tlb_find $tlb_regexp $tlb_case
+  if {[SearchExprCheck $tlb_find $tlb_regexp 0]} {
+    Search_AddHistory $tlb_find $tlb_regexp $tlb_case
+  }
+
   set tlb_find {}
   SearchReset
   # note more clean-up is triggered via the focus-out event
@@ -1449,11 +1495,7 @@ proc SearchWord {is_fwd} {
       set found [Search_Atomic $tlb_find $tlb_regexp $tlb_case $is_fwd 1]
 
       if {$found eq ""} {
-        if {$is_fwd} {
-          DisplayStatusLine search warn "No match until end of file"
-        } else {
-          DisplayStatusLine search warn "No match until start of file"
-        }
+        Search_HandleNoMatch $tlb_find $is_fwd
       }
     }
   }
@@ -2577,7 +2619,7 @@ proc KeyCmd_ExecSearch {is_fwd} {
         if {$found eq ""} {
           if {$is_fwd} {set limit "end"} else {set limit "start"}
           if {$count == 0} {
-            DisplayStatusLine search warn "No match until $limit of file"
+            DisplayStatusLine search warn "No match until $limit of file: $tlb_find"
           } else {
             DisplayStatusLine search warn "Only $count of $keycmd_ent matches until $limit of file"
           }
@@ -2751,7 +2793,6 @@ proc Mark_ToggleAtInsert {} {
 # line. The "line" parameter is a text widget line number, starting at 1.
 #
 proc Mark_Line {line} {
-  global tlb_last_hall
 
   CursorJumpPushPos .f1.t
 
@@ -2760,9 +2801,7 @@ proc Mark_Line {line} {
   .f1.t see insert
 
   # remove a possible older highlight
-  .f1.t tag remove find 1.0 end
-  .f1.t tag remove findinc 1.0 end
-  set tlb_last_hall ""
+  SearchHighlightClear
 
   # highlight the specified line
   .f1.t tag add find "$line.0" "[expr {$line + 1}].0"
@@ -3351,15 +3390,17 @@ proc MarkList_OpenDialog {} {
 # This is used for initialisation and after editing highlight tags.
 #
 proc MarkList_CreateHighlightTags {} {
-  global patlist fmt_selection
+  global dlg_mark_shown patlist fmt_selection
 
-  foreach w $patlist {
-    set tagnam [lindex $w 4]
-    eval [linsert [HighlightConfigure $w] 0 .dlg_mark.l tag configure $tagnam]
+  if {[info exists dlg_mark_shown]} {
+    foreach w $patlist {
+      set tagnam [lindex $w 4]
+      eval [linsert [HighlightConfigure $w] 0 .dlg_mark.l tag configure $tagnam]
+    }
+    eval [linsert [HighlightConfigure $fmt_selection] 0 .dlg_mark.l tag configure sel]
+    .dlg_mark.l tag configure margin -lmargin1 10
+    .dlg_mark.l tag lower sel
   }
-  eval [linsert [HighlightConfigure $fmt_selection] 0 .dlg_mark.l tag configure sel]
-  .dlg_mark.l tag configure margin -lmargin1 10
-  .dlg_mark.l tag lower sel
 }
 
 
@@ -3490,33 +3531,33 @@ proc SearchHistory_Open {} {
     frame  .dlg_hist.f2
     label  .dlg_hist.f2.lab_one -text "Find:"
     grid   .dlg_hist.f2.lab_one -sticky w -column 0 -row 0 -padx 5
-    button .dlg_hist.f2.but_next -text "Next" -command {SearchHistory_Search 1} -underline 0 -state disabled -pady 2
+    button .dlg_hist.f2.but_next -text "Next" -command {SearchHistory_SearchNext 1} -underline 0 -state disabled -pady 2
     grid   .dlg_hist.f2.but_next -sticky we -column 1 -row 0
-    button .dlg_hist.f2.but_prev -text "Prev." -command {SearchHistory_Search 0} -underline 0 -state disabled -pady 2
+    button .dlg_hist.f2.but_prev -text "Prev." -command {SearchHistory_SearchNext 0} -underline 0 -state disabled -pady 2
     grid   .dlg_hist.f2.but_prev -sticky we -column 2 -row 0
-    button .dlg_hist.f2.but_all -text "All" -command {SearchHistory_SearchList 0} -underline 0 -state disabled -pady 2
+    button .dlg_hist.f2.but_all -text "All" -command {SearchHistory_SearchAll 0} -underline 0 -state disabled -pady 2
     grid   .dlg_hist.f2.but_all -sticky we -column 3 -row 0
-    button .dlg_hist.f2.but_blw -text "All below" -command {SearchHistory_SearchList 1} -state disabled -pady 2
+    button .dlg_hist.f2.but_blw -text "All below" -command {SearchHistory_SearchAll 1} -state disabled -pady 2
     grid   .dlg_hist.f2.but_blw -sticky we -column 4 -row 0
-    button .dlg_hist.f2.but_abve -text "All above" -command {SearchHistory_SearchList -1} -state disabled -pady 2
+    button .dlg_hist.f2.but_abve -text "All above" -command {SearchHistory_SearchAll -1} -state disabled -pady 2
     grid   .dlg_hist.f2.but_abve -sticky we -column 5 -row 0
     pack   .dlg_hist.f2 -side top -anchor w -pady 2
 
     TextSel_Init .dlg_hist.f1.l dlg_hist_sel SearchHistory_SelectionChange SearchHistory_GetLen "extended"
 
     bindtags .dlg_hist.f1.l {.dlg_hist.f1.l TextSel . all}
-    bind .dlg_hist.f1.l <Double-Button-1> {SearchHistory_CopyToSearch; SearchHistory_Search $tlb_last_dir; break}
+    bind .dlg_hist.f1.l <Double-Button-1> {SearchHistory_CopyToSearch; SearchHistory_SearchNext $tlb_last_dir; break}
     bind .dlg_hist.f1.l <ButtonRelease-3> {SearchHistory_ContextMenu %x %y; break}
     bind .dlg_hist.f1.l <Delete> {SearchHistory_Remove; break}
-    bind .dlg_hist.f1.l <Key-n> {SearchHistory_Search 1; break}
-    bind .dlg_hist.f1.l <Key-N> {SearchHistory_Search 0; break}
-    bind .dlg_hist.f1.l <Key-a> {SearchHistory_SearchList 0; break}
+    bind .dlg_hist.f1.l <Key-n> {SearchHistory_SearchNext 1; break}
+    bind .dlg_hist.f1.l <Key-N> {SearchHistory_SearchNext 0; break}
+    bind .dlg_hist.f1.l <Key-a> {SearchHistory_SearchAll 0; break}
     bind .dlg_hist.f1.l <Key-ampersand> {SearchHighlightClear; break}
-    bind .dlg_hist.f1.l <Alt-Key-n> {SearchHistory_Search 1; break}
-    bind .dlg_hist.f1.l <Alt-Key-p> {SearchHistory_Search 0; break}
-    bind .dlg_hist.f1.l <Alt-Key-a> {SearchHistory_SearchList 0; break}
-    bind .dlg_hist.f1.l <Alt-Key-P> {SearchHistory_SearchList -1; break}
-    bind .dlg_hist.f1.l <Alt-Key-N> {SearchHistory_SearchList 1; break}
+    bind .dlg_hist.f1.l <Alt-Key-n> {SearchHistory_SearchNext 1; break}
+    bind .dlg_hist.f1.l <Alt-Key-p> {SearchHistory_SearchNext 0; break}
+    bind .dlg_hist.f1.l <Alt-Key-a> {SearchHistory_SearchAll 0; break}
+    bind .dlg_hist.f1.l <Alt-Key-P> {SearchHistory_SearchAll -1; break}
+    bind .dlg_hist.f1.l <Alt-Key-N> {SearchHistory_SearchAll 1; break}
     focus .dlg_hist.f1.l
 
     menu .dlg_hist.ctxmen -tearoff 0
@@ -3704,8 +3745,8 @@ proc SearchHistory_CopyToSearch {} {
 # expression, i.e. as if the word had been entered to the search text
 # entry field. TODO: currently only one expression at a time can be searched
 #
-proc SearchHistory_Search {is_fwd} {
-  global dlg_hist_sel tlb_history
+proc SearchHistory_SearchNext {is_fwd} {
+  global dlg_hist_sel tlb_history tlb_find
 
   ClearStatusLine search
 
@@ -3717,17 +3758,18 @@ proc SearchHistory_Search {is_fwd} {
     set is_re [lindex $hl 1]
     set use_case [lindex $hl 2]
 
+    # move this expression to the top of the history
     Search_AddHistory $pat $is_re $use_case
+
+    # clear search entry field to avoid confusion (i.e. showing different expr.)
+    set tlb_find {}
 
     if {[SearchExprCheck $pat $is_re 1]} {
 
       set found [Search_Atomic $pat $is_re $use_case $is_fwd 1]
       if {$found eq ""} {
-        if {$is_fwd} {
-          DisplayStatusLine search warn "No match until end of file"
-        } else {
-          DisplayStatusLine search warn "No match until start of file"
-        }
+        Search_HandleNoMatch $pat $is_fwd
+        SearchHighlightClear
       }
     }
   } else {
@@ -3741,7 +3783,7 @@ proc SearchHistory_Search {is_fwd} {
 # dialog. The function opens the search result list window and starts a
 # search for the expression which is currently selected in the history list.
 #
-proc SearchHistory_SearchList {direction} {
+proc SearchHistory_SearchAll {direction} {
   global tlb_history
   global dlg_hist_sel
 
@@ -4214,13 +4256,13 @@ proc SearchList_SetFnRoot {} {
 # highlighting of lines matching searches in the main window on/off.
 #
 proc SearchList_ToggleHighlight {} {
-  global dlg_srch_highlight tlb_last_hall
+  global dlg_srch_highlight tlb_cur_hall_opt
 
   if {$dlg_srch_highlight} {
     # search highlighting was enabled:
     # force update of global highlighting (in main and search result windows)
-    set tlb_last_hall ""
-    SearchHighlightUpdate
+    set tlb_cur_hall_opt {{} {}}
+    SearchHighlightUpdateCurrent
   } else {
     # search highlighting was enabled: remove highlight tag in the search list dialog
     .dlg_srch.f1.l tag remove find 1.0 end
@@ -4739,15 +4781,15 @@ proc SearchList_SearchAbort {{do_warn 1}} {
     if {$do_warn} {
       PreemptBgTasks
       toplevel .srch_abrt
-      wm group .srch_abrt .
+      wm transient .srch_abrt .
       wm geometry .srch_abrt "+[expr {[winfo rootx .dlg_srch] + 100}]+[expr {[winfo rooty .dlg_srch] + 100}]"
       wm title .srch_abrt "Confirm abort of search"
 
       frame  .srch_abrt.f1
-      button .srch_abrt.f1.icon -bitmap question -relief flat
+      button .srch_abrt.f1.icon -bitmap question -relief flat -takefocus 0
       pack   .srch_abrt.f1.icon -side left -padx 10 -pady 20
       label  .srch_abrt.f1.msg -justify left \
-                            -text "This command will abort the ongoing search operation.\nPlease confirm, or wait until this popup disappears."
+                               -text "This command will abort the ongoing search operation.\nPlease confirm, or wait until this message disappears."
       pack   .srch_abrt.f1.msg -side left -padx 10 -pady 20
       pack   .srch_abrt.f1 -side top
 
@@ -4760,7 +4802,12 @@ proc SearchList_SearchAbort {{do_warn 1}} {
       bindtags .srch_abrt.f1.icon {.srch_abrt all}
       bind   .srch_abrt <Destroy> {destroy .srch_abrt}
       bind   .srch_abrt <Return> {set ::vwait_search_complete 1}
-      bind   .srch_abrt.f1 <Destroy> {if {$::vwait_search_complete == -1} {set ::vwait_search_complete -2}}
+      # closing the message popup is equivalent to "cancel"
+      bind   .srch_abrt.f1 <Destroy> {if {$::vwait_search_complete == -1} {
+                                        set ::vwait_search_complete 0}}
+      # clicks into other windows (routed here due to grab) raise the popup window
+      bind   .srch_abrt <Button-1> {raise .srch_abrt}
+      bind   .srch_abrt <Button-3> {raise .srch_abrt}
       focus  .srch_abrt.f3.ok
       grab   .srch_abrt
 
@@ -5750,10 +5797,8 @@ proc TagList_Search {is_fwd} {
   } else {
     if {[llength $sel] == 0} {
       DisplayStatusLine search error "No pattern is selected in the list"
-    } elseif {$is_fwd} {
-      DisplayStatusLine search warn "No match until end of file"
     } else {
-      DisplayStatusLine search warn "No match until start of file"
+      Search_HandleNoMatch "" $is_fwd
     }
   }
 }
@@ -8536,11 +8581,11 @@ proc ParseArgv {} {
 # A variable trace is used to trigger incremental searches after each change.
 set tlb_find {}
 
-# This variable is a cache of the search string for which the last
-# "highlight all" color highlighting was done. It's used to avoid unnecessarily
-# repeating the search when the string is unchanged, because the search can
-# take some time. The variable is empty when no highlights are shown.
-set tlb_last_hall {}
+# This variable is used to remember search pattern and options while a
+# background search highlighting is active and afterwards to avoid
+# unnecessarily repeating the search while the pattern is unchanged.
+# The pattern is set to en empty string when no highlights are shown.
+set tlb_cur_hall_opt {{} {}}
 
 # This variable contains the stack of previously used search expressions
 # The top of the stack, aka the most recently used expression, is at the
