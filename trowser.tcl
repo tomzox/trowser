@@ -21,7 +21,7 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.37 2010/09/08 10:34:00 tom Exp $
+# $Id: trowser.tcl,v 1.38 2010/09/08 10:35:52 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -602,7 +602,7 @@ proc SearchHighlightUpdate {pat opt} {
 
           # start highlighting in the background
           set tlb_cur_hall_opt [list $pat $opt]
-          set tid_search_hall [after 10 [list SearchHighlightAll $pat find $opt]]
+          set tid_search_hall [after 100 [list SearchHighlightAll $pat find $opt]]
 
           # apply highlighting on the text in the visible area (this is quick)
           # (note this is required in addition to the redirect below)
