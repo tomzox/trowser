@@ -1,7 +1,8 @@
 # Trowser
 
 trowser is a browser for large line-oriented text files with color
-highlighting, written in [Tcl/Tk](http://tcl.tk/). It's meant as an alternative to "less".
+highlighting, written in [Tcl/Tk](http://tcl.tk/), or alternatively
+[Python](https://www.python.org/). It's meant as an alternative to "less".
 Compared to less, trowser adds color highlighting, a persistent search history,
 graphical bookmarking, separate search result (i.e. filter) windows and
 flexible skipping of input from pipes to STDIN.  Trowser has a graphical
@@ -12,6 +13,11 @@ derived mainly from vim.
 Note: in this context "line-oriented" denotes that each line of text is
 considered a data unit.  Color highlighting (including search matches)
 will always apply the highlight to the complete text line.
+
+Note the Python version is equivalent to the Tcl/Tk version (except for yet
+missing support for loading from STDIN, i.e. parameter "-"). Mixed use of both
+versions is currently not possible due to different format of the configuration
+file. The installation procedure below only supports the Tcl/Tk version yet.
 
 ## Screenshots
 
