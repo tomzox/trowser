@@ -25,7 +25,7 @@ import sys
 import os
 import errno
 import bisect
-if (os.name == "posix"): import fcntl
+import threading
 from datetime import datetime
 from datetime import timedelta
 import time
@@ -61,7 +61,6 @@ def InitResources():
 
   # bindings for a read-only text widget
   # copy allowed bindings from the regular text widget (i.e. move, mark, copy)
-  # FIXME since Tk 8.6 <Key-Up> et.al. no longer work
   for event in ( "<ButtonPress-1>", "<ButtonRelease-1>", "<B1-Motion>", "<Double-Button-1>", "<Shift-Button-1>",
                  "<Triple-Button-1>", "<Triple-Shift-Button-1>", "<Button-2>", "<B2-Motion>",
                  "<<Copy>>", "<<Clear>>", "<Shift-Key-Tab>", "<Control-Key-Tab>", "<Control-Shift-Key-Tab>",
@@ -77,12 +76,15 @@ def InitResources():
                  "<Control-Shift-Key-Up>", "<Control-Key-slash>" ):
     tk.bind_class("TextReadOnly", event, tk.bind_class("Text", event))
 
+  # since Tk 8.6 there are no event handlers for <Key-Up> in tag Text anymore
   tk.bind_class("TextReadOnly", "<Key-Up>", lambda e: CursorMoveUpDown(wt.f1_t, -1))
   tk.bind_class("TextReadOnly", "<Key-Down>", lambda e: CursorMoveUpDown(wt.f1_t, 1))
   tk.bind_class("TextReadOnly", "<Key-Left>", lambda e: CursorMoveLeftRight(wt.f1_t, -1))
   tk.bind_class("TextReadOnly", "<Key-Right>", lambda e: CursorMoveLeftRight(wt.f1_t, 1))
   #tk.bind_class("TextReadOnly", "<Control-Key-Home>", lambda e: CursorGotoLine(wt.f1_t, "start"))
   #tk.bind_class("TextReadOnly", "<Control-Key-End>", lambda e: CursorGotoLine(wt.f1_t, "end"))
+  #<Shift-Key-Left> <Shift-Key-Right> <Shift-Key-Up> <Shift-Key-Down>
+  tk.bind_class("TextReadOnly", "<Control-Key-slash>", lambda e: wt.f1_t.tag_add("sel", "1.0", "end"))
 
   # bindings for a selection text widget (listbox emulation)
   # (uses non-standard cursor movement event bindings, hence not added here)
@@ -282,6 +284,10 @@ def CreateMainWindow():
   tk.positionfrom(who="user")
   wt.f1_t.bind("<Configure>", lambda e: ToplevelResized(e.widget, tk, wt.f1_t, "main_win"))
 
+  # dummy widget for xselection handling
+  wt.xselection = Label()
+  wt.xselection.selection_handle(TextSel_XselectionHandler)
+
 
 #
 # This wrapper is used for event bindings to first call a function and then
@@ -390,7 +396,7 @@ def HighlightInit():
 
 
 #
-# This function is a slave-function of proc HighlightInit. The function
+# This function is a slave-function of HighlightInit. The function
 # loops across all members in the global pattern list to apply color
 # the respective highlighting. The loop is broken up by installing each
 # new iteration as an idle event (and limiting each step to 100ms)
@@ -1940,10 +1946,9 @@ def XviewScroll(wid, how, delta, dir):
     wid.xview_moveto(delta)
 
   if pos_old != None:
-    pos_new = wid.bbox("insert")
-
     # check if cursor is fully visible
-    if (len(pos_new) != 4) or (pos_new[2] == 0):
+    pos_new = wid.bbox("insert")
+    if (pos_new == None) or (pos_new[2] == 0):
       ycoo = pos_old[1] + pos_old[3] // 2
       if dir < 0:
         wid.mark_set("insert", "@%d,%d" % (wid.winfo_width(), ycoo))
@@ -2988,7 +2993,8 @@ def Mark_OfferSave():
   global mark_list, mark_list_modified
 
   if mark_list_modified and (len(mark_list) > 0):
-    answer = messagebox.askyesno(parent=tk, default="yes", message="Store changes in the bookmark list?")
+    answer = messagebox.askyesno(parent=tk, default="yes", title="Trace browser",
+                                 message="Store changes in the bookmark list before quitting?")
     if answer:
       Mark_SaveFileAs()
       if mark_list_modified == 0:
@@ -3909,18 +3915,18 @@ def SearchList_MenuPosted():
   if len(dlg_srch_undo) > 0:
     cmd = dlg_srch_undo[-1]
     op = "addition" if cmd[0] > 0 else "removal"
-    wt.dlg_srch_menubar_edit.entryconfigure("Undo*", state="normal",
+    wt.dlg_srch_menubar_edit.entryconfigure("Undo*", state=NORMAL,
                                             label="Undo (%s of %d lines)" % (op, len(cmd[1])))
   else:
-    wt.dlg_srch_menubar_edit.entryconfigure("Undo*", state="disabled", label="Undo")
+    wt.dlg_srch_menubar_edit.entryconfigure("Undo*", state=DISABLED, label="Undo")
 
   if len(dlg_srch_redo) > 0:
     cmd = dlg_srch_redo[-1]
     op = "addition" if cmd[0] > 0 else "removal"
-    wt.dlg_srch_menubar_edit.entryconfigure("Redo*", state="normal",
+    wt.dlg_srch_menubar_edit.entryconfigure("Redo*", state=NORMAL,
                                             label="Redo (%s of %d lines)" % (op, len(cmd[1])))
   else:
-    wt.dlg_srch_menubar_edit.entryconfigure("Redo*", state="disabled", label="Redo")
+    wt.dlg_srch_menubar_edit.entryconfigure("Redo*", state=DISABLED, label="Redo")
 
   MenuPosted()
 
@@ -5415,13 +5421,13 @@ def TagList_ContextPopulate(wid, show_all):
   sel_cnt = len(sel)
   sel_el = sel[0] if (sel_cnt > 0) else None
 
-  state_find = "disabled" if (tlb_find.get() == "") else "normal"
-  state_find_sel_1 = "disabled" if ((tlb_find.get() == "") or (sel_cnt != 1)) else "normal"
-  state_sel_1 = "disabled" if (sel_cnt != 1) else "normal"
-  state_sel_n0 = "disabled" if (sel_cnt == 0) else "normal"
+  state_find = DISABLED if (tlb_find.get() == "") else NORMAL
+  state_find_sel_1 = DISABLED if ((tlb_find.get() == "") or (sel_cnt != 1)) else NORMAL
+  state_sel_1 = DISABLED if (sel_cnt != 1) else NORMAL
+  state_sel_n0 = DISABLED if (sel_cnt == 0) else NORMAL
 
   wid.delete(0, "end")
-  if (state_sel_1 == "normal") or show_all:
+  if (state_sel_1 == NORMAL) or show_all:
     wid.add_command(label="Change background color", command=lambda:TagList_PopupColorPalette(sel_el, 0), state=state_sel_1)
     wid.add_command(label="Edit markup...", command=lambda:Markup_OpenDialog(sel_el), state=state_sel_1)
     wid.add_separator()
@@ -5429,7 +5435,7 @@ def TagList_ContextPopulate(wid, show_all):
     wid.add_command(label="Update from search field", command=lambda:TagList_CopyFromSearch(sel_el), state=state_find_sel_1)
 
   wid.add_command(label="Add current search", command=lambda:TagList_AddSearch(wt.dlg_tags), state=state_find)
-  if (state_sel_n0 == "normal") or show_all:
+  if (state_sel_n0 == NORMAL) or show_all:
     wid.add_separator()
     wid.add_command(label="Remove selected entries", command=lambda:TagList_Remove(sel), state=state_sel_n0)
 
@@ -5568,7 +5574,7 @@ def TagList_SearchList(direction):
 def TagList_SelectionChange(sel):
   global dlg_tags_sel
 
-  state = "disabled" if (len(sel) == 0) else "normal"
+  state = DISABLED if (len(sel) == 0) else NORMAL
 
   wt.dlg_tags_f2_but_next.configure(state=state)
   wt.dlg_tags_f2_but_prev.configure(state=state)
@@ -6526,7 +6532,7 @@ def Palette_ContextMenu(xcoo, ycoo):
       return
 
     wt.dlg_cols_ctxmen.delete(0, "end")
-    wt.dlg_cols_ctxmen.add_command(label="", background=dlg_cols_palette[idx], state="disabled")
+    wt.dlg_cols_ctxmen.add_command(label="", background=dlg_cols_palette[idx], state=DISABLED)
     wt.dlg_cols_ctxmen.add_separator()
     wt.dlg_cols_ctxmen.add_command(label="Change this color...", command=lambda:Palette_EditColor(idx, cid))
     wt.dlg_cols_ctxmen.add_command(label="Duplicate this color", command=lambda:Palette_DuplicateColor(idx, cid))
@@ -6792,6 +6798,8 @@ class TextSel:
     self.wid.bind("<FocusIn>", lambda e, self=self: KeyClr())
     #bind $wid <Return> "if {\[KeyCmd $wid Return\]} break"
     self.wid.bind("<KeyPress>", lambda e, self=self: "break" if KeyCmd(self.wid, e.char) else None)
+    self.wid.bind("<Control-Key-a>", lambda e: BindCallAndBreak(lambda: self.TextSel_SelectAll()))
+    self.wid.bind("<Control-Key-c>", lambda e: BindCallAndBreak(lambda: self.TextSel_CopyClipboard(1)))
 
     self.wid.bind("<Key-Prior>", lambda e, self=self: self.TextSel_SetSelection([]))
     self.wid.bind("<Key-Next>",  lambda e, self=self: self.TextSel_SetSelection([]))
@@ -7119,6 +7127,19 @@ class TextSel:
 
 
   #
+  # This function is bound to the "CTRL-A" key to select all entries in
+  # the list.
+  #
+  def TextSel_SelectAll(self):
+    content_len = self.len_proc()
+    if content_len > 0:
+      self.sel = TextSel.IdxRange(0, content_len - 1)
+
+      self.TextSel_ShowSelection()
+      self.cb_proc(self.sel)
+
+
+  #
   # This helper function is used to build a list of all indices between
   # (and including) two given values in increasing order.
   #
@@ -7187,329 +7208,419 @@ class TextSel:
     if self.anchor_idx > line:
       self.anchor_idx -= 1
 
+  #
+  # This handler is bound to CTRL-C in the selection and performs <<Copy>>
+  # (i.e. copies the content of all selected lines to the clipboard.)
+  #
+  def TextSel_CopyClipboard(self, mswin):
+    msg = "".join([self.wid.get("%d.0" % (line + 1), "%d.0" % (line + 2)) for line in self.sel])
+
+    TextSel_XselectionExport(mswin, msg)
+
+
+#
+# This helper function is installed as "selection handler" on a dummy widget in
+# the main window. The function simply returns a text that was previously
+# stored for export via the selection. After storing a new text the selection
+# must be set to be "owned" by the dummy widget, so that it gets querues by the
+# X window system.
+#
+def TextSel_XselectionHandler(off, len):
+  global main_selection_txt
+  return main_selection_txt[off : off+len]
+
+
+#
+# This function can be called to copy the given text to the clipboard (from
+# where it can by retrieved by other applications, usually upon "paste"
+# commands by the user) and X selection mechanism (from where the user can
+# paste it via click with the middle mouse button).
+#
+def TextSel_XselectionExport(mswin, str):
+  global main_selection_txt
+
+  if mswin:
+    tk.clipboard_clear()
+    tk.clipboard_append(str)
+  else:
+    # update X selection only
+    main_selection_txt = str
+    wt.xselection.selection_own()
+
 
 # ----------------------------------------------------------------------------
-#
-# This function opens the "Loading from STDIN" status dialog.
-#
-def OpenLoadPipeDialog(stop):
-  global font_normal, dlg_load_shown, dlg_load_file_limit
-  global load_buf_size, load_buf_fill, load_file_sum_str, load_file_mode, load_file_close
 
-  try:
-    tk.winfo_height()
-  except:
-    sys.exit(0)
+class LoadPipe:
+  def __init__(self):
+    global load_file_mode
+    self._opt_file_close = IntVar(tk, 1)
+    self._opt_file_mode = IntVar(tk, load_file_mode)
+    self._dlg_read_total = IntVar(tk, 0)     # copy of _read_total for display
+    self._dlg_read_buffered = IntVar(tk, 0)  # copy of _read_buffered for display
+    self._dlg_file_limit = IntVar(tk, (load_buf_size + (1024*1024-1)) // (1024*1024))
 
-  if not dlg_load_shown:
-    wt.dlg_load = Toplevel(tk)
-    wt.dlg_load.wm_title("Loading from STDIN...")
-    wt.dlg_load.wm_group(tk)
-    wt.dlg_load.wm_transient(tk)
-    xcoo = wt.f1_t.winfo_rootx() + 50
-    ycoo = wt.f1_t.winfo_rooty() + 50
-    wt.dlg_load.wm_geometry("+%d+%d" % (xcoo, ycoo))
+    self._read_total = 0        # number of bytes read from file; may grow beyond 32 bit!
+    self._read_buffered = 0     # number of bytes read & still in buffer
+    self.is_eof = False         # True once file.read() returned EOF
 
-    wt.dlg_load_f1 = Frame(wt.dlg_load)
-    row = 0
-    wt.dlg_load_f1_lab_total = Label(wt.dlg_load_f1, text="Loaded data:")
-    wt.dlg_load_f1_lab_total.grid(sticky=W, column=0, row=row)
-    wt.dlg_load_f1_val_total = Label(wt.dlg_load_f1, textvariable=load_file_sum_str, font=font_normal)
-    wt.dlg_load_f1_val_total.grid(sticky=W, column=1, row=row, columnspan=2)
-    row += 1
-    wt.dlg_load_f1_lab_bufil = Label(wt.dlg_load_f1, text="Buffered data:")
-    wt.dlg_load_f1_lab_bufil.grid(sticky=W, column=0, row=row)
-    wt.dlg_load_f1_val_bufil = Label(wt.dlg_load_f1, textvariable=load_buf_fill, font=font_normal)
-    wt.dlg_load_f1_val_bufil.grid(sticky=W, column=1, row=row, columnspan=2)
-    row += 1
+    self._file_data = []        # buffer for data read from file
+    self._file_complete = ""    # buffer for reporting error messages from background thread
+    self._thr_inst = None       # threading object of background thread
+    self._tid_dlg_upd = None    # tk.after ID for status update triggered by bg thread
 
-    dlg_load_file_limit = IntVar(tk, (load_buf_size + (1024*1024-1)) // (1024*1024))
-    wt.dlg_load_f1_lab_bufsz = Label(wt.dlg_load_f1, text="Buffer size:")
-    wt.dlg_load_f1_lab_bufsz.grid(sticky=W, column=0, row=row)
-    wt.dlg_load_f1_f11 = Frame(wt.dlg_load_f1)
-    wt.dlg_load_f1_f11_val_bufsz = Spinbox(wt.dlg_load_f1_f11, from_=1, to=999, width=4, textvariable=dlg_load_file_limit)
-    wt.dlg_load_f1_f11_val_bufsz.pack(side=LEFT)
-    wt.dlg_load_f1_f11_lab_bufmb = Label(wt.dlg_load_f1_f11, text="MByte", font=font_normal)
-    wt.dlg_load_f1_f11_lab_bufmb.pack(side=LEFT, pady=5)
-    wt.dlg_load_f1_f11.grid(sticky=W, column=1, row=row, columnspan=2)
-    row += 1
-
-    wt.dlg_load_f1_lab_mode = Label(wt.dlg_load_f1, text="Mode:")
-    wt.dlg_load_f1_lab_mode.grid(sticky=W, column=0, row=row)
-    wt.dlg_load_f1_ohead = Radiobutton(wt.dlg_load_f1, text="head", variable=load_file_mode, value=0)
-    wt.dlg_load_f1_ohead.grid(sticky=W, column=1, row=row)
-    wt.dlg_load_f1_otail = Radiobutton(wt.dlg_load_f1, text="tail", variable=load_file_mode, value=1)
-    wt.dlg_load_f1_otail.grid(sticky=W, column=2, row=row)
-    wt.dlg_load_f1.pack(side=TOP, padx=5, pady=5)
-    row += 1
-
-    wt.dlg_load_f1_lab_close = Label(wt.dlg_load_f1, text="Close file:")
-    wt.dlg_load_f1_lab_close.grid(sticky=W, column=0, row=row)
-    wt.dlg_load_f1_val_close = Checkbutton(wt.dlg_load_f1, variable=load_file_close, text="close after read")
-    wt.dlg_load_f1_val_close.grid(sticky=W, column=1, row=row, columnspan=2)
-    row += 1
-
-    wt.dlg_load_cmd = Frame(wt.dlg_load)
-    wt.dlg_load_cmd_stop = Button(wt.dlg_load_cmd)
-    wt.dlg_load_cmd_ok = Button(wt.dlg_load_cmd, text="Ok")
-    wt.dlg_load_cmd_stop.pack(side=LEFT, padx=10)
-    wt.dlg_load_cmd_ok.pack(side=LEFT, padx=10)
-    wt.dlg_load_cmd.pack(side=TOP, pady=5)
-
-    dlg_load_shown = True
-    wt.dlg_load_cmd.bind("<Destroy>", lambda e:LoadPipe_DialogCloseCb(), add="+")
-    #wt.dlg_load.wm_protocol("WM_DELETE_WINDOW", None)
-
-  if stop:
-    LoadPipe_CmdStop()
-  else:
-    LoadPipe_CmdContinue(0)
+    self._thr_lock = threading.Lock()
 
 
-def LoadPipe_DialogCloseCb():
-  global dlg_load_shown
-  dlg_load_shown = False
+  #
+  # This function opens the "Loading from STDIN" status dialog.
+  #
+  def LoadPipe_OpenDialog(self):
+    global font_normal, dlg_load_shown
+
+    if not dlg_load_shown:
+      wt.dlg_load = Toplevel(tk)
+      wt.dlg_load.wm_title("Loading from STDIN...")
+      wt.dlg_load.wm_group(tk)
+      wt.dlg_load.wm_transient(tk)
+      xcoo = wt.f1_t.winfo_rootx() + 50
+      ycoo = wt.f1_t.winfo_rooty() + 50
+      wt.dlg_load.wm_geometry("+%d+%d" % (xcoo, ycoo))
+
+      wt.dlg_load_f1 = Frame(wt.dlg_load)
+      row = 0
+      wt.dlg_load_f1_lab_total = Label(wt.dlg_load_f1, text="Loaded data:")
+      wt.dlg_load_f1_lab_total.grid(sticky=W, column=0, row=row)
+      wt.dlg_load_f1_val_total = Label(wt.dlg_load_f1, textvariable=self._dlg_read_total, font=font_normal)
+      wt.dlg_load_f1_val_total.grid(sticky=W, column=1, row=row, columnspan=2)
+      row += 1
+      wt.dlg_load_f1_lab_bufil = Label(wt.dlg_load_f1, text="Buffered data:")
+      wt.dlg_load_f1_lab_bufil.grid(sticky=W, column=0, row=row)
+      wt.dlg_load_f1_val_bufil = Label(wt.dlg_load_f1, textvariable=self._dlg_read_buffered, font=font_normal)
+      wt.dlg_load_f1_val_bufil.grid(sticky=W, column=1, row=row, columnspan=2)
+      row += 1
+
+      wt.dlg_load_f1_lab_bufsz = Label(wt.dlg_load_f1, text="Buffer size:")
+      wt.dlg_load_f1_lab_bufsz.grid(sticky=W, column=0, row=row)
+      wt.dlg_load_f1_f11 = Frame(wt.dlg_load_f1)
+      wt.dlg_load_f1_f11_val_bufsz = Spinbox(wt.dlg_load_f1_f11, from_=1, to=999, width=4, textvariable=self._dlg_file_limit)
+      wt.dlg_load_f1_f11_val_bufsz.pack(side=LEFT)
+      wt.dlg_load_f1_f11_lab_bufmb = Label(wt.dlg_load_f1_f11, text="MByte", font=font_normal)
+      wt.dlg_load_f1_f11_lab_bufmb.pack(side=LEFT, pady=5)
+      wt.dlg_load_f1_f11.grid(sticky=W, column=1, row=row, columnspan=2)
+      row += 1
+
+      wt.dlg_load_f1_lab_mode = Label(wt.dlg_load_f1, text="Mode:")
+      wt.dlg_load_f1_lab_mode.grid(sticky=W, column=0, row=row)
+      wt.dlg_load_f1_ohead = Radiobutton(wt.dlg_load_f1, text="head", variable=self._opt_file_mode, value=0)
+      wt.dlg_load_f1_ohead.grid(sticky=W, column=1, row=row)
+      wt.dlg_load_f1_otail = Radiobutton(wt.dlg_load_f1, text="tail", variable=self._opt_file_mode, value=1)
+      wt.dlg_load_f1_otail.grid(sticky=W, column=2, row=row)
+      wt.dlg_load_f1.pack(side=TOP, padx=5, pady=5)
+      row += 1
+
+      wt.dlg_load_f1_lab_close = Label(wt.dlg_load_f1, text="Close file:")
+      wt.dlg_load_f1_lab_close.grid(sticky=W, column=0, row=row)
+      wt.dlg_load_f1_val_close = Checkbutton(wt.dlg_load_f1, variable=self._opt_file_close, text="close after read")
+      wt.dlg_load_f1_val_close.grid(sticky=W, column=1, row=row, columnspan=2)
+      row += 1
+
+      wt.dlg_load_cmd = Frame(wt.dlg_load)
+      # Note button texts are modified to Abort/Ok while reading from file is stopped
+      wt.dlg_load_cmd_stop = Button(wt.dlg_load_cmd, text="Stop", state=NORMAL)
+      wt.dlg_load_cmd_stop.pack(side=LEFT, padx=10)
+      wt.dlg_load_cmd_ok = Button(wt.dlg_load_cmd, text="Ok", state=DISABLED)
+      wt.dlg_load_cmd_ok.pack(side=LEFT, padx=10)
+      wt.dlg_load_cmd.pack(side=TOP, pady=5)
+
+      dlg_load_shown = True
+      wt.dlg_load_cmd.bind("<Destroy>", lambda e:self.LoadPipe_DialogCloseCb(), add="+")
+      #wt.dlg_load.wm_protocol("WM_DELETE_WINDOW", None)
 
 
-#
-# This function is bound to the "Abort" button in the "Load from pipe"
-# dialog (note this button replaces "Stop" while loading is ongoing.)
-# The function stops loading and closes the dialog. Note: data that
-# already has been loaded is kept and displayed.
-#
-def LoadPipe_CmdAbort():
-  global load_file_complete
-  load_file_complete.set("")
-  wt.dlg_load.destroy()
+  def LoadPipe_DialogCloseCb(self):
+    global dlg_load_shown
+    dlg_load_shown = False
 
+  #
+  # This function updates the command buttons after starting or stopping input
+  #
+  def LoadPipe_DialogConfigure(self, is_read_stopped):
+    if is_read_stopped:
+      wt.dlg_load_cmd_stop.configure(text="Abort", command=lambda:self.LoadPipe_CmdAbort())
+      wt.dlg_load_cmd_ok.configure(state=NORMAL, command=lambda: self.LoadPipe_CmdContinue(1))
 
-#
-# This function is bound to the "Stop" button in the "Load from pipe"
-# dialog (note this button replaces "Abort" while loading is ongoing.)
-# The function temporarily suspends loading to allow the user to change
-# settings or abort loading.
-#
-def LoadPipe_CmdStop():
-  # remove the read event handler to suspend loading
-  tk.deletefilehandler(sys.stdin)
-
-  # switch buttons in the dialog
-  wt.dlg_load_cmd_stop.configure(text="Abort", command=LoadPipe_CmdAbort)
-  wt.dlg_load_cmd_ok.configure(state=NORMAL, command=lambda: LoadPipe_CmdContinue(1))
-
-  # allow the user to modify settings in the dialog
-  wt.dlg_load.grab_set()
-
-
-#
-# This function is bound to the "Ok" button in the "Load from pipe"
-#
-def LoadPipe_CmdContinue(is_user):
-  global load_file_mode, load_buf_fill, load_buf_size
-  global load_file_complete
-  global dlg_load_file_limit
-
-  # apply possible change of buffer limit by the user
-  try:
-    val = 1024*1024 * int(dlg_load_file_limit.get())
-  except:
-    tk.after_idle(lambda:messagebox.showerror(parent=tk, message="Buffer size is not a number: " + dlg_load_file_limit.get()))
-    return
-
-  if val != load_buf_size:
-    load_buf_size = val
-    UpdateRcAfterIdle()
-
-  if is_user and (load_file_mode.get() == 0) and (load_buf_fill.get() >= load_buf_size):
-    # "head" mode confirmed by user and buffer is full -> close the dialog
-    load_file_complete.set("")
-    wt.dlg_load.destroy()
-  else:
-    wt.dlg_load_cmd_stop.configure(text="Stop", command=LoadPipe_CmdStop)
-    wt.dlg_load_cmd_ok.configure(state=DISABLED)
-
-    # install the read handler again to resume loading data
-    tk.createfilehandler(sys.stdin, READABLE, LoadDataFromPipe)
-
-    # prohibit modifications of settings; allow the "Stop" button only
-    wt.dlg_load_cmd_stop.grab_set()
-
-
-#
-# This function discards data in the load buffer queue if the length
-# limit is exceeded.  The buffer queue is an array of character strings
-# (each string the result of a "read" command.)  The function is called
-# after each read in tail mode, so it must be efficient (i.e. esp. avoid
-# copying large buffers.)
-#
-def LoadPipe_LimitData(exact):
-  global load_buf_size, load_buf_fill, load_file_mode
-  global load_file_data
-
-  # tail mode: delete oldest data / head mode: delete newest data
-  if load_file_mode.get() == 0:
-    lidx = -1
-  else:
-    lidx = 0
-
-  # calculate how much data must be discarded
-  rest = load_buf_fill - load_buf_size
-
-  # unhook complete data buffers from the queue
-  while ((rest > 0) and
-         (len(load_file_data) > 0) and
-         (len(load_file_data[lidx]) <= rest)):
-
-    buflen = len(load_file_data[lidx])
-    rest = rest - buflen
-    load_buf_fill = load_buf_fill - buflen
-    del load_file_data[lidx]
-
-  # truncate the last data buffer in the queue (only if exact limit is requested)
-  if (rest > 0) and exact and (len(load_file_data) > 0):
-    buflen = len(load_file_data[lidx])
-    data = load_file_data[lidx]
-    if load_file_mode.get() == 0:
-      del data[buflen - rest :]
+      # widen grab from "Stop" button to complete dialog for allowing the user to modify settings
+      wt.dlg_load.grab_set()
     else:
-      del data[:rest]
+      wt.dlg_load_cmd_stop.configure(text="Stop", command=lambda:self.LoadPipe_CmdStop())
+      wt.dlg_load_cmd_ok.configure(state=DISABLED)
 
-    load_file_data[lidx] = data
-    load_buf_fill = load_buf_fill - rest
+      # prohibit modifications of settings; allow the "Stop" button only
+      wt.dlg_load_cmd_stop.grab_set()
 
 
-#
-# This function is installed as handler for asynchronous read events
-# when reading text data from STDIN, i.e. via a pipe.
-#
-def LoadDataFromPipe():
-  global load_buf_size, load_buf_fill, load_file_mode
-  global load_file_sum_hi, load_file_sum_lo, load_file_sum_str
-  global load_file_complete, load_file_data, load_file_close
+  #
+  # This function is bound to the "Abort" button in the "Load from pipe"
+  # dialog (note this button replaces "Stop" while loading is ongoing.)
+  # The function stops loading and closes the dialog. Note: data that
+  # already has been loaded is kept and displayed.
+  #
+  def LoadPipe_CmdAbort(self):
+    self._file_complete = ""
+    self.LoadPipe_Done(0)
+    self.LoadPipe_Insert(0)
 
-  try:
-    # limit read length to buffer size ("head" mode only)
-    size = 100000
-    if (load_file_mode == 0) and (load_buf_fill + size > load_buf_size):
-      size = load_buf_size - load_buf_fill
 
-    if size > 0:
-      data = sys.stdin.read(size)
-      buflen = len(data)
-      if buflen > 0:
-        load_file_sum_hi = ((load_file_sum_lo + buflen) >> 20) + load_file_sum_hi
-        load_file_sum_lo = (load_file_sum_lo + buflen) & 0xFFFFF
-        if ((load_file_sum_hi >= 0xFFF) or
-            (((load_file_sum_hi << 20) | load_file_sum_hi) > 4 * load_buf_size)):
-          load_file_sum_str = load_file_sum_hi + " MByte"
-        else:
-          load_file_sum_str = (load_file_sum_hi << 20) | load_file_sum_hi
+  #
+  # This function is bound to the "Stop" button in the "Load from pipe"
+  # dialog (note this button replaces "Abort" while loading is ongoing.)
+  # The function temporarily suspends loading to allow the user to change
+  # settings or abort loading.
+  #
+  def LoadPipe_CmdStop(self):
+    # switch buttons in the dialog
+    self.LoadPipe_DialogConfigure(True)
+    #TODO notify thread
 
-        load_buf_fill += buflen
-        # data chunk is added to an array (i.e. not a single char string) for efficiency
-        load_file_data.append(data)
 
-        # discard oldest data when buffer size limit is exceeded ("tail" mode only)
-        if (load_file_mode != 0) and (load_buf_fill > load_buf_size):
-          LoadPipe_LimitData(0)
+  #
+  # This function is bound to the "Ok" button in the "Load from pipe"
+  #
+  def LoadPipe_CmdContinue(self, is_user):
+    global load_buf_size
 
+    # apply possible change of buffer mode and limit by the user
+    load_file_mode = self._opt_file_mode.get()
+    try:
+      val = 1024*1024 * int(self._dlg_file_limit.get())
+    except:
+      tk.after_idle(lambda:messagebox.showerror(parent=tk, message="Buffer size is not a number: " + self._dlg_file_limit.get()))
+      return
+
+    if val != load_buf_size:
+      load_buf_size = val
+      UpdateRcAfterIdle()
+
+    if is_user and (self._opt_file_mode.get() == 0) and (self._read_buffered >= load_buf_size):
+      # "head" mode confirmed by user and buffer is full -> close the dialog
+      self._file_complete = ""
+      self.LoadPipe_Done(False)
+    else:
+      self.LoadPipe_DialogConfigure(False)
+
+      # create the reader thread again to resume loading data
+      if self._thr_inst == None:
+        self._thr_inst = threading.Thread(target=lambda:self.LoadPipe_BgLoop(), daemon=True)
+        self._thr_inst.start()
+
+
+  #
+  # This function is scheduled via "after_idle" by the background task to
+  # trigger updates of the buffer status in display.
+  #
+  def LoadPipe_UpdateBgStats(self):
+    with self._thr_lock:
+      if (self._read_total >= 1000000) or (self._read_total > 4 * load_buf_size):
+        self._dlg_read_total.set("%2.1f MByte" % (self._read_total / 0x100000))
       else:
-        # end-of-file reached -> stop loading
-        load_pipe_is_eof = True
-        load_file_complete.set("")
-        load_file_close.set(1)
-        tk.deletefilehandler(sys.stdin)
-        SafeDestroy(wt.dlg_load)
+        self._dlg_read_total.set(self._read_total)
 
-  except IOError as e:
-    # I/O error
-    tk.deletefilehandler(sys.stdin)
-    load_file_complete.set(e.strerror)
-    SafeDestroy(wt.dlg_load)
+      self._dlg_read_buffered.set(self._read_buffered)
+      self._tid_dlg_upd = None
 
-  if (not load_file_complete and
-      (load_file_mode == 0) and (load_buf_fill >= load_buf_size)):
-    OpenLoadPipeDialog(True)
+  #
+  # This function discards data in the load buffer queue if the length
+  # limit is exceeded.  The buffer queue is an array of character strings
+  # (each string the result of a "read" command.)  The function is called
+  # after each read in tail mode, so it must be efficient (i.e. esp. avoid
+  # copying large buffers.)
+  #
+  def LoadPipe_LimitData(self, exact):
+    global load_buf_size
+
+    # tail mode: delete oldest data / head mode: delete newest data
+    if load_file_mode == 0:
+      lidx = -1
+    else:
+      lidx = 0
+
+    # calculate how much data must be discarded
+    rest = self._read_buffered - load_buf_size
+
+    # unhook complete data buffers from the queue
+    while ((rest > 0) and
+           (len(self._file_data) > 0) and
+           (len(self._file_data[lidx]) <= rest)):
+
+      buflen = len(self._file_data[lidx])
+      rest = rest - buflen
+      self._read_buffered -= buflen
+      del self._file_data[lidx]
+
+    # truncate the last data buffer in the queue (only if exact limit is requested)
+    if exact and (rest > 0) and (len(self._file_data) > 0):
+      buflen = len(self._file_data[lidx])
+      data = self._file_data[lidx]
+      if load_file_mode == 0:
+        data = data[buflen - rest :]
+      else:
+        data = data[:rest]
+
+      self._file_data[lidx] = data
+      self._read_buffered -= rest
 
 
-#
-# This function loads a text file from STDIN. A status dialog is opened
-# if loading takes longer than a few seconds or if the current buffer
-# size is exceeded.
-#
-def LoadPipe(is_init):
-  global cur_filename, load_file_complete, load_file_data
-  global load_buf_size, load_buf_fill, load_file_mode, load_file_close
-  global load_file_sum_hi, load_file_sum_lo, load_file_sum_str
-  global load_pipe_is_eof
+  #
+  # This function is installed as handler for asynchronous read events
+  # when reading text data from STDIN, i.e. via a pipe.
+  #
+  def LoadPipe_BgLoop(self):
+    global load_buf_size
 
-  cur_filename = ""
+    try:
+      while True:
+        # limit read length to buffer size ("head" mode only)
+        with self._thr_lock:
+          size = 64000
+          if (load_file_mode == 0) and (self._read_buffered + size > load_buf_size):
+            size = load_buf_size - self._read_buffered
+        print("XXX thread mode=", load_file_mode, "reading", size, "bufsize=", load_buf_size, "buffered=", self._read_buffered)
 
-  if is_init:
-    # split file length in HIGH and LOW (20 bit) as it may exceed 32-bit
-    # (Python supports long int, but this cannot be passed to Tcl/Tk as -textvariable)
-    load_file_sum_lo = 0
-    load_file_sum_hi = 0
-    load_file_sum_str = 0
-    load_pipe_is_eof = False
+        if size > 0:
+          data = sys.stdin.read(size)
+          buflen = len(data)
+          print("XXX thread read", buflen)
+          if buflen > 0:
+            with self._thr_lock:
+              self._read_total += buflen
+              self._read_buffered += buflen
+              # data chunk is added to an array (i.e. not a single char string) for efficiency
+              self._file_data.append(data)
 
-  load_file_data = []
-  load_buf_fill = 0
-  load_file_complete = StringVar(tk, "")
+              # discard oldest data when buffer size limit is exceeded ("tail" mode only)
+              if (load_file_mode != 0) and (self._read_buffered > load_buf_size):
+                self.LoadPipe_LimitData(0)
 
-  tid_load_dlg = tk.after(1000, lambda: OpenLoadPipeDialog(False))
-  wt.f1_t.configure(cursor="watch")
+              if self._tid_dlg_upd == None:
+                self._tid_dlg_upd = tk.after_idle(lambda:load_pipe.LoadPipe_UpdateBgStats() if load_pipe else None)
 
-  # install an event handler to read the data asynchronously
-  fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
-  tk.createfilehandler(sys.stdin, READABLE, LoadDataFromPipe)
+          else:
+            # end-of-file reached -> stop loading
+            print("XXX thread EOF", buflen)
+            with self._thr_lock:
+              self.is_eof = True
+              self._file_complete = ""
+            break
+        else:
+          print("XXX thread size limit")
+          break
 
-  # block here until all data has been read
-  tk.wait_variable(load_file_complete)
+    except IOError as e:
+      # I/O error
+      with self._thr_lock:
+        self._file_complete = e.strerror
+      print("XXX thread error", e.strerror)
 
-  try:
-    tk.winfo_height()
-  except:
-    sys.exit(0)
+    # notify the main thread
+    # NOTE event_generate() hangs; using "after_idle" as work-around
+    tk.after_idle(lambda:load_pipe.LoadPipe_Done(1) if load_pipe else None)
+    print("XXX thread exit")
 
-  if load_file_complete.get() == "":
-    # success (no read error, although EOF may have been reached)
-    # limit content length to the exact maximum (e.g. in case the user changed sizes)
-    LoadPipe_LimitData(1)
 
-    # insert the data into the text widget
-    for data in load_file_data:
-      wt.f1_t.insert("end", data)
+  #
+  # This function loads a text file from STDIN. A status dialog is opened
+  # if loading takes longer than a few seconds or if the current buffer
+  # size is exceeded.
+  #
+  def LoadPipe_Start(self):
+    # re-initialize in case loading is continued
+    self._file_data = []
+    self._file_complete = ""
 
-    if load_file_close:
+    if self._opt_file_mode.get() == 0:
+      if not self._thr_inst:
+        del self._file_data[:]
+        self._read_buffered = 0
+      elif len(self._file_data) > 0:
+        del self._file_data[:-1]
+        self._read_buffered = len(self._file_data[-1])
+
+    wt.f1_t.configure(cursor="watch")
+    self.LoadPipe_OpenDialog()
+    self.LoadPipe_DialogConfigure(False)
+
+    # install an event handler to read the data asynchronously
+    #fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
+    if not self._thr_inst:
+      self._thr_inst = threading.Thread(target=lambda:self.LoadPipe_BgLoop(), daemon=True)
+      self._thr_inst.start()
+
+
+  #
+  # This function handles the virtual event generated by the background loop
+  #
+  def LoadPipe_Done(self, from_thread):
+    if from_thread:
+      print("XXX pre-join")
+      self._thr_inst.join()
+      print("XXX post-join")
+      self._thr_inst = None
+
+    if self._file_complete == "":
+      # success (no read error, although EOF may have been reached)
+      # limit content length to the exact maximum (e.g. in case the user changed sizes)
+      self.LoadPipe_LimitData(1)
+
+      if from_thread: # else: caller makes the call
+        if (self._opt_file_mode.get() != 0) or self.is_eof:
+          self.LoadPipe_Insert(from_thread)
+        else:
+          # keep dialog open to allow user switching file mode or other parameters
+          self.LoadPipe_DialogConfigure(True)
+
+    else:
+      messagebox.showerror(parent=tk, message="Read error on STDIN: " + self._file_complete)
+      self.is_eof = True
+      try:
+        sys.stdin.close()
+      except:
+        pass
+      self.LoadPipe_Insert(from_thread)
+
+
+  #
+  # This function closes the pip-loading dialog window and inserts the loaded
+  # text (if any) into the main window.
+  #
+  def LoadPipe_Insert(self, from_thread):
+    global dlg_load_shown
+
+    if from_thread and (self._opt_file_close or self.is_eof):
+      self.is_eof = True
       try:
         sys.stdin.close()
       except:
         pass
 
-  else:
-    messagebox.showerror(parent=tk, message="Read error on STDIN: " + load_file_complete)
-    try:
-      sys.stdin.close()
-    except:
-      pass
+    if dlg_load_shown:
+      dlg_load_shown = False
+      wt.dlg_load.destroy()
 
-  tk.after_cancel(tid_load_dlg)
-  wt.f1_t.configure(cursor="top_left_arrow")
+    # insert the data into the text widget
+    for data in self._file_data:
+      wt.f1_t.insert("end", data)
 
-  load_file_complete = None
-  load_file_data = None
-  load_buf_fill = None
-
-  # finally initiate color highlighting etc.
-  InitContent()
+    # finally initiate color highlighting etc.
+    InitContent()
+    wt.f1_t.configure(cursor="top_left_arrow")
 
 
+# ----------------------------------------------------------------------------
 #
 # This function loads a text file (or parts of it) into the text widget.
 #
 def LoadFile(filename):
-  global cur_filename, load_buf_size
+  global cur_filename, load_buf_size, load_file_mode
 
   cur_filename = filename
 
@@ -7518,7 +7629,7 @@ def LoadFile(filename):
 
     # apply file length limit
     stat = os.fstat(file.fileno())
-    if stat.st_size > load_buf_size:
+    if load_file_mode and (stat.st_size > load_buf_size):
       file.seek(0 - load_buf_size, 2)
 
     # insert the data into the text widget
@@ -7538,7 +7649,7 @@ def LoadFile(filename):
 #
 def InitContent():
   global tid_search_inc, tid_search_hall, tid_high_init
-  global cur_filename, load_pipe_is_eof, dlg_mark_shown
+  global cur_filename, load_pipe, dlg_mark_shown
 
   if tid_high_init != None: tk.after_cancel(tid_high_init)
   if tid_search_inc != None: tk.after_cancel(tid_search_inc)
@@ -7556,7 +7667,7 @@ def InitContent():
     wt.menubar_ctrl.entryconfigure(1, state=NORMAL, label="Reload current file")
   else:
     wt.menubar_ctrl.entryconfigure(1, label="Continue loading STDIN...")
-    if not load_pipe_is_eof:
+    if not load_pipe.is_eof:
       wt.menubar_ctrl.entryconfigure(1, state=NORMAL)
     else:
       wt.menubar_ctrl.entryconfigure(1, state=DISABLED)
@@ -7686,15 +7797,15 @@ def MenuCmd_Discard(is_fwd):
 # This function is bound to the "Reload current file" menu command.
 #
 def MenuCmd_Reload():
-  global cur_filename, load_pipe_is_eof
+  global load_pipe, cur_filename
 
-  if cur_filename != "":
+  if load_pipe != None:
+    if not load_pipe.is_eof:
+      DiscardContent()
+      tk.after_idle(lambda: load_pipe.LoadPipe_Start())
+  else:
     DiscardContent()
     tk.after_idle(lambda: LoadFile(cur_filename))
-  else:
-    if not load_pipe_is_eof:
-      DiscardContent()
-      tk.after_idle(lambda: LoadPipe(False))
 
 
 #
@@ -7883,11 +7994,11 @@ def LoadRcFile():
               print("Warning: ignoring unknown keyword in rcfile line %d:" % line_no, var, file=sys.stderr)
 
           except json.decoder.JSONDecodeError:
-            messagebox.showerror(message="Syntax error decoding rcfile line %d: %s" % (line_no, line[:40]))
+            messagebox.showerror(message="Syntax error decoding rcfile line %d: %s" % (line_no, line[:40]), title="Trace browser")
             error = 1
 
         elif not error:
-          messagebox.showerror(message="Syntax error in rc file, line #%s: %s" % (line_no, line[:40]))
+          messagebox.showerror(message="Syntax error in rc file, line #%s: %s" % (line_no, line[:40]), title="Trace browser")
           error = 1
 
         elif ver_check == 0:
@@ -7895,7 +8006,7 @@ def LoadRcFile():
           if rc_compat_version != None:
             if rc_compat_version > rcfile_version:
               messagebox.showerror(message="rc file 'myrcfile' is from an incompatible, "
-                                   "newer browser version (%s) and cannot be loaded." % rcfile_version)
+                                   "newer browser version (%s) and cannot be loaded." % rcfile_version, title="Trace browser")
 
               # change name of rc file so that the newer one isn't overwritten
               myrcfile = myrcfile + "." + rcfile_version
@@ -7915,8 +8026,6 @@ def LoadRcFile():
   except OSError as e:
     if e.errno != errno.ENOENT:
       print("Failed to load config file: " + str(e), file=sys.stderr)
-  except Exception as e:
-    print(type(e), e)
 
 
 #
@@ -8014,7 +8123,7 @@ def UpdateRcFile():
         rc_file_error = False
       except OSError as e:
         if not rc_file_error:
-          messagebox.showerror(message="Could not replace rc file %s: %s" % (rcfilename, e.strerror))
+          messagebox.showerror(message="Could not replace rc file %s: %s" % (rcfilename, e.strerror), title="Trace browser")
         os.remove(rcfile.name)
         rc_file_error = True
 
@@ -8022,12 +8131,12 @@ def UpdateRcFile():
       # write error - remove the file fragment, report to user
       os.remove(rcfile.name)
       if not rc_file_error:
-        messagebox.showerror(message="Write error in file %s: %s" % (rcfilename, e.strerror))
+        messagebox.showerror(message="Write error in file %s: %s" % (rcfilename, e.strerror), title="Trace browser")
         rc_file_error = True
 
   except:
     if not rc_file_error:
-      messagebox.showerror(message="Could not create temporary rc file in directory %s" % home)
+      messagebox.showerror(message="Could not create temporary rc file in directory %s" % home, title="Trace browser")
       rc_file_error = True
 
 
@@ -8103,13 +8212,13 @@ def ParseArgv():
         ParseArgvLenCheck(arg_idx)
         arg_idx += 1
         load_buf_size_opt = ParseArgInt(arg, sys.argv[arg_idx])
-        load_file_mode.set(1)
+        load_file_mode = 1
 
       elif arg.startswith("--tail"):
         match = re.match("^--tail=(.+)$", arg)
         if match:
           load_buf_size_opt = ParseArgInt(arg, match.group(1))
-          load_file_mode.set(1)
+          load_file_mode = 1
         else:
           PrintUsage(arg, "requires a numerical argument (e.g. --tail=10000000)")
 
@@ -8117,13 +8226,13 @@ def ParseArgv():
         ParseArgvLenCheck(arg_idx)
         arg_idx += 1
         load_buf_size_opt = ParseArgInt(arg, sys.argv[arg_idx])
-        load_file_mode.set(0)
+        load_file_mode = 0
 
       elif arg.startswith("--head"):
         match = re.match("^--head=(.+)$", arg)
         if match:
           load_buf_size_opt = ParseArgInt(arg, match.group(1))
-          load_file_mode.set(0)
+          load_file_mode = 0
         else:
           PrintUsage(arg, "requires a numerical argument (e.g. --head=10000000)")
 
@@ -8210,8 +8319,7 @@ def wt_exists(obj):
 # This variable contains the search string in the "find" entry field, i.e.
 # it's automatically updated when the user modifies the text in the widget.
 # A variable trace is used to trigger incremental searches after each change.
-# NOTE: This variable initialized after instatiation of Tk
-#tlb_find = None
+tlb_find = ""
 
 # This variable is used to remember search pattern and options while a
 # background search highlighting is active and afterwards to avoid
@@ -8233,10 +8341,9 @@ tlb_history = []
 tlb_hist_maxlen = 50
 
 # These variables contain search options which can be set by checkbuttons.
-# NOTE: These variables are initialized after instatiation of Tk
-#tlb_case = None
-#tlb_regexp = None
-#tlb_hall = None
+tlb_case = False
+tlb_regexp = False
+tlb_hall = False
 
 # This variable stores the search direction: 0:=backwards, 1:=forwards
 tlb_last_dir = 1
@@ -8270,17 +8377,17 @@ last_key_char = ""
 cur_jump_stack = []
 cur_jump_idx = -1
 
-# This hash array stores the bookmark list. Its indices are text line numbers,
-# the values are the bookmark text (i.e. initially a copy of the text line)
+# This hash array stores the bookmark list. Array keys are text line numbers,
+# the values are the bookmark text (i.e. initially a copy of the bookmarked
+# line of text)
 mark_list = {}
 
 # This variable tracks if the marker list was changed since the last save.
-# It's used to offer automatic save upon quit.
+# This is used to offer automatic save upon quit.
 mark_list_modified = False
 
 # These variables are used by the bookmark list dialog.
 dlg_mark_list = []
-dlg_mark_shown = None
 
 # These variables hold IDs of timers and background tasks (i.e. scripts delayed
 # by "after")  They are used to cancel the scripts when necessary.
@@ -8410,9 +8517,11 @@ patlist = [
   ["^, *#", 1, 1, "default", "tag1", "", "", "#008800", 1, 0, 0, "", "", "", 1, 0]
 ]
 
-# This variable contains the limit for file load
-# The value can be changed by the "head" and "tail" command line options.
-load_buf_size = 2000000
+# This variable contains the mode and limit for file load. The mode can be
+# 0 for "head" or 1 for "tail" (i.e. load data from end of the file). The
+# values can be changed by the "head" and "tail" command line options.
+load_file_mode = 0
+load_buf_size = 0x100000
 
 # define RC file version limit for forwards compatibility
 rcfile_compat = 0x02000000
@@ -8425,33 +8534,40 @@ rc_file_error = 0
 #
 try:
   tk = Tk(className="trowser")
+  # withdraw main window until fully populated below; needed in case of error popup during startup
+  tk.wm_withdraw()
 except:
   # this error occurs when the display connection is refused etc.
   print("Tk initialization failed", file=sys.stderr)
   sys.exit(1)
 
-# initialize Tk variables (i.e. variables accessed by widgets or vwait)
-tlb_case = BooleanVar(tk, 1)
-tlb_regexp = BooleanVar(tk, 1)
-tlb_hall = BooleanVar(tk, 1)
-tlb_find = StringVar(tk, "")
-load_file_mode = IntVar(tk, 0)
-load_file_close = IntVar(tk, 1)
-load_buf_fill = IntVar(tk, 0)
+# convert into Tk variables (i.e. variables accessed by widgets or vwait)
+tlb_case = BooleanVar(tk, tlb_case)
+tlb_regexp = BooleanVar(tk, tlb_regexp)
+tlb_hall = BooleanVar(tk, tlb_hall)
+tlb_find = StringVar(tk, tlb_find)
 
+# Parse command line parameters & load configuration options
 ParseArgv()
 LoadRcFile()
+
 InitResources()
 CreateMainWindow()
 HighlightCreateTags()
+tk.wm_deiconify()
 tk.update()
 
 if sys.argv[-1] == "-":
-  #LoadPipe(True)
-  messagebox.showerror(parent=tk, message="Loading from a pipe is not yet supported; use the Tcl/Tk version for that")
+  cur_filename = ""
+  load_pipe = LoadPipe()
+  load_pipe.LoadPipe_Start()
 else:
+  load_pipe = None
   LoadFile(sys.argv[-1])
 
 # done - all following actions are event-driven
 # the application exits when the main window is closed
-tk.mainloop()
+try:
+  tk.mainloop()
+except KeyboardInterrupt:
+  pass

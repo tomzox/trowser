@@ -3,7 +3,7 @@
 exec wish "$0" -- "$@"
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2010 Tom Zoerner
+# Copyright (C) 2007-2010,2019 Tom Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -49,15 +49,30 @@ proc InitResources {} {
   foreach event {<ButtonPress-1> <ButtonRelease-1> <B1-Motion> <Double-Button-1> <Shift-Button-1> \
                  <Triple-Button-1> <Triple-Shift-Button-1> <Button-2> <B2-Motion> \
                  <<Copy>> <<Clear>> <Shift-Key-Tab> <Control-Key-Tab> <Control-Shift-Key-Tab> \
-                 <Key-Prior> <Key-Next> <Key-Down> <Key-Up> <Key-Left> <Key-Right> \
-                 <Shift-Key-Left> <Shift-Key-Right> <Shift-Key-Up> <Shift-Key-Down> \
+                 <Key-Prior> <Key-Next> \
                  <Shift-Key-Next> <Shift-Key-Prior> <Control-Key-Down> <Control-Key-Up> \
                  <Control-Key-Left> <Control-Key-Right> <Control-Key-Next> <Control-Key-Prior> \
                  <Key-Home> <Key-End> <Shift-Key-Home> <Shift-Key-End> <Control-Key-Home> \
                  <Control-Key-End> <Control-Shift-Key-Home> <Control-Shift-Key-End> \
                  <Control-Shift-Key-Left> <Control-Shift-Key-Right> <Control-Shift-Key-Down>
-                 <Control-Shift-Key-Up> <Control-Key-slash>} {
+                 <Control-Shift-Key-Up>} {
     bind TextReadOnly $event [bind Text $event]
+  }
+  if {[info tclversion] eq "8.5"} {
+    foreach event {<Key-Down> <Key-Up> <Key-Left> <Key-Right> <Control-Key-slash> \
+                   <Shift-Key-Left> <Shift-Key-Right> <Shift-Key-Up> <Shift-Key-Down>} {
+      bind TextReadOnly $event [bind Text $event]
+    }
+  } else {
+    # since Tk 8.6 there are no event handlers for <Key-Up> in tag Text anymore
+    bind TextReadOnly <Key-Up> {CursorMoveUpDown .f1.t -1}
+    bind TextReadOnly <Key-Down> {CursorMoveUpDown .f1.t 1}
+    bind TextReadOnly <Key-Left> {CursorMoveLeftRight .f1.t -1}
+    bind TextReadOnly <Key-Right> {CursorMoveLeftRight .f1.t 1}
+    bind TextReadOnly <Control-Key-Home> {CursorGotoLine .f1.t start}
+    bind TextReadOnly <Control-Key-End> {CursorGotoLine .f1.t end}
+    #<Shift-Key-Left> <Shift-Key-Right> <Shift-Key-Up> <Shift-Key-Down>
+    bind TextReadOnly <Control-Key-slash> {.f1.t tag add sel 1.0 end}
   }
   # bindings for a selection text widget (listbox emulation)
   # (uses non-standard cursor movement event bindings, hence not added here)
@@ -158,8 +173,8 @@ proc CreateMainWindow {} {
   # commands to move the cursor
   bind .f1.t <Key-Home> {if {%s == 0} {CursorSetColumn .f1.t left; KeyClr; break}}
   bind .f1.t <Key-End> {if {%s == 0} {CursorSetColumn .f1.t right; KeyClr; break}}
-  bind .f1.t <Key-space> {event generate %W <Key-Right>; KeyClr; break}
-  bind .f1.t <Key-BackSpace> {event generate %W <Key-Left>; KeyClr; break}
+  bind .f1.t <Key-space> {CursorMoveLeftRight .f1.t 1; break}
+  bind .f1.t <Key-BackSpace> {CursorMoveLeftRight .f1.t -1; break}
   KeyCmdBind .f1.t "h" {event generate .f1.t <Left>}
   KeyCmdBind .f1.t "l" {event generate .f1.t <Right>}
   KeyCmdBind .f1.t "Return" {CursorMoveLine .f1.t 1}
@@ -205,6 +220,7 @@ proc CreateMainWindow {} {
   bind .f1.t <FocusIn> {KeyClr}
   bind .f1.t <Return> {if {[KeyCmd .f1.t Return]} break}
   bind .f1.t <KeyPress> {if {[KeyCmd .f1.t %A]} break}
+  #bind .f1.t <Triple-Button-3> ShowDebugConsole
 
   # frame #2: search controls
   frame .f2 -borderwidth 2 -relief raised
@@ -1938,6 +1954,25 @@ proc CursorSetLine {wid where off} {
   CursorMoveLine $wid 0
 }
 
+
+#
+# This function moves the cursor by the given number of lines up or down,
+# scrolling if needed to keep the cursor position visible.
+#
+proc CursorMoveUpDown {wid delta} {
+  $wid mark set insert [list insert + $delta lines]
+  $wid see insert
+}
+
+#
+# This function moves the cursor by the given number of characters left or
+# right.  The cursor will wrap to the next line at the end of a line. The view
+# is scrolling if needed to keep the cursor position visible.
+#
+proc CursorMoveLeftRight {wid delta} {
+  $wid mark set insert [list insert + $delta chars]
+  $wid see insert
+}
 
 #
 # This function moves the cursor by the given number of lines and places
@@ -6334,7 +6369,7 @@ proc FontList_Fill {} {
   }
 
   foreach f $dlg_font_fams {
-    lappend dlg_font_fams $f
+    #lappend dlg_font_fams $f
     .dlg_font.f1.fams insert end $f
   }
 }
@@ -7702,6 +7737,260 @@ proc TextSel_AdjustDeletion {var line} {
 
 # ----------------------------------------------------------------------------
 #
+# The functions in this section implement a debug console which allows direct
+# access to the Tcl interpreter. The dialog consists of an input and an output
+# text window. The upper window is used to input Tcl commands which are eval'ed
+# upon pressing the Return key. The evaluated command's output is displayed in
+# the lower window. All commands execute in the global context.
+#
+
+proc DlgDbg_CreateWindow {} {
+  global argv0
+
+  toplevel .dlg_dbg
+  wm group .dlg_dbg .
+  wm title .dlg_dbg "$argv0 debug console"
+
+  panedwindow .dlg_dbg.pane -orient vertical -showhandle 1 \
+                            -sashpad 3 -sashrelief raised
+  pack .dlg_dbg.pane -side top -fill both -expand 1
+
+  DlgDbg_CreatePanes 0
+
+  focus .dlg_dbg.pane.frm_inp0.txt
+
+  #wm geometry .dlg_dbg "640x400"
+}
+
+proc DlgDbg_CreatePanes {pane_idx} {
+  set th [expr {(($pane_idx == 0) ? 15 : 7) * [font metrics TkFixedFont -linespace]}]
+
+  # pane #1: read-only display of command result text
+  set wid ".dlg_dbg.pane.frm_out$pane_idx"
+  labelframe ${wid} -text "Output"
+  text ${wid}.txt -width 80 -height 2 -wrap char \
+                        -yscrollcommand [list ${wid}.sbv set] \
+                        -font TkFixedFont -cursor top_left_arrow \
+                        -relief flat -borderwidth 0 -exportselection 1
+  bindtags ${wid}.txt [list ${wid}.txt TextReadOnly .dlg_dbg all]
+  ${wid}.txt tag configure preload_var -foreground blue
+  ${wid}.txt tag configure preload_proc -foreground blue
+  ${wid}.txt tag bind preload_var <ButtonRelease-1> [list DlgDbg_PreloadByRef $pane_idx 0 %x %y]
+  ${wid}.txt tag bind preload_proc <ButtonRelease-1> [list DlgDbg_PreloadByRef $pane_idx 1 %x %y]
+  grid ${wid}.txt -column 0 -row 0 -sticky news
+  scrollbar ${wid}.sbv -orient vertical -command [list ${wid}.txt yview] -takefocus 0
+  grid ${wid}.sbv -column 1 -row 0 -sticky ns
+  grid columnconfigure ${wid} 0 -weight 1
+  grid rowconfigure ${wid} 0 -weight 1
+  pack ${wid} -side top -fill both -expand 1 -padx 10 -pady 5
+
+  .dlg_dbg.pane add ${wid} -sticky news -stretch always
+
+  # pane #2: command text input
+  set wid ".dlg_dbg.pane.frm_inp$pane_idx"
+  labelframe ${wid} -text "Command line"
+  # sub-frame with entry field for variable or procedure name
+  frame ${wid}.frm_pld
+  label ${wid}.frm_pld.lab -text "Preload:"
+  pack ${wid}.frm_pld.lab -side left -pady 2
+  entry ${wid}.frm_pld.ent
+  pack ${wid}.frm_pld.ent -side left -fill x -expand 1
+  button ${wid}.frm_pld.but_proc -text "proc" -pady 1 \
+                        -command [list DlgDbg_PreloadProc $pane_idx 1]
+  button ${wid}.frm_pld.but_var -text "var" -pady 1 \
+                        -command [list DlgDbg_PreloadVar $pane_idx 1]
+  pack ${wid}.frm_pld.but_proc \
+       ${wid}.frm_pld.but_var -side left
+  grid ${wid}.frm_pld -column 0 -columnspan 2 -row 0 -sticky ew
+
+  text ${wid}.txt -width 80 -height 2 -wrap char \
+                        -undo 1 -maxundo 1000 -autoseparators 1 \
+                        -yscrollcommand [list ${wid}.sbv set] \
+                        -font TkFixedFont -cursor top_left_arrow \
+                        -relief flat -borderwidth 0 -exportselection 1
+  grid ${wid}.txt -column 0 -row 1 -sticky news
+  scrollbar ${wid}.sbv -orient vertical -command [list ${wid}.txt yview] -takefocus 0
+  grid ${wid}.sbv -column 1 -row 1 -sticky ns
+  grid columnconfigure ${wid} 0 -weight 1
+  grid rowconfigure ${wid} 1 -weight 1
+
+  frame ${wid}.frm_cmd
+  button ${wid}.frm_cmd.but_exec -text "Exec" -width 5 -underline 0 -pady 1 \
+                        -command [list DlgDbg_Exec $pane_idx]
+  button ${wid}.frm_cmd.but_clear -text "Clear" -width 5 -pady 1 \
+                        -command [list ${wid}.txt delete 1.0 end]
+  button ${wid}.frm_cmd.but_add -text "Add pane" -pady 1 \
+                        -command DlgDbg_AddPaneCmd
+  button ${wid}.frm_cmd.but_close -text "Close pane" -pady 1 \
+                        -command [list DlgDbg_ClosePaneCmd $pane_idx]
+  pack ${wid}.frm_cmd.but_exec \
+       ${wid}.frm_cmd.but_clear \
+       ${wid}.frm_cmd.but_add \
+       ${wid}.frm_cmd.but_close -side left -padx 10 -fill x -expand 1
+  grid ${wid}.frm_cmd -column 0 -columnspan 2 -row 2 -sticky ew
+  pack ${wid} -side top -fill both -expand 1 -padx 10 -pady 5
+
+  bind ${wid}.txt <Control-Key-e> "DlgDbg_Exec $pane_idx; break"
+  bind ${wid}.txt <Key-Tab> {focus [tk_focusNext %W]; break}
+
+  .dlg_dbg.pane add ${wid} -sticky news -height $th
+}
+
+#
+# This function is bound to the "Add pane" button in the debug dialog. The
+# function creates two new panes in the debug dialog window, holding another set
+# of command output and input widgets.
+#
+proc DlgDbg_AddPaneCmd {} {
+  set new_idx 0
+  foreach wid [.dlg_dbg.pane panes] {
+    if {([scan $wid ".dlg_dbg.pane.frm_inp%d" idx] > 0) && ($idx >= $new_idx)} {
+      set new_idx [expr {$idx + 1}]
+    }
+  }
+  DlgDbg_CreatePanes $new_idx
+}
+
+#
+# This function is bound to the "Close pane" button in the debug dialog. The
+# function destroys the respective set of output and input widgets. If this is
+# the last set, the debug dialog is closed.
+#
+proc DlgDbg_ClosePaneCmd {pane_idx} {
+  set ltmp [lsearch -glob -inline -all [.dlg_dbg.pane panes] "*frm_inp*"]
+  if {[llength $ltmp] > 1} {
+    destroy .dlg_dbg.pane.frm_out${pane_idx}
+    destroy .dlg_dbg.pane.frm_inp${pane_idx}
+  } else {
+    destroy .dlg_dbg
+  }
+}
+
+#
+# This function is bound to the "Exec" button and the Control-E key in the debug
+# dialog. The function sends the command test in the text input widget to the
+# interpreter and displays the result in the output widget.
+#
+proc DlgDbg_Exec {pane_idx} {
+  set wid .dlg_dbg.pane.frm_inp${pane_idx}
+  set cmd [${wid}.txt get 1.0 end]
+
+  catch {uplevel #0 $cmd} cerr
+
+  # show the output, without chop the trailing newline
+  set cerr [regsub {\n$} $cerr {}]
+  .dlg_dbg.pane.frm_out${pane_idx}.txt replace 1.0 end $cerr
+}
+
+#
+# This function is bound to mouse button clicks onto tagged lines in the output
+# text frame. Such tagged lines are inserted by the "preload" function. The
+# function loads the variable or procedure named by the line which was clicked
+# into into the preload entry field and the triggers display of the variable or
+# procedure (i.e. same as if the "preload" button had been clicked.)
+#
+proc DlgDbg_PreloadByRef {pane_idx is_proc xcoo ycoo} {
+  set wid_out .dlg_dbg.pane.frm_out${pane_idx}
+
+  set txt [${wid_out}.txt get "@$xcoo,$ycoo linestart" "@$xcoo,$ycoo lineend"]
+  if {$txt ne ""} {
+    set wid .dlg_dbg.pane.frm_inp${pane_idx}
+    ${wid}.frm_pld.ent delete 0 end
+    ${wid}.frm_pld.ent insert end $txt
+
+    if {$is_proc} {
+      DlgDbg_PreloadProc $pane_idx 0
+    } else {
+      DlgDbg_PreloadVar $pane_idx 0
+    }
+  }
+}
+
+#
+# This function is bound to the "var" button in the "Preload" frame of the debug
+# dialog. The function fills the command input text frame with a Tcl command
+# that would set the respective variable or array with its current content.
+# (The purpose is to allow the user to edit the definition and the to modify the
+# variable content by executing the command.)
+#
+proc DlgDbg_PreloadVar {pane_idx auto_complete} {
+  set wid .dlg_dbg.pane.frm_inp${pane_idx}
+  set var_ref [${wid}.frm_pld.ent get]
+
+  if {$auto_complete} {
+    set matches [uplevel #0 [list info vars "$var_ref*"]]
+  } else {
+    set matches [uplevel #0 [list info vars "$var_ref"]]
+  }
+  if {[llength $matches] == 1} {
+    upvar #0 $matches val
+    if {[array exists val]} {
+      ${wid}.txt replace 1.0 end \
+                          [concat array set $matches [list [uplevel #0 [list array get $matches]]]]
+    } else {
+      ${wid}.txt replace 1.0 end [concat set $matches [list $val]]
+    }
+  } else {
+    #${wid}.txt replace 1.0 end "set $var_ref "
+    set wid_out .dlg_dbg.pane.frm_out${pane_idx}
+    ${wid_out}.txt replace 1.0 end [join [lsort $matches] "\n"] preload_var
+  }
+}
+
+#
+# This function is bound to the "proc" button in the "Preload" frame of the
+# debug dialog. The function fills the command input text frame with a Tcl
+# command that would define the procedure with its current arguments and body.
+# (The purpose is to allow the user to edit the definition and the to modify the
+# procedure by executing the command.)
+#
+proc DlgDbg_PreloadProc {pane_idx auto_complete} {
+  set wid .dlg_dbg.pane.frm_inp${pane_idx}
+  set proc_name [${wid}.frm_pld.ent get]
+
+  if {$auto_complete} {
+    set matches [uplevel #0 [list info procs "$proc_name*"]]
+  } else {
+    set matches [uplevel #0 [list info procs "$proc_name"]]
+  }
+  if {[llength $matches] == 1} {
+    set msg "proc $matches {[info args $matches]} {\n[info body $matches]\n}"
+    .dlg_dbg.pane.frm_inp${pane_idx}.txt replace 1.0 end $msg
+  } else {
+    set wid_out .dlg_dbg.pane.frm_out${pane_idx}
+    ${wid_out}.txt replace 1.0 end [join [lsort $matches] "\n"] preload_proc
+  }
+}
+
+#
+# This function can be used to print a stack backtrace (from tcl.tk site)
+#
+proc DlgDbg_Stacktrace {} {
+  set depth [info level]
+  for {set i 1} {$i < $depth} {incr i} {
+    set lev [expr {$depth - $i}]
+    puts "CALLER $lev: [info level $lev]"
+  }
+}
+
+#
+# This function opens the debug dialog window. This dialog is only intended to
+# be used by developers, so the function should not be exposed in regular menus.
+# (It's currently bound to a triple-click onto the "quit" button in the main
+# window.)
+#
+proc ShowDebugConsole {} {
+  if {![winfo exists .dlg_dbg]} {
+    DlgDbg_CreateWindow
+  } else {
+    wm deiconify .dlg_dbg
+    raise .dlg_dbg
+  }
+}
+
+
+# ----------------------------------------------------------------------------
+#
 # This function opens the "Loading from STDIN" status dialog.
 #
 proc OpenLoadPipeDialog {stop} {
@@ -7913,10 +8202,10 @@ proc LoadDataFromPipe {} {
         set load_file_sum_hi [expr {(($load_file_sum_lo + $len) >> 20) + $load_file_sum_hi}]
         set load_file_sum_lo [expr {($load_file_sum_lo + $len) & 0xFFFFF}]
         if {($load_file_sum_hi >= 0xFFF) ||
-            ((($load_file_sum_hi << 20) | $load_file_sum_hi) > 4 * $load_buf_size)} {
+            ((($load_file_sum_hi << 20) | $load_file_sum_lo) > 4 * $load_buf_size)} {
           set load_file_sum_str "$load_file_sum_hi MByte"
         }  else {
-          set load_file_sum_str [expr {($load_file_sum_hi << 20) | $load_file_sum_hi}]
+          set load_file_sum_str [expr {($load_file_sum_hi << 20) | $load_file_sum_lo}]
         }
         incr load_buf_fill $len
         # data chunk is added to an array (i.e. not a single char string) for efficiency
@@ -8019,7 +8308,7 @@ proc LoadPipe {} {
 # This function loads a text file (or parts of it) into the text widget.
 #
 proc LoadFile {filename} {
-  global cur_filename load_buf_size
+  global cur_filename load_buf_size load_file_mode
 
   set cur_filename $filename
 
@@ -8028,7 +8317,7 @@ proc LoadFile {filename} {
 
     # apply file length limit
     file stat $filename sta
-    if {$sta(size) > $load_buf_size} {
+    if {$load_file_mode && ($sta(size) > $load_buf_size)} {
       seek $file [expr {0 - $load_buf_size}] end
     }
 
@@ -8624,7 +8913,7 @@ proc ParseArgv {} {
           ParseArgvLenCheck $argv $arg_idx
           incr arg_idx
           ParseArgInt $arg [lindex $argv $arg_idx] load_buf_size_opt
-          set load_file_mode 1
+          set load_file_mode 0
         }
         {^--head.*$} {
           if {[regexp -all -- {--head=(\d+)} $arg foo val]} {
@@ -8858,6 +9147,7 @@ set patlist {
 # This variable contains the limit for file load
 # The value can be changed by the "head" and "tail" command line options.
 set load_buf_size 2000000
+set load_file_mode 0
 
 # define RC file version limit for forwards compatibility
 set rcfile_compat 0x01000000
