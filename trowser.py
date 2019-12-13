@@ -34,7 +34,7 @@ import json
 import re
 import traceback
 import tkinter
-#import tkinter.font as tkf
+import tkinter.font as tkf
 from tkinter import *
 from tkinter import messagebox
 from tkinter import filedialog
@@ -45,14 +45,15 @@ from tkinter import colorchooser
 # global event binding tags.
 #
 def InitResources():
-  global font_normal, font_bold, img_marker
+  global font_normal, font_bold, font_hlink, img_marker
 
   # override default font for the Tk message box
   tk.eval("option add *Dialog.msg.font {helvetica 9 bold} userDefault")
 
   # fonts for text and label widgets
-  font_normal = "helvetica 9 normal"
-  font_bold = "helvetica 9 bold"
+  font_normal = tkf.Font(family="helvetica", size=9, weight=tkf.NORMAL)
+  font_bold = tkf.Font(family="helvetica", size=9, weight=tkf.BOLD)
+  font_hlink = tkf.Font(family="helvetica", size=7, weight=tkf.NORMAL, underline=1)
 
   # bindings to allow scrolling a text widget with the mouse wheel
   tk.bind_class("TextWheel", "<Button-4>", lambda e: e.widget.yview_scroll(-3, "units"))
@@ -189,8 +190,9 @@ def CreateMainWindow():
   KeyBinding_LeftRight(wt.f1_t)
 
   # commands to move the cursor
-  wt.f1_t.bind("<Key-Home>", lambda e: BindCallAndBreak(lambda: KeyHomeEnd(wt.f1_t, "left") if (e.state == 0) else CursorGotoLine(wt.f1_t, "start")))
-  wt.f1_t.bind("<Key-End>", lambda e: BindCallAndBreak(lambda: KeyHomeEnd(wt.f1_t, "right") if (e.state == 0) else CursorGotoLine(wt.f1_t, "end")))
+  # Note: values e.state MS-Windows: 1=SHIFT, 2=CAPS-Lock, 4=CTRL, 0x60000=ALT, 0x60004=Alt-GR, 0x40000=always set!
+  wt.f1_t.bind("<Key-Home>", lambda e: BindCallAndBreak(lambda: KeyHomeEnd(wt.f1_t, "left") if ((e.state & 0xFF) == 0) else CursorGotoLine(wt.f1_t, "start")))
+  wt.f1_t.bind("<Key-End>", lambda e: BindCallAndBreak(lambda: KeyHomeEnd(wt.f1_t, "right") if ((e.state & 0xFF) == 0) else CursorGotoLine(wt.f1_t, "end")))
   wt.f1_t.bind("<Key-space>", lambda e:BindCallKeyClrBreak(lambda: CursorMoveLeftRight(wt.f1_t, 1)))
   wt.f1_t.bind("<Key-BackSpace>", lambda e:BindCallKeyClrBreak(lambda: CursorMoveLeftRight(wt.f1_t, -1)))
   KeyCmdBind(wt.f1_t, "h", lambda: wt.f1_t.event_generate("<Left>"))
@@ -1668,22 +1670,13 @@ def ToplevelResized(wid, top, cmp, var_id):
 # Helper function to modify a font's size or appearance
 #
 def DeriveFont(afont, delta_size, style=None):
-  match = re.match(r"^(\{[^\}]*\}|[^ ]*) +(\-?\d+)( \{[^\}]*\}| [^ ]*)?$", afont)
-  if match:
-    name = match.group(1)
-    size = int(match.group(2))
-    if (style == None) and (match.group(3) != None):
-      style = match.group(3).strip()
+  afont = afont.copy()
 
-    if size < 0:
-      size -= delta_size
-    else:
-      size += delta_size
+  if (delta_size != 0):
+    afont.configure(size=afont.cget("size")+delta_size)
 
-    if (style != None):
-      afont = "%s %d %s" % (name, size, style)
-    else:
-      afont = "%s %d" % (name, size)
+  if (style != None) and (style == "bold"):
+    afont.configure(weight=tkf.BOLD)
 
   return afont
 
@@ -1695,9 +1688,9 @@ def DeriveFont(afont, delta_size, style=None):
 def ChangeFontSize(delta):
   global font_content
 
-  new = DeriveFont(font_content, delta)
+  font_content.configure(size=font_content.cget("size") + delta)
 
-  cerr = ApplyFont(new)
+  cerr = ApplyFont()
   if cerr != None:
     DisplayStatusLine("font", "error", "Failed to apply the new font: " + cerr)
   else:
@@ -1709,15 +1702,14 @@ def ChangeFontSize(delta):
 # the new font in the main window, text highlight tags and dialog texts.
 # The function returns 1 on success and saves the font setting in the RC.
 #
-def ApplyFont(name):
+def ApplyFont():
   global font_content
 
   cerr = None
   try:
-    wt.f1_t.configure(font=name)
+    wt.f1_t.configure(font=font_content)
 
     # save to rc
-    font_content = name
     UpdateRcAfterIdle()
 
     # apply font change to dialogs
@@ -1734,8 +1726,8 @@ def ApplyFont(name):
     HighlightCreateTags()
     SearchList_CreateHighlightTags()
     MarkList_CreateHighlightTags()
-  except:
-    cerr = "Failed to configure font"
+  except Exception as e:
+    cerr = "Failed to configure font:" + str(e)
 
   return cerr
 
@@ -1762,7 +1754,7 @@ def YviewSet(wid, where, col):
   wid.see("insert")
   pos = wid.bbox("insert")
   if pos != None:
-    fh = tk.call("font", "metrics", font_content, "-linespace")
+    fh = font_content.metrics("linespace")
     wh = wid.winfo_height()
     bbox_y = pos[1]
     bbox_h = pos[3]
@@ -1806,7 +1798,7 @@ def YviewScroll(wid, delta):
 
   wid.yview_scroll(delta, "units")
 
-  fh = tk.call("font", "metrics", font_content, "-linespace")
+  fh = font_content.metrics("linespace")
   pos = wid.bbox("insert")
 
   # check if cursor is fully visible
@@ -1825,7 +1817,7 @@ def YviewScrollHalf(wid, dir):
   global font_content
 
   wh = wid.winfo_height()
-  fh = tk.call("font", "metrics", font_content, "-linespace")
+  fh = font_content.metrics("linespace")
   if fh > 0:
     wh = int((wh + fh/2) / fh)
     YviewScroll(wid, int(wh/2 * dir))
@@ -1834,8 +1826,6 @@ def YviewScrollHalf(wid, dir):
 # This function moves the cursor into a given line in the current view.
 #
 def CursorSetLine(wid, where, off):
-  global font_content
-
   CursorJumpPushPos(wid)
 
   if where == "top":
@@ -2065,8 +2055,7 @@ def CursorMoveWord(is_fwd, spc_only, to_end):
 def IsRowFullyVisible(wid, index):
   global font_content
 
-  # TODO use tkinter.font
-  fh = tk.call("font", "metrics", font_content, "-linespace")
+  fh = font_content.metrics("linespace")
   bbox = wid.bbox("insert")
 
   if (bbox == None) or (bbox[3] < fh):
@@ -3211,7 +3200,7 @@ def MarkList_OpenDialog():
 
     wt.dlg_mark.wm_group(tk)
 
-    char_w = tk.call("font", "measure", font_content, " ")
+    char_w = font_content.measure(" ")
     wt.dlg_mark_l = Text(wt.dlg_mark, width=1, height=1, wrap=NONE, font=font_content, cursor="top_left_arrow",
                          foreground=col_fg_content, background=col_bg_content, exportselection=0,
                          insertofftime=0, insertwidth=2*char_w)
@@ -3441,8 +3430,8 @@ def SearchHistory_Open():
     wt.dlg_hist.wm_geometry(win_geom["dlg_hist"])
     wt.dlg_hist.wm_positionfrom("user")
 
-    cw1 = tk.call("font", "measure", font_content, "reg.exp.")
-    cw2 = tk.call("font", "measure", font_content, "ign.case")
+    cw1 = font_content.measure("reg.exp.")
+    cw2 = font_content.measure("ign.case")
     tab_pos = [cw1//2 + 5, "center", cw1 + cw2//2 + 5, "center", cw1+cw2 + 10, "left"]
     wt.dlg_hist_f1_l.configure(tabs=tab_pos)
     wt.dlg_hist_f1_l.tag_configure("small", font=DeriveFont(font_content, -2))
@@ -3773,7 +3762,7 @@ def SearchList_Open(raise_win):
     wt.dlg_srch_menubar.add_cascade(label="Options", menu=wt.dlg_srch_menubar_options, underline=0)
     wt.dlg_srch.config(menu=wt.dlg_srch_menubar)
 
-    char_w = tk.call("font", "measure", font_content, " ")
+    char_w = font_content.measure(" ")
     wt.dlg_srch_f1 = Frame(wt.dlg_srch)
     wt.dlg_srch_f1_l = Text(wt.dlg_srch_f1, width=1, height=1, wrap=NONE, font=font_content,
                             cursor="top_left_arrow", foreground=col_fg_content,
@@ -5321,7 +5310,7 @@ def TagList_OpenDialog():
     wt.dlg_tags_menubar.add_command(label="Move Down", command=TagList_ShiftDown, state=DISABLED)
     wt.dlg_tags.config(menu=wt.dlg_tags_menubar)
 
-    char_w = tk.call("font", "measure", font_content, " ")
+    char_w = font_content.measure(" ")
     wt.dlg_tags_f1 = Frame(wt.dlg_tags)
     wt.dlg_tags_f1_l = Text(wt.dlg_tags_f1, width=1, height=1, wrap=NONE, font=font_content,
                             cursor="top_left_arrow", foreground=col_fg_content, background=col_bg_content,
@@ -5672,7 +5661,9 @@ def TagList_PopupColorPalette(pat_idx, is_fg):
     col_idx = 7 if is_fg else 6
     def_col = w[col_idx]
 
-    PaletteMenu_Popup(wt.dlg_tags, rootx, rooty, lambda col:TagList_UpdateColor(col, pat_idx, is_fg), w[col_idx])
+    PaletteMenu_Popup(wt.dlg_tags, rootx, rooty,
+                      lambda col:TagList_UpdateColor(col, pat_idx, is_fg),
+                      w[col_idx])
 
 
 #
@@ -5931,15 +5922,18 @@ def FontList_OpenDialog():
 
     # fill font list and select current font
     FontList_Fill()
-    dlg_font_bold.set(tk.call("font", "actual", font_content, "-weight") != "normal")
-    dlg_font_size.set(tk.call("font", "actual", font_content, "-size"))
-    cur_fam = tk.call("font", "actual", font_content, "-family")
+    dlg_font_bold.set(font_content.cget("weight") != "normal")
+    dlg_font_size.set(font_content.cget("size"))
+    cur_fam = font_content.cget("family")
     try:
-      idx = dlg_font_fams.index(cur_fam)
-      wt.dlg_font_f1_fams.selection("set", idx)
+      idx = dlg_font_fams.index(cur_fam)  # raises ValueError if not found
+      wt.dlg_font_f1_fams.activate(idx)
+      wt.dlg_font_f1_fams.selection_set(idx)
       wt.dlg_font_f1_fams.see(idx)
-    except:
+    except ValueError:
       pass
+    # finally update demo box with the currently selected font
+    FontList_Selection()
 
   else:
     wt.dlg_font.wm_deiconify()
@@ -5966,15 +5960,7 @@ def FontList_Fill():
   global dlg_font_fams, dlg_font_size, dlg_font_bold
 
   # remove duplicates, then sort alphabetically
-  dlg_font_fams = sorted(set(tk.call("font", "families", "-displayof", tk)))
-
-  # move known fonts to the front
-  for known in ["arial", "courier", "fixed", "helvetica", "times"]:
-    try:
-      dlg_font_fams.remove(known)
-      dlg_font_fams.insert(0, known)
-    except:
-      pass
+  dlg_font_fams = sorted(set(tkf.families(displayof=tk)))
 
   for f in dlg_font_fams:
     wt.dlg_font_f1_fams.insert("end", f)
@@ -5994,10 +5980,8 @@ def FontList_Selection():
     if dlg_font_bold.get():
       name = name + " bold"
 
-    try:
-      wt.dlg_font_demo.configure(font=name)
-    except:
-      wt.dlg_font_demo.configure(font="fixed")
+    # note this succeeds even for unknown fonts, so no try/except needed
+    wt.dlg_font_demo.configure(font=name)
 
 
 #
@@ -6012,16 +5996,18 @@ def FontList_Quit(do_store):
   if do_store:
     sel = wt.dlg_font_f1_fams.curselection()
     if (len(sel) == 1) and (sel[0] < len(dlg_font_fams)):
-      name = "{%s} %d" % (dlg_font_fams[sel[0]], dlg_font_size.get())
-      if dlg_font_bold.get():
-        name = name + " bold"
+      font_content.configure(family=dlg_font_fams[sel[0]],
+                             size=dlg_font_size.get(),
+                             weight=(tkf.BOLD if dlg_font_bold.get() else tkf.NORMAL))
 
-      cerr = ApplyFont(name)
+      cerr = ApplyFont()
       if cerr != None:
         messagebox.showerror(parent=wt.dlg_font, message="Selected font is unavailable: " + cerr)
+        return
     else:
       messagebox.showerror(parent=wt.dlg_font,
                            message="No font is selected - Use \"Abort\" to leave without changes.")
+      return
 
   dlg_font_fams = None
   dlg_font_size = None
@@ -6034,7 +6020,8 @@ def FontList_Quit(do_store):
 # This function creates or raises the color color highlight edit dialog.
 #
 def Markup_OpenDialog(pat_idx):
-  global font_normal, font_bold, font_content, col_bg_content, col_fg_content
+  global font_normal, font_bold, font_content, font_hlink
+  global col_bg_content, col_fg_content
   global fmt_selection, dlg_fmt_shown, dlg_fmt
   global patlist, col_palette
 
@@ -6057,7 +6044,7 @@ def Markup_OpenDialog(pat_idx):
     wt.dlg_fmt_fop_regexpt.pack(side=LEFT, padx=2)
     wt.dlg_fmt_fop.pack(side=TOP)
 
-    char_w = tk.call("font", "measure", font_content, " ")
+    char_w = font_content.measure(" ")
     wt.dlg_fmt_sample = Text(wt.dlg_fmt, height=5, width=35, font=font_content, wrap=NONE,
                              foreground=col_fg_content, background=col_bg_content, relief=SUNKEN,
                              borderwidth=1, takefocus=0, highlightthickness=0, exportselection=0,
@@ -6065,7 +6052,7 @@ def Markup_OpenDialog(pat_idx):
     wt.dlg_fmt_sample.pack(side=TOP, padx=5, pady=6)
     wt.dlg_fmt_sample.bindtags([wt.dlg_fmt_sample, "TextReadOnly", wt.dlg_fmt, "all"])
 
-    lh = tk.call("font", "metrics", font_content, "-linespace")
+    lh = font_content.metrics("linespace")
     wt.dlg_fmt_sample.tag_configure("spacing", spacing1=lh)
     wt.dlg_fmt_sample.tag_configure("margin", lmargin1=17)
     HighlightConfigure(wt.dlg_fmt_sample, "sel", fmt_selection)
@@ -6161,7 +6148,7 @@ def Markup_OpenDialog(pat_idx):
     wt.dlg_fmt_mb.pack(side=TOP, padx=5, pady=3, anchor=NW)
 
     wt.dlg_fmt_cop = Button(wt.dlg_fmt, text="Edit color palette...", command=Palette_OpenDialog,
-                            borderwidth=0, relief=FLAT, font=DeriveFont(font_normal, -2, "underline"),
+                            borderwidth=0, relief=FLAT, font=font_hlink,
                             foreground="#0000ff", activeforeground="#0000ff", padx=0, pady=0)
     wt.dlg_fmt_cop.pack(side=TOP, anchor=W, padx=5, pady=4)
 
@@ -6330,7 +6317,7 @@ def Markup_UpdateFormat():
     wt.dlg_fmt_mb_bdw_sb.configure(state=DISABLED)
 
   # adjust spacing above first line to center the content vertically
-  lh = tk.call("font", "metrics", font_content, "-linespace")
+  lh = font_content.metrics("linespace")
   spc = lh - dlg_fmt["spacing"].get()
   if spc < 0: spc = 0
   wt.dlg_fmt_sample.tag_configure("spacing", spacing1=spc)
@@ -6400,7 +6387,9 @@ def Markup_PopupColorPalette(wid, type):
 
   rootx = wid.winfo_rootx()
   rooty = wid.winfo_rooty() + wid.winfo_height()
-  PaletteMenu_Popup(wt.dlg_fmt, rootx, rooty, lambda col:Markup_UpdateColor(col, type, 0), dlg_fmt[type])
+  PaletteMenu_Popup(wt.dlg_fmt, rootx, rooty,
+                    lambda col:Markup_UpdateColor(col, type, 0),
+                    dlg_fmt[type].get())
 
 
 #
@@ -6652,7 +6641,7 @@ def Palette_Save(do_save):
 # sub-menu (i.e. cascade) in other menus.
 #
 def PaletteMenu_Popup(parent, rootx, rooty, cmd, col_def):
-  global col_palette, font_normal
+  global col_palette, font_hlink
 
   wt.colsel = Toplevel(tk, highlightthickness=0)
   wt.colsel.wm_title("Color selection menu")
@@ -6667,11 +6656,11 @@ def PaletteMenu_Popup(parent, rootx, rooty, cmd, col_def):
   wt.colsel_f1 = Frame(wt.colsel)
   wt.colsel_f1_b_other = Button(wt.colsel_f1, text="Other...",
                          command=lambda:PaletteMenu_OtherColor(parent, cmd, col_def),
-                         borderwidth=0, relief=FLAT, font=DeriveFont(font_normal, -2, "underline"),
+                         borderwidth=0, relief=FLAT, font=font_hlink,
                          foreground="#0000ff", activeforeground="#0000ff", padx=0, pady=0)
   wt.colsel_f1_b_other.pack(side=LEFT, expand=1, anchor=W)
   wt.colsel_f1_b_none = Button(wt.colsel_f1, text="None", command=lambda:cmd(""),
-                               borderwidth=0, relief=FLAT, font=DeriveFont(font_normal, -2, "underline"),
+                               borderwidth=0, relief=FLAT, font=font_hlink,
                                foreground="#0000ff", activeforeground="#0000ff", padx=0, pady=0)
   wt.colsel_f1_b_none.pack(side=LEFT, expand=1, anchor=E)
   wt.colsel_f1.pack(side=TOP, fill=X, expand=1)
@@ -7253,22 +7242,28 @@ def TextSel_XselectionExport(mswin, str):
 class LoadPipe:
   def __init__(self):
     global load_file_mode
-    self._opt_file_close = IntVar(tk, 1)
-    self._opt_file_mode = IntVar(tk, load_file_mode)
+
+    self._opt_file_close = IntVar(tk, 0)             # option configurable via dlg.
+    self._opt_file_mode = IntVar(tk, load_file_mode) # copy of cfg. opt. for display
     self._dlg_read_total = IntVar(tk, 0)     # copy of _read_total for display
     self._dlg_read_buffered = IntVar(tk, 0)  # copy of _read_buffered for display
     self._dlg_file_limit = IntVar(tk, (load_buf_size + (1024*1024-1)) // (1024*1024))
 
     self._read_total = 0        # number of bytes read from file; may grow beyond 32 bit!
     self._read_buffered = 0     # number of bytes read & still in buffer
-    self.is_eof = False         # True once file.read() returned EOF
-
     self._file_data = []        # buffer for data read from file
     self._file_complete = ""    # buffer for reporting error messages from background thread
-    self._thr_inst = None       # threading object of background thread
-    self._tid_dlg_upd = None    # tk.after ID for status update triggered by bg thread
+    self.is_eof = False         # True once file.read() returned EOF
 
+    self._thr_ctrl = 0          # thread request: 0=load; 1=suspend; 2=exit
+    self._thr_inst = None       # threading object of background thread
     self._thr_lock = threading.Lock()
+    self._thr_cv = threading.Condition(self._thr_lock)
+    self._tid_bg_poll = None    # tk.after ID for polling bg thread status changes
+    self._stat_upd_ind = 0
+    self._stat_upd_cnf = 0
+    self._ctrl_upd_ind = 0
+    self._ctrl_upd_cnf = 0
 
 
   #
@@ -7283,6 +7278,8 @@ class LoadPipe:
       wt.dlg_load.wm_group(tk)
       wt.dlg_load.wm_transient(tk)
       xcoo = wt.f1_t.winfo_rootx() + 50
+
+
       ycoo = wt.f1_t.winfo_rooty() + 50
       wt.dlg_load.wm_geometry("+%d+%d" % (xcoo, ycoo))
 
@@ -7318,11 +7315,11 @@ class LoadPipe:
       wt.dlg_load_f1.pack(side=TOP, padx=5, pady=5)
       row += 1
 
-      wt.dlg_load_f1_lab_close = Label(wt.dlg_load_f1, text="Close file:")
-      wt.dlg_load_f1_lab_close.grid(sticky=W, column=0, row=row)
-      wt.dlg_load_f1_val_close = Checkbutton(wt.dlg_load_f1, variable=self._opt_file_close, text="close after read")
-      wt.dlg_load_f1_val_close.grid(sticky=W, column=1, row=row, columnspan=2)
-      row += 1
+      #wt.dlg_load_f1_lab_close = Label(wt.dlg_load_f1, text="Close file:")
+      #wt.dlg_load_f1_lab_close.grid(sticky=W, column=0, row=row)
+      #wt.dlg_load_f1_val_close = Checkbutton(wt.dlg_load_f1, variable=self._opt_file_close, text="close after read")
+      #wt.dlg_load_f1_val_close.grid(sticky=W, column=1, row=row, columnspan=2)
+      #row += 1
 
       wt.dlg_load_cmd = Frame(wt.dlg_load)
       # Note button texts are modified to Abort/Ok while reading from file is stopped
@@ -7347,7 +7344,7 @@ class LoadPipe:
   def LoadPipe_DialogConfigure(self, is_read_stopped):
     if is_read_stopped:
       wt.dlg_load_cmd_stop.configure(text="Abort", command=lambda:self.LoadPipe_CmdAbort())
-      wt.dlg_load_cmd_ok.configure(state=NORMAL, command=lambda: self.LoadPipe_CmdContinue(1))
+      wt.dlg_load_cmd_ok.configure(state=NORMAL, command=lambda: self.LoadPipe_CmdContinue())
 
       # widen grab from "Stop" button to complete dialog for allowing the user to modify settings
       wt.dlg_load.grab_set()
@@ -7360,15 +7357,13 @@ class LoadPipe:
 
 
   #
-  # This function is bound to the "Abort" button in the "Load from pipe"
-  # dialog (note this button replaces "Stop" while loading is ongoing.)
-  # The function stops loading and closes the dialog. Note: data that
+  # This function is bound to the "Abort" button in the "Load from pipe" dialog
+  # (note this button is shown only while loading is stopped; else it is
+  # replaced by "Stop".) The function closes the dialog. Note: data that
   # already has been loaded is kept and displayed.
   #
   def LoadPipe_CmdAbort(self):
-    self._file_complete = ""
-    self.LoadPipe_Done(0)
-    self.LoadPipe_Insert(0)
+    self.LoadPipe_Insert(False)
 
 
   #
@@ -7380,14 +7375,16 @@ class LoadPipe:
   def LoadPipe_CmdStop(self):
     # switch buttons in the dialog
     self.LoadPipe_DialogConfigure(True)
-    #TODO notify thread
+    with self._thr_lock:
+      self._thr_ctrl = 1
+      self._thr_cv.notify()
 
 
   #
   # This function is bound to the "Ok" button in the "Load from pipe"
   #
-  def LoadPipe_CmdContinue(self, is_user):
-    global load_buf_size
+  def LoadPipe_CmdContinue(self):
+    global load_buf_size, load_file_mode
 
     # apply possible change of buffer mode and limit by the user
     load_file_mode = self._opt_file_mode.get()
@@ -7397,36 +7394,21 @@ class LoadPipe:
       tk.after_idle(lambda:messagebox.showerror(parent=tk, message="Buffer size is not a number: " + self._dlg_file_limit.get()))
       return
 
-    if val != load_buf_size:
+    if abs(val - load_buf_size) >= 1024*1024:
       load_buf_size = val
       UpdateRcAfterIdle()
 
-    if is_user and (self._opt_file_mode.get() == 0) and (self._read_buffered >= load_buf_size):
+    if (self._opt_file_mode.get() == 0) and (self._read_buffered >= load_buf_size):
       # "head" mode confirmed by user and buffer is full -> close the dialog
-      self._file_complete = ""
-      self.LoadPipe_Done(False)
+      self.LoadPipe_Insert(False)
     else:
       self.LoadPipe_DialogConfigure(False)
 
       # create the reader thread again to resume loading data
-      if self._thr_inst == None:
-        self._thr_inst = threading.Thread(target=lambda:self.LoadPipe_BgLoop(), daemon=True)
-        self._thr_inst.start()
+      with self._thr_lock:
+        self._thr_ctrl = 0
+        self._thr_cv.notify()
 
-
-  #
-  # This function is scheduled via "after_idle" by the background task to
-  # trigger updates of the buffer status in display.
-  #
-  def LoadPipe_UpdateBgStats(self):
-    with self._thr_lock:
-      if (self._read_total >= 1000000) or (self._read_total > 4 * load_buf_size):
-        self._dlg_read_total.set("%2.1f MByte" % (self._read_total / 0x100000))
-      else:
-        self._dlg_read_total.set(self._read_total)
-
-      self._dlg_read_buffered.set(self._read_buffered)
-      self._tid_dlg_upd = None
 
   #
   # This function discards data in the load buffer queue if the length
@@ -7481,15 +7463,18 @@ class LoadPipe:
       while True:
         # limit read length to buffer size ("head" mode only)
         with self._thr_lock:
+          while self._thr_ctrl == 1:
+            self._thr_cv.wait()
+          if self._thr_ctrl == 2:
+            break;
+
           size = 64000
           if (load_file_mode == 0) and (self._read_buffered + size > load_buf_size):
             size = load_buf_size - self._read_buffered
-        print("XXX thread mode=", load_file_mode, "reading", size, "bufsize=", load_buf_size, "buffered=", self._read_buffered)
 
         if size > 0:
           data = sys.stdin.read(size)
           buflen = len(data)
-          print("XXX thread read", buflen)
           if buflen > 0:
             with self._thr_lock:
               self._read_total += buflen
@@ -7501,30 +7486,66 @@ class LoadPipe:
               if (load_file_mode != 0) and (self._read_buffered > load_buf_size):
                 self.LoadPipe_LimitData(0)
 
-              if self._tid_dlg_upd == None:
-                self._tid_dlg_upd = tk.after_idle(lambda:load_pipe.LoadPipe_UpdateBgStats() if load_pipe else None)
+              self._stat_upd_ind += 1
+
+            continue
 
           else:
             # end-of-file reached -> stop loading
-            print("XXX thread EOF", buflen)
             with self._thr_lock:
               self.is_eof = True
-              self._file_complete = ""
+              self._ctrl_upd_ind += 1
             break
         else:
-          print("XXX thread size limit")
-          break
+          with self._thr_lock:
+            if self._thr_ctrl == 0:
+              self._ctrl_upd_ind += 1
+              self._thr_cv.wait()
 
     except IOError as e:
-      # I/O error
       with self._thr_lock:
         self._file_complete = e.strerror
-      print("XXX thread error", e.strerror)
+        self.is_eof = True
+        self._ctrl_upd_ind += 1
 
-    # notify the main thread
-    # NOTE event_generate() hangs; using "after_idle" as work-around
-    tk.after_idle(lambda:load_pipe.LoadPipe_Done(1) if load_pipe else None)
-    print("XXX thread exit")
+
+  #
+  # This function is run periodically to poll for status changes in the
+  # background thread. This is unfortunately needed as there's no way for
+  # triggering an event in Tk from another thread.
+  #
+  def LoadPipe_BgPolling(self):
+    if self._stat_upd_ind != self._stat_upd_cnf:
+      with self._thr_lock:
+        if (self._read_total >= 1000000) or (self._read_total > 4 * load_buf_size):
+          self._dlg_read_total.set("%2.1f MByte" % (self._read_total / 0x100000))
+        else:
+          self._dlg_read_total.set(self._read_total)
+
+        self._dlg_read_buffered.set(self._read_buffered)
+        self._stat_upd_cnf = self._stat_upd_ind
+
+    if self._ctrl_upd_ind != self._ctrl_upd_cnf:
+      if self._file_complete == "":
+        # success (no read error, although EOF may have been reached)
+        if (self._opt_file_mode.get() != 0) or self.is_eof:
+          self.LoadPipe_Insert(True)
+        else:
+          # keep dialog open to allow user switching file mode or other parameters
+          self.LoadPipe_DialogConfigure(True)
+
+      else:
+        messagebox.showerror(parent=tk, message="Read error on STDIN: " + self._file_complete)
+        try:
+          sys.stdin.close()
+        except:
+          pass
+        self.LoadPipe_Insert(True)
+
+      self._ctrl_upd_cnf = self._ctrl_upd_ind
+
+    # finally reschedule the event
+    self._tid_bg_poll = tk.after(100, lambda: load_pipe.LoadPipe_BgPolling())
 
 
   #
@@ -7534,16 +7555,11 @@ class LoadPipe:
   #
   def LoadPipe_Start(self):
     # re-initialize in case loading is continued
-    self._file_data = []
-    self._file_complete = ""
+    #self._file_data = []
 
-    if self._opt_file_mode.get() == 0:
-      if not self._thr_inst:
-        del self._file_data[:]
-        self._read_buffered = 0
-      elif len(self._file_data) > 0:
-        del self._file_data[:-1]
-        self._read_buffered = len(self._file_data[-1])
+    #if self._opt_file_mode.get() == 0:
+    #  del self._file_data[:]
+    #  self._read_buffered = 0
 
     wt.f1_t.configure(cursor="watch")
     self.LoadPipe_OpenDialog()
@@ -7551,41 +7567,15 @@ class LoadPipe:
 
     # install an event handler to read the data asynchronously
     #fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
-    if not self._thr_inst:
+    with self._thr_lock:
+      self._thr_ctrl = 0
+      self._thr_cv.notify()
+
+    if self._thr_inst == None:
       self._thr_inst = threading.Thread(target=lambda:self.LoadPipe_BgLoop(), daemon=True)
       self._thr_inst.start()
 
-
-  #
-  # This function handles the virtual event generated by the background loop
-  #
-  def LoadPipe_Done(self, from_thread):
-    if from_thread:
-      print("XXX pre-join")
-      self._thr_inst.join()
-      print("XXX post-join")
-      self._thr_inst = None
-
-    if self._file_complete == "":
-      # success (no read error, although EOF may have been reached)
-      # limit content length to the exact maximum (e.g. in case the user changed sizes)
-      self.LoadPipe_LimitData(1)
-
-      if from_thread: # else: caller makes the call
-        if (self._opt_file_mode.get() != 0) or self.is_eof:
-          self.LoadPipe_Insert(from_thread)
-        else:
-          # keep dialog open to allow user switching file mode or other parameters
-          self.LoadPipe_DialogConfigure(True)
-
-    else:
-      messagebox.showerror(parent=tk, message="Read error on STDIN: " + self._file_complete)
-      self.is_eof = True
-      try:
-        sys.stdin.close()
-      except:
-        pass
-      self.LoadPipe_Insert(from_thread)
+    self._tid_bg_poll = tk.after(100, lambda: load_pipe.LoadPipe_BgPolling())
 
 
   #
@@ -7596,18 +7586,38 @@ class LoadPipe:
     global dlg_load_shown
 
     if from_thread and (self._opt_file_close or self.is_eof):
-      self.is_eof = True
       try:
         sys.stdin.close()
       except:
         pass
 
+      with self._thr_lock:
+        self._thr_ctrl = 2
+        self._thr_cv.notify()
+
+      # joining is not possible as thread may block in read()
+      #self._thr_inst.join()
+      #self._thr_inst = None
+
+    if self._tid_bg_poll != None:
+      tk.after_cancel(self._tid_bg_poll)
+      self._tid_bg_poll = None
+
     if dlg_load_shown:
       dlg_load_shown = False
       wt.dlg_load.destroy()
 
+    # thread may still be active, so
+    with self._thr_lock:
+      # limit content length to the exact maximum (e.g. in case the user changed sizes)
+      self.LoadPipe_LimitData(1)
+
+      l_file_data = self._file_data
+      self._file_data = []
+      self._read_buffered = 0
+
     # insert the data into the text widget
-    for data in self._file_data:
+    for data in l_file_data:
       wt.f1_t.insert("end", data)
 
     # finally initiate color highlighting etc.
@@ -7620,9 +7630,10 @@ class LoadPipe:
 # This function loads a text file (or parts of it) into the text widget.
 #
 def LoadFile(filename):
-  global cur_filename, load_buf_size, load_file_mode
+  global cur_filename, load_pipe, load_buf_size, load_file_mode
 
   cur_filename = filename
+  load_pipe = None
 
   try:
     file = open(filename, "rb")
@@ -7950,6 +7961,7 @@ def LoadRcFile():
   pat_ass = re.compile("^([a-z][a-z0-9_\\:]*)=(.+)$")
   pat_nil = re.compile("^\\s*(?:#.*)?$")
   rc_compat_version = None
+  font_content_opt = {}
 
   home = os.path.expanduser("~")
   filename = home + "/" + myrcfile
@@ -7979,7 +7991,7 @@ def LoadRcFile():
             elif (var == "tick_pat_sep"):      tick_pat_sep = val
             elif (var == "tick_pat_num"):      tick_pat_num = val
             elif (var == "tick_str_prefix"):   tick_str_prefix = val
-            elif (var == "font_content"):      font_content = val
+            elif (var == "font_content"):      font_content_opt = val
             elif (var == "fmt_selection"):     fmt_selection = val
             elif (var == "col_bg_content"):    col_bg_content = val
             elif (var == "col_fg_content"):    col_fg_content = val
@@ -8015,6 +8027,12 @@ def LoadRcFile():
 
             ver_check = 1
 
+    try:
+      if font_content.configure() != font_content_opt:
+        font_content = tkf.Font(**font_content_opt)
+    except Exception as e:
+      print("Error configuring content font:", str(e), file=sys.stderr)
+
     # override config var with command line options
     try:
       global load_buf_size_opt
@@ -8025,7 +8043,7 @@ def LoadRcFile():
 
   except OSError as e:
     if e.errno != errno.ENOENT:
-      print("Failed to load config file: " + str(e), file=sys.stderr)
+      print("Failed to load config file:", str(e), file=sys.stderr)
 
 
 #
@@ -8091,7 +8109,7 @@ def UpdateRcFile():
       print("win_geom:main_win=", json.dumps(win_geom["main_win"]), file=rcfile)
 
       # font and color settings
-      print("font_content=", json.dumps(font_content), file=rcfile)
+      print("font_content=", json.dumps(font_content.configure()), file=rcfile)
       print("col_bg_content=", json.dumps(col_bg_content), file=rcfile)
       print("col_fg_content=", json.dumps(col_fg_content), file=rcfile)
       print("fmt_find=", json.dumps(fmt_find), file=rcfile)
@@ -8433,7 +8451,7 @@ dlg_srch_shown = False
 dlg_tags_shown = False
 
 # These variables hold the font and color definitions for the main text content.
-font_content = "helvetica 9 normal"
+font_content_opt = {"family": "helvetica", "size": 9, "weight": tkf.NORMAL}
 col_bg_content = "#e2e2e8"
 col_fg_content = "#000000"
 
@@ -8524,8 +8542,8 @@ load_file_mode = 0
 load_buf_size = 0x100000
 
 # define RC file version limit for forwards compatibility
-rcfile_compat = 0x02000000
-rcfile_version = 0x02000000
+rcfile_compat = 0x02000001
+rcfile_version = 0x02000001
 myrcfile = ".trowserc"
 rc_file_error = 0
 
@@ -8546,6 +8564,7 @@ tlb_case = BooleanVar(tk, tlb_case)
 tlb_regexp = BooleanVar(tk, tlb_regexp)
 tlb_hall = BooleanVar(tk, tlb_hall)
 tlb_find = StringVar(tk, tlb_find)
+font_content = tkf.Font(**font_content_opt)
 
 # Parse command line parameters & load configuration options
 ParseArgv()
@@ -8562,7 +8581,6 @@ if sys.argv[-1] == "-":
   load_pipe = LoadPipe()
   load_pipe.LoadPipe_Start()
 else:
-  load_pipe = None
   LoadFile(sys.argv[-1])
 
 # done - all following actions are event-driven

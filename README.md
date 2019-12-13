@@ -10,12 +10,11 @@ interface, but is designed to allow browsing via the keyboard at least to the
 same extent as less. Key bindings and the cursor positioning concept are
 derived mainly from vim.
 
-Note: in this context "line-oriented" denotes that each line of text is
+Note: In this context "line-oriented" denotes that each line of text is
 considered a data unit.  Color highlighting (including search matches)
 will always apply the highlight to the complete text line.
 
-Note the Python version is equivalent to the Tcl/Tk version (except for yet
-missing support for loading from STDIN, i.e. parameter "-"). Mixed use of both
+Note the Python version is equivalent to the Tcl/Tk version. Mixed use of both
 versions is currently not possible due to different format of the configuration
 file. The installation procedure below only supports the Tcl/Tk version yet.
 
@@ -71,7 +70,7 @@ large part thanks to the powerful "text" widget in Tk) so there's only
 a low barrier of getting familiar with the source code to allow
 extending or adapting the functionality for your own needs.
 
-## Installing
+## Installing (Tcl/Tk version)
 
 Software Requirements: trowser can be used on all platforms which are
 supported by the Tcl/Tk interpreter, i.e. all UNIX variants, Linux,
@@ -88,7 +87,7 @@ In principle manual installation on UNIX-like systems is very simple:
 Just copy the script into /usr/bin (optionally you can remove the ".tcl"
 appendix) and the manual page to /usr/share/man/man1. Example:
 
-```
+```console
     cp trowser.tcl /usr/bin/trowser
     cp trowser.1 /usr/share/man/man1/trowser.1
 ```
@@ -101,7 +100,7 @@ The script will copy the required files into a local sub-directory `deb`
 and then create a package `deb/trowser_1.3-3.deb` which can be installed.
 In summary:
 
-```
+```console
     bash create_deb.sh
     dpkg -i deb/trowser_1.3-3_all.deb
 ```
@@ -111,7 +110,7 @@ The software is released under the
 
 Originally the project homepage was <http://www.nefkom.net/tomzo/prj/trowser/>
 
-## Troubleshooting
+## Troubleshooting (Tcl/Tk version)
 
 If trowser fails to start or aborts with an interpreter error, you should
 check if Tcl/Tk is installed and has the required version by entering the
