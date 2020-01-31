@@ -407,7 +407,7 @@ def HighlightInitBg(pat_idx, cid, line, loop_cnt):
   global block_bg_tasks, tid_search_inc, tid_search_hall, tid_search_list
   global patlist, tid_high_init
 
-  if block_bg_tasks or (tid_search_inc != None) or (tid_search_hall != None) or (tid_search_list != None):
+  if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None) or (tid_search_list is not None):
     # background tasks are suspended - re-schedule with timer
     tid_high_init = tk.after(100, lambda:HighlightInitBg(pat_idx, cid, line, 0))
   elif loop_cnt > 10:
@@ -528,18 +528,18 @@ def HighlightVisible(pat, tagnam, opt):
 def Highlight_YviewCallback(frac1, frac2):
   global tid_high_init, tid_search_hall
 
-  if tid_high_init != None:
+  if tid_high_init is not None:
     global patlist
     for w in patlist:
       opt = Search_GetOptions(w[0], w[1], w[2])
       HighlightVisible(w[0], w[4], opt)
 
-  if tid_search_hall != None:
+  if tid_search_hall is not None:
     global tlb_cur_hall_opt
     HighlightVisible(tlb_cur_hall_opt[0], "find", tlb_cur_hall_opt[1])
 
   # automatically remove the redirect if no longer needed
-  if (tid_high_init == None) and (tid_search_hall == None):
+  if (tid_high_init is None) and (tid_search_hall is None):
     wt.f1_t.configure(yscrollcommand=wt.f1_sb.set)
 
   wt.f1_sb.set(frac1, frac2)
@@ -610,7 +610,7 @@ def HighlightConfigure(wid, tagname, w):
 def SearchHighlightClear():
   global tlb_cur_hall_opt, tid_search_hall
 
-  if tid_search_hall != None: tk.after_cancel(tid_search_hall)
+  if tid_search_hall is not None: tk.after_cancel(tid_search_hall)
   tid_search_hall = None
   wt.f1_t.configure(cursor="top_left_arrow")
 
@@ -643,7 +643,7 @@ def SearchHighlightUpdate(pat, opt):
           wt.f1_t.configure(cursor="watch")
 
           # kill background highlight process for obsolete pattern
-          if tid_search_hall != None: tk.after_cancel(tid_search_hall)
+          if tid_search_hall is not None: tk.after_cancel(tid_search_hall)
 
           # start highlighting in the background
           tlb_cur_hall_opt = [pat, opt]
@@ -906,7 +906,7 @@ def SearchVarTrace(name1, name2, op):
   global tid_search_inc
   global tlb_last_dir
 
-  if tid_search_inc != None: tk.after_cancel(tid_search_inc)
+  if tid_search_inc is not None: tk.after_cancel(tid_search_inc)
   tid_search_inc = tk.after(50, lambda: SearchIncrement(tlb_last_dir, 1))
 
 
@@ -924,7 +924,7 @@ def SearchIncrement(is_fwd, is_changed):
   if tk.focus_get() == wt.f2_e:
     pat = tlb_find.get()
     if (pat != "") and SearchExprCheck(pat, tlb_regexp.get(), False):
-      if tlb_inc_base == None:
+      if tlb_inc_base is None:
         tlb_inc_base = Search_GetBase(is_fwd, True)
         tlb_inc_view = [wt.f1_t.xview()[0], wt.f1_t.yview()[0]]
         CursorJumpPushPos(wt.f1_t)
@@ -961,7 +961,7 @@ def SearchIncrement(is_fwd, is_changed):
 def Search_IncMatch(pos, pat, is_fwd, is_changed):
   global tlb_inc_base, tlb_inc_view, tlb_history, tlb_hist_pos, tlb_hist_prefix
 
-  if (pos == "") and (tlb_inc_base != None):
+  if (pos == "") and (tlb_inc_base is not None):
     if is_changed:
       wt.f1_t.xview_moveto(tlb_inc_view[0])
       wt.f1_t.yview_moveto(tlb_inc_view[1])
@@ -975,7 +975,7 @@ def Search_IncMatch(pos, pat, is_fwd, is_changed):
   else:
     ClearStatusLine("search")
 
-  if tlb_hist_pos != None:
+  if tlb_hist_pos is not None:
     hl = tlb_history[tlb_hist_pos]
     if pat != hl[0]:
       tlb_hist_pos = None
@@ -1008,7 +1008,7 @@ def SearchExprCheck(pat, is_re, display):
 # filtered out when a match is found.)
 #
 def Search_GetBase(is_fwd, is_init):
-  if wt.f1_t.bbox("insert") == None:
+  if wt.f1_t.bbox("insert") is None:
     if is_fwd:
       wt.f1_t.mark_set("insert", "@1,1")
     else:
@@ -1118,7 +1118,7 @@ def SearchAll(raise_win, direction):
       # note more clean-up is triggered via the focus-out event
       wt.f1_t.focus_set()
 
-      if tlb_last_wid != None:
+      if tlb_last_wid is not None:
         tlb_last_wid.focus_set()
         # raise the caller's window above the main window
         top_wid = tlb_last_wid.winfo_toplevel()
@@ -1139,7 +1139,7 @@ def SearchReset():
   wt.f1_t.tag_remove("findinc", "1.0", "end")
   tlb_cur_hall_opt = ["", []]
 
-  if tlb_inc_base != None:
+  if tlb_inc_base is not None:
     wt.f1_t.xview_moveto(tlb_inc_view[0])
     wt.f1_t.yview_moveto(tlb_inc_view[1])
     wt.f1_t.mark_set("insert", tlb_inc_base)
@@ -1182,7 +1182,7 @@ def SearchEnter(is_fwd, wid=None):
   SearchHighlightClear()
 
   tlb_last_wid = wid
-  if tlb_last_wid != None:
+  if tlb_last_wid is not None:
     # raise the search entry field above the caller's window
     top_wid = tlb_last_wid.winfo_toplevel()
     top_wid.lift()
@@ -1198,13 +1198,13 @@ def SearchLeave():
   global tlb_hist_pos, tlb_hist_prefix
   global tid_search_inc
 
-  if tid_search_inc != None:
+  if tid_search_inc is not None:
     tk.after_cancel(tid_search_inc)
     tid_search_inc = None
 
   # ignore if the keyboard focus is leaving towards another application
   focus_nam = tk.focus_get()
-  if focus_nam != None:
+  if focus_nam is not None:
     pat = tlb_find.get()
     if SearchExprCheck(pat, tlb_regexp.get(), 0):
       if tlb_hall.get():
@@ -1237,7 +1237,7 @@ def SearchAbort():
   # note more clean-up is triggered via the focus-out event
   wt.f1_t.focus_set()
 
-  if tlb_last_wid != None:
+  if tlb_last_wid is not None:
     tk.focus.set(tlb_last_wid)
 
     top_wid = tlb_last_wid.winfo_toplevel()
@@ -1254,7 +1254,7 @@ def SearchReturn():
   global tlb_find, tlb_regexp, tlb_history, tlb_last_dir, tlb_last_wid
   global tid_search_inc
 
-  if tid_search_inc != None:
+  if tid_search_inc is not None:
     tk.after_cancel(tid_search_inc)
     tid_search_inc = None
     restart = True
@@ -1275,7 +1275,7 @@ def SearchReturn():
       # incremental search not completed -> start regular search
       if SearchNext(tlb_last_dir) == "":
         global tlb_inc_view, tlb_inc_base
-        if tlb_inc_base != None:
+        if tlb_inc_base is not None:
           wt.f1_t.xview_moveto(tlb_inc_view[0])
           wt.f1_t.yview_moveto(tlb_inc_view[1])
           wt.f1_t.mark_set("insert", tlb_inc_base)
@@ -1283,7 +1283,7 @@ def SearchReturn():
 
     # note this implicitly triggers the leave event
     wt.f1_t.focus_set()
-    if tlb_last_wid != None:
+    if tlb_last_wid is not None:
       tlb_last_wid.focus_set()
       # raise the caller's window above the main window
       top_wid = tlb_last_wid.winfo_toplevel()
@@ -1336,7 +1336,7 @@ def Search_BrowseHistory(is_up):
   global tlb_find, tlb_history, tlb_hist_pos, tlb_hist_prefix
 
   if len(tlb_history) > 0:
-    if tlb_hist_pos == None:
+    if tlb_hist_pos is None:
       tlb_hist_prefix = tlb_find.get()
       if is_up:
         tlb_hist_pos = 0
@@ -1495,7 +1495,7 @@ def SearchCharInLine(char, dir):
     last_inline_char = char
     last_inline_dir = dir
   else:
-    if last_inline_char != None:
+    if last_inline_char is not None:
       char = last_inline_char
       dir = dir * last_inline_dir
     else:
@@ -1541,7 +1541,7 @@ def Search_EscapeSpecialChars(word, is_re):
 def Search_RemoveFromHistory():
   global tlb_history, tlb_hist_pos, tlb_hist_prefix
 
-  if (tlb_hist_pos != None) and (tlb_hist_pos < len(tlb_history)):
+  if (tlb_hist_pos is not None) and (tlb_hist_pos < len(tlb_history)):
     old_sel = SearchHistory_StoreSel()
 
     del tlb_history[tlb_hist_pos]
@@ -1567,10 +1567,10 @@ def DisplayStatusLine(topic, type, msg):
   global col_bg_content, tid_status_line, status_line_topic
 
   focus_nam = tk.focus_get()
-  focus_wid = tk._nametowidget(focus_nam) if focus_nam != None else None
-  top_wid = focus_wid.winfo_toplevel() if focus_wid != None else None
+  focus_wid = tk._nametowidget(focus_nam) if focus_nam is not None else None
+  top_wid = focus_wid.winfo_toplevel() if focus_wid is not None else None
 
-  if (top_wid == None):          wid = wt.f1_t
+  if (top_wid is None):          wid = wt.f1_t
   elif (top_wid == wt.dlg_srch): wid = wt.dlg_srch_f1_l
   elif (top_wid == wt.dlg_hist): wid = wt.dlg_hist_f1_l
   elif (top_wid == wt.dlg_tags): wid = wt.dlg_tags_f1_l
@@ -1593,7 +1593,7 @@ def DisplayStatusLine(topic, type, msg):
   else:
     wt.stline_l.configure(text=msg, background=col)
 
-  if tid_status_line != None: tk.after_cancel(tid_status_line)
+  if tid_status_line is not None: tk.after_cancel(tid_status_line)
   tid_status_line = tk.after(4000, lambda: wt.stline.destroy())
   status_line_topic = topic
 
@@ -1605,11 +1605,11 @@ def DisplayStatusLine(topic, type, msg):
 def ClearStatusLine(topic):
   global tid_status_line, status_line_topic
 
-  if (status_line_topic != None) and (topic == status_line_topic):
+  if (status_line_topic is not None) and (topic == status_line_topic):
     SafeDestroy(wt.stline)
 
     status_line_topic = None
-    if tid_status_line != None: tk.after_cancel(tid_status_line)
+    if tid_status_line is not None: tk.after_cancel(tid_status_line)
     tid_status_line = None
 
 
@@ -1622,7 +1622,7 @@ def DisplayLineNumber():
   global cur_filename
 
   pos = wt.f1_t.bbox("insert")
-  if pos != None:
+  if pos is not None:
     pos = wt.f1_t.index("insert")
     if len(pos.split(".")) == 2:
       (line, char) = map(int, pos.split("."))
@@ -1675,7 +1675,7 @@ def DeriveFont(afont, delta_size, style=None):
   if (delta_size != 0):
     afont.configure(size=afont.cget("size")+delta_size)
 
-  if (style != None) and (style == "bold"):
+  if (style is not None) and (style == "bold"):
     afont.configure(weight=tkf.BOLD)
 
   return afont
@@ -1691,7 +1691,7 @@ def ChangeFontSize(delta):
   font_content.configure(size=font_content.cget("size") + delta)
 
   cerr = ApplyFont()
-  if cerr != None:
+  if cerr is not None:
     DisplayStatusLine("font", "error", "Failed to apply the new font: " + cerr)
   else:
     ClearStatusLine("font")
@@ -1753,7 +1753,7 @@ def YviewSet(wid, where, col):
 
   wid.see("insert")
   pos = wid.bbox("insert")
-  if pos != None:
+  if pos is not None:
     fh = font_content.metrics("linespace")
     wh = wid.winfo_height()
     bbox_y = pos[1]
@@ -1802,7 +1802,7 @@ def YviewScroll(wid, delta):
   pos = wid.bbox("insert")
 
   # check if cursor is fully visible
-  if (pos == None) or (pos[3] < fh):
+  if (pos is None) or (pos[3] < fh):
     if delta < 0:
       wid.mark_set("insert", "@1,%d - 1 lines linestart" % wid.winfo_height())
     else:
@@ -1935,10 +1935,10 @@ def XviewScroll(wid, how, delta, dir):
   else:
     wid.xview_moveto(delta)
 
-  if pos_old != None:
+  if pos_old is not None:
     # check if cursor is fully visible
     pos_new = wid.bbox("insert")
-    if (pos_new == None) or (pos_new[2] == 0):
+    if (pos_new is None) or (pos_new[2] == 0):
       ycoo = pos_old[1] + pos_old[3] // 2
       if dir < 0:
         wid.mark_set("insert", "@%d,%d" % (wid.winfo_width(), ycoo))
@@ -1970,7 +1970,7 @@ def XviewSet(wid, where):
   xpos = wid.xview()
   coo = wid.bbox("insert")
   w = wid.winfo_width()
-  if (coo != None) and (w != 0):
+  if (coo is not None) and (w != 0):
     fract_visible = xpos[1] - xpos[0]
     fract_insert = (2 + coo[0] + coo[2]) / w
 
@@ -2058,7 +2058,7 @@ def IsRowFullyVisible(wid, index):
   fh = font_content.metrics("linespace")
   bbox = wid.bbox("insert")
 
-  if (bbox == None) or (bbox[3] < fh):
+  if (bbox is None) or (bbox[3] < fh):
     return 0
   else:
     return 1
@@ -2187,7 +2187,7 @@ def CursorJumpHistory(wid, rel):
 #
 def KeyCmdBind(wid, char, cmd):
   reg = key_cmd_reg.get(wid)
-  if reg == None:
+  if reg is None:
     reg = {}
     key_cmd_reg[wid] = reg
 
@@ -2204,7 +2204,7 @@ def KeyCmd(wid, char):
   global last_key_char
 
   reg = key_cmd_reg.get(wid)
-  if reg == None: return
+  if reg is None: return
 
   result = 0
   if char != "":
@@ -2232,7 +2232,7 @@ def KeyCmd(wid, char):
       ClearStatusLine("keycmd")
       char = last_key_char + char
       cb = reg.get(char)
-      if cb != None:
+      if cb is not None:
         cb()
       else:
         DisplayStatusLine("keycmd", "error", "Undefined key sequence \"%s\"" % char)
@@ -2254,7 +2254,7 @@ def KeyCmd(wid, char):
       last_key_char = ""
 
       cb = reg.get(char)
-      if cb != None:
+      if cb is not None:
         cb()
 
       elif "1" <= char <= "9":
@@ -2599,8 +2599,8 @@ def ParseFrameTickNo(pos, fn_cache=None):
   global tick_pat_sep, tick_pat_num, tick_str_prefix
 
   # query the cache before parsing for the frame number
-  if fn_cache != None:
-    if fn_cache.get(pos) != None:
+  if fn_cache is not None:
+    if fn_cache.get(pos) is not None:
       # FN of this line is already known
       return fn_cache[pos]
     elif fn_cache.get(-1):
@@ -2646,7 +2646,7 @@ def ParseFrameTickNo(pos, fn_cache=None):
         if match:
           prefix = tick_no + " " + match.group(1)
 
-          if fn_cache != None:
+          if fn_cache is not None:
             # add result to the cache
             fn_cache[pos] = [tick_no, fn]
             # add a special entry to the cache remembering the extent of the current frame
@@ -2664,7 +2664,7 @@ def ParseFrameTickNo(pos, fn_cache=None):
         if match:
           prefix = match.group(1)
 
-          if fn_cache != None:
+          if fn_cache is not None:
             fn_cache[pos] = [tick_no, fn]
 
     else:
@@ -2686,7 +2686,7 @@ def Mark_Toggle(line, txt=""):
   global img_marker, mark_list, mark_list_modified
   global tick_str_prefix
 
-  if mark_list.get(line) == None:
+  if mark_list.get(line) is None:
     if txt == "":
       fn_prefix = ParseFrameTickNo("insert")
       txt = ExtractText("%d.0" % line, "%d.0 lineend" % line).strip()
@@ -2765,7 +2765,7 @@ def Mark_JumpNext(is_fwd):
           goto = mark_line
           break
 
-    if goto != None:
+    if goto is not None:
       CursorJumpPushPos(wt.f1_t)
       wt.f1_t.mark_set("insert", "%d.0" % goto)
       wt.f1_t.see("insert")
@@ -2823,7 +2823,7 @@ def Mark_ReadFile(filename):
         if match:
           val = int(match.group(1))
           txt = ""
-          if match.group(2) != None:
+          if match.group(2) is not None:
             txt = match.group(2).strip()
           if txt == "":
             txt = "#%d" % val
@@ -4158,7 +4158,7 @@ def SearchList_BgUndoRedoLoop(op, line_list, mode, off):
   global dlg_srch_shown, dlg_srch_lines, dlg_srch_sel
   global dlg_srch_undo, dlg_srch_redo
 
-  if block_bg_tasks or (tid_search_inc != None) or (tid_search_hall != None):
+  if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None):
     # background tasks are suspended - re-schedule with timer
     tid_search_list = tk.after(100, lambda: SearchList_BgUndoRedoLoop(op, line_list, mode, off))
 
@@ -4331,7 +4331,7 @@ def SearchList_BgSearchLoop(pat_list, do_add, direction, line, pat_idx, loop_cnt
   global block_bg_tasks, tid_search_inc, tid_search_hall, tid_search_list
   global dlg_srch_shown, dlg_srch_lines, dlg_srch_sel, dlg_srch_undo
 
-  if block_bg_tasks or (tid_search_inc != None) or (tid_search_hall != None):
+  if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None):
     # background tasks are suspended - re-schedule with timer
     tid_search_list = tk.after(100, lambda line=line: SearchList_BgSearchLoop(pat_list, do_add, direction, line, pat_idx, 0))
 
@@ -4456,7 +4456,7 @@ def SearchList_BgSearchTagsLoop(tag_list, tag_idx, direction, line, loop_cnt):
   global block_bg_tasks, tid_search_inc, tid_search_hall, tid_search_list
   global dlg_srch_shown, dlg_srch_lines, dlg_srch_sel, dlg_srch_undo
 
-  if block_bg_tasks or (tid_search_inc != None) or (tid_search_hall != None):
+  if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None):
     # background tasks are suspended - re-schedule with timer
     tid_search_list = tk.after(100, lambda: SearchList_BgSearchTagsLoop(tag_list, tag_idx, direction, line, 0))
 
@@ -4571,7 +4571,7 @@ def SearchList_SearchAbort(do_warn=1):
 
   cancel_new = 0
 
-  if tid_search_list != None:
+  if tid_search_list is not None:
     if do_warn:
       vwait_search_complete = StringVar(tk, "wait")
 
@@ -4624,12 +4624,12 @@ def SearchList_SearchAbort(do_warn=1):
   else:
     SafeDestroy(wt.srch_abrt)
 
-  if not cancel_new and (tid_search_list != None):
+  if not cancel_new and (tid_search_list is not None):
     SearchList_BgSearch_FinalizeUndoList(dlg_srch_undo)
     SearchList_BgSearch_FinalizeUndoList(dlg_srch_redo)
 
     # stop the background process
-    if tid_search_list != None: tk.after_cancel(tid_search_list)
+    if tid_search_list is not None: tk.after_cancel(tid_search_list)
     tid_search_list = None
 
     # remove the progress bar
@@ -4646,7 +4646,7 @@ def SearchList_SearchAbort(do_warn=1):
 
 def SearchList_DestroyCb():
   if vwait_search_complete.get() == "wait":
-    if tid_search_list != None:
+    if tid_search_list is not None:
       vwait_search_complete.set("cancel_new")
     else:
       vwait_search_complete.set("obsolete")
@@ -4673,7 +4673,7 @@ def SearchList_GetViewAnchor():
     line = int(wt.f1_t.index("insert").split(".")[0])
     idx = SearchList_GetLineIdx(line)
     if ((idx < len(dlg_srch_lines)) and
-        (wt.dlg_srch_f1_l.bbox("%d.0" % idx) != None)):
+        (wt.dlg_srch_f1_l.bbox("%d.0" % idx) is not None)):
       return [0, dlg_srch_lines[idx]]
 
   return [0, -1]
@@ -4782,7 +4782,7 @@ def SearchList_CopyCurrentLine():
     pos12 = wt.f1_t.tag_nextrange("sel", "1.0")
     # ignore selection if not visible (because it can be irritating when "i"
     # inserts some random line instead of the one holding the cursor)
-    if (len(pos12) == 2) and (wt.f1_t.bbox(pos12[0]) != None):
+    if (len(pos12) == 2) and (wt.f1_t.bbox(pos12[0]) is not None):
       # selection exists: add all selected lines
       SearchList_AddMainSelection()
     else:
@@ -4851,7 +4851,7 @@ def SearchList_HighlightLine(tag, line):
   global tid_high_init
 
   if dlg_srch_shown:
-    if dlg_srch_highlight or (tid_high_init != None):
+    if dlg_srch_highlight or (tid_high_init is not None):
       idx = SearchList_GetLineIdx(line)
       if (idx < len(dlg_srch_lines)) and (dlg_srch_lines[idx] == line):
         try:
@@ -4986,7 +4986,7 @@ def SearchList_InsertLine(line_idx, ins_pos):
   wt.dlg_srch_f1_l.insert(ins_pos, prefix, [prefix], dump + "\n", tag_list)
 
   # add bookmark, if this line is marked
-  if mark_list.get(line_idx) != None:
+  if mark_list.get(line_idx) is not None:
     wt.dlg_srch_f1_l.image_create(ins_pos, image=img_marker, padx=2)
     wt.dlg_srch_f1_l.tag_add("bookmark", ins_pos)
 
@@ -5008,7 +5008,7 @@ def SearchList_BgRefillLoop(off):
   global block_bg_tasks, tid_search_inc, tid_search_hall, tid_search_list
   global dlg_srch_shown, dlg_srch_lines
 
-  if block_bg_tasks or (tid_search_inc != None) or (tid_search_hall != None):
+  if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None):
     # background tasks are suspended - re-schedule with timer
     tid_search_list = tk.after(100, lambda: SearchList_BgRefillLoop(off))
 
@@ -5223,7 +5223,7 @@ def SearchList_BgLoadLoop(line_list, off):
   global block_bg_tasks, tid_search_inc, tid_search_hall, tid_search_list
   global dlg_srch_shown, dlg_srch_lines, dlg_srch_undo, dlg_srch_redo
 
-  if block_bg_tasks or (tid_search_inc != None) or (tid_search_hall != None):
+  if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None):
     # background tasks are suspended - re-schedule with timer
     tid_search_list = tk.after(100, lambda: SearchList_BgLoadLoop(line_list, off))
 
@@ -6001,7 +6001,7 @@ def FontList_Quit(do_store):
                              weight=(tkf.BOLD if dlg_font_bold.get() else tkf.NORMAL))
 
       cerr = ApplyFont()
-      if cerr != None:
+      if cerr is not None:
         messagebox.showerror(parent=wt.dlg_font, message="Selected font is unavailable: " + cerr)
         return
     else:
@@ -6352,7 +6352,7 @@ def Markup_UpdateFormat():
 # consists of a rectangle which displays the current choice and a button
 # which triggers a popup menu when pressed.
 #
-class Markup_ImageButton():
+class Markup_ImageButton(object):
   def __init__(self, parent, type):
     global dlg_fmt
 
@@ -6485,7 +6485,7 @@ def Palette_Fill(wid, pal, sz=20, sel_cmd=None):
                                activeoutline="black", activewidth=2)
     dlg_cols_cid.append(cid)
 
-    if sel_cmd == None:
+    if sel_cmd is None:
       wid.tag_bind(cid, "<Double-Button-1>", lambda e, idx=idx, cid=cid: Palette_EditColor(idx, cid))
       wid.tag_bind(cid, "<B1-Motion>", lambda e, idx=idx, cid=cid: Palette_MoveColor(idx, cid, e.x, e.y))
       wid.tag_bind(cid, "<ButtonRelease-1>", lambda e, idx=idx, cid=cid: Palette_MoveColorEnd(idx, cid, e.x, e.y))
@@ -6576,7 +6576,7 @@ def Palette_EditColor(idx, cid):
 
   col = dlg_cols_palette[idx]
   col = colorchooser.askcolor(initialcolor=col, parent=wt.dlg_cols, title="Select color")
-  if col != None:
+  if col is not None:
     col = col[1]
     dlg_cols_palette[idx] = col
     wt.dlg_cols_c.itemconfigure(cid, fill=col)
@@ -6683,7 +6683,7 @@ def PaletteMenu_OtherColor(parent_wid, cmd, col_def):
     col_def = "#000000"
 
   col = colorchooser.askcolor(initialcolor=col_def, parent=parent_wid, title="Select color")
-  if col != None:
+  if col is not None:
     cmd(col[1])
 
 
@@ -6749,7 +6749,7 @@ You should have received a copy of the GNU General Public License along with thi
 # - anchor element index OR last selection cursor pos
 # - list of indices of selected lines (starting at zero)
 #
-class TextSel:
+class TextSel(object):
   #
   # This constructor is called after a text widget is created for initializing
   # all member variables and for adding key and mouse event bindings for
@@ -6813,7 +6813,7 @@ class TextSel:
 
     self.TextSel_ShowSelection()
 
-    if do_callback != None:
+    if do_callback is not None:
       self.cb_proc(self.sel)
 
 
@@ -6892,7 +6892,7 @@ class TextSel:
             self.cb_proc(self.sel)
 
         # cancel scrolling timer, as the mouse is now back inside the widget
-        if self.scroll_tid != None:
+        if self.scroll_tid is not None:
           tk.after_cancel(self.scroll_tid)
           self.scroll_tid = None
 
@@ -6908,7 +6908,7 @@ class TextSel:
         delay = 500 - delta * 100 // fh
         if (delay > 500): delay = 500
         if (delay <  50): delay =  50
-        if self.scroll_tid == None:
+        if self.scroll_tid is None:
           # start timer and remember it's ID to be able to cancel it later
           delta = -1 if (ycoo < 0) else 1
           self.scroll_tid = tk.after(delay, lambda: self.TextSel_MotionScroll(delta))
@@ -6944,7 +6944,7 @@ class TextSel:
   # possible on-going scrolling timer.
   #
   def TextSel_MotionEnd(self):
-    if self.scroll_tid != None:
+    if self.scroll_tid is not None:
       tk.after_cancel(self.scroll_tid)
       self.scroll_tid = None
 
@@ -7039,7 +7039,7 @@ class TextSel:
       else:
         # no selection exists yet -> use last anchor, or top/bottom visible line
         if ((self.anchor_idx >= 0) and
-            (self.wid.bbox("%d.0" % (self.anchor_idx + 1)) != None)):
+            (self.wid.bbox("%d.0" % (self.anchor_idx + 1)) is not None)):
           idx = "%d.0" % (self.anchor_idx + 1)
         else:
           if delta > 0:
@@ -7134,11 +7134,9 @@ class TextSel:
   #
   def IdxRange(start, end):
     if start > end:
-      tmp = start
-      start = end
-      end = tmp
-
-    return [idx for idx in range(start, end + 1)]
+      return list(range(end, start + 1))
+    else:
+      return list(range(start, end + 1))
 
 
   #
@@ -7239,7 +7237,7 @@ def TextSel_XselectionExport(mswin, str):
 
 # ----------------------------------------------------------------------------
 
-class LoadPipe:
+class LoadPipe(object):
   def __init__(self):
     global load_file_mode
 
@@ -7571,7 +7569,7 @@ class LoadPipe:
       self._thr_ctrl = 0
       self._thr_cv.notify()
 
-    if self._thr_inst == None:
+    if self._thr_inst is None:
       self._thr_inst = threading.Thread(target=lambda:self.LoadPipe_BgLoop(), daemon=True)
       self._thr_inst.start()
 
@@ -7599,7 +7597,7 @@ class LoadPipe:
       #self._thr_inst.join()
       #self._thr_inst = None
 
-    if self._tid_bg_poll != None:
+    if self._tid_bg_poll is not None:
       tk.after_cancel(self._tid_bg_poll)
       self._tid_bg_poll = None
 
@@ -7662,9 +7660,9 @@ def InitContent():
   global tid_search_inc, tid_search_hall, tid_high_init
   global cur_filename, load_pipe, dlg_mark_shown
 
-  if tid_high_init != None: tk.after_cancel(tid_high_init)
-  if tid_search_inc != None: tk.after_cancel(tid_search_inc)
-  if tid_search_hall != None: tk.after_cancel(tid_search_hall)
+  if tid_high_init is not None: tk.after_cancel(tid_high_init)
+  if tid_search_inc is not None: tk.after_cancel(tid_search_inc)
+  if tid_search_hall is not None: tk.after_cancel(tid_search_hall)
   tid_high_init = None
   tid_search_inc = None
   tid_search_hall = None
@@ -7788,9 +7786,9 @@ def MenuCmd_Discard(is_fwd):
         # perform the removal
         wt.f1_t.delete("%d.%d" % (first_l, first_c), "%d.%d" % (last_l, last_c))
 
-        # re-start initial highlighting, it not complete yet
+        # re-start initial highlighting, if not complete yet
         global tid_high_init
-        if tid_high_init != None:
+        if tid_high_init is not None:
           tk.after_cancel(tid_high_init)
           tid_high_init = None
           HighlightInit()
@@ -7810,7 +7808,7 @@ def MenuCmd_Discard(is_fwd):
 def MenuCmd_Reload():
   global load_pipe, cur_filename
 
-  if load_pipe != None:
+  if load_pipe is not None:
     if not load_pipe.is_eof:
       DiscardContent()
       tk.after_idle(lambda: load_pipe.LoadPipe_Start())
@@ -7855,7 +7853,7 @@ def PreemptBgTasks():
   global block_bg_tasks, block_bg_caller, tid_resume_bg
 
   block_bg_caller.append(["LOCK", traceback.format_tb(sys.exc_info()[2], limit=-2)])
-  if tid_resume_bg != None:
+  if tid_resume_bg is not None:
     # no incr in this case b/c resume was called, but decr delayed
     block_bg_tasks = 1
     tk.after_cancel(tid_resume_bg)
@@ -7878,7 +7876,7 @@ def ResumeBgTasks():
     block_bg_tasks -= 1
   else:
     block_bg_caller.append(["UNLOCK", traceback.format_tb(sys.exc_info()[2], limit=-2)])
-    if tid_resume_bg != None: tk.after_cancel(tid_resume_bg)
+    if tid_resume_bg is not None: tk.after_cancel(tid_resume_bg)
     tid_resume_bg = tk.after_idle(lambda: ClearBgTasks(1))
 
 
@@ -8015,7 +8013,7 @@ def LoadRcFile():
 
         elif ver_check == 0:
           # check if the given rc file is from a newer version
-          if rc_compat_version != None:
+          if rc_compat_version is not None:
             if rc_compat_version > rcfile_version:
               messagebox.showerror(message="rc file 'myrcfile' is from an incompatible, "
                                    "newer browser version (%s) and cannot be loaded." % rcfile_version, title="Trace browser")
@@ -8317,7 +8315,7 @@ class wt:
 # currently open.
 #
 def wt_exists(obj):
-  if obj != None:
+  if obj is not None:
     try:
       obj.configure()
       return True
@@ -8574,7 +8572,6 @@ InitResources()
 CreateMainWindow()
 HighlightCreateTags()
 tk.wm_deiconify()
-tk.update()
 
 if sys.argv[-1] == "-":
   cur_filename = ""

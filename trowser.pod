@@ -708,11 +708,11 @@ L<perlre(1)>
 
 =head1 AUTHOR
 
-Written T.Zoerner L<mailto:tomzo@users.sourceforge.net>
+Written by Th. Zoerner L<mailto:tomzo@users.sourceforge.net>
 
 =head1 COPYRIGHT
 
-Copyright 2007-2009 T.Zoerner. All rights reserved.
+Copyright 2007-2009,2019-2020 Th. Zoerner. All rights reserved.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

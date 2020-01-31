@@ -3,7 +3,7 @@
 exec wish "$0" -- "$@"
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2010,2019 Tom Zoerner
+# Copyright (C) 2007-2010,2019 Th. Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,7 +21,6 @@ exec wish "$0" -- "$@"
 #
 # DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
 #
-# $Id: trowser.tcl,v 1.39 2010/10/03 17:36:59 tom Exp $
 # ------------------------------------------------------------------------ #
 
 
@@ -521,8 +520,8 @@ proc Highlight_YviewCallback {frac1 frac2} {
 
 
 #
-# This function redirect the yview callback from the scrollbar into the
-# above function, or to undo the change. This is used to install a
+# This function redirects the yview callback from the scrollbar into the
+# above function, or undoes the redirection. This is used to install a
 # redirection for the duration of the initial or search highlighting task.
 #
 proc Highlight_YviewRedirect {} {
@@ -1925,7 +1924,8 @@ proc CursorSetLine {wid where off} {
     set index [$wid index [list {@1,1} + $off lines]]
     if {($off > 0) && ![IsRowFullyVisible $wid $index]} {
       # offset out of range - set to bottom instead
-      return [CursorSetLine $wid bottom 0]
+      CursorSetLine $wid bottom 0
+      return
     } else {
       $wid mark set insert $index
     }
@@ -1942,7 +1942,8 @@ proc CursorSetLine {wid where off} {
         set index [$wid index [list $index - 1 lines]]
       } else {
         # offset out of range - set to top instead
-        return [CursorSetLine $wid top 0]
+        CursorSetLine $wid top 0
+        return
       }
     }
     $wid mark set insert $index
@@ -7131,7 +7132,7 @@ proc OpenAboutDialog {} {
     label .about.name -text "Trace Browser"
     pack .about.name -side top -pady 8
 
-    label .about.copyr1 -text "Copyright (C) 2007-2010 Tom Zoerner" -font $font_normal
+    label .about.copyr1 -text "Copyright (C) 2007-2010,2019 Tom Zoerner" -font $font_normal
     pack .about.copyr1 -side top
 
     message .about.m -font $font_normal -text {
@@ -8473,7 +8474,7 @@ proc MenuCmd_Discard {is_fwd} {
         # perform the removal
         .f1.t delete "${first_l}.${first_c}" "${last_l}.${last_c}"
 
-        # re-start initial highlighting, it not complete yet
+        # re-start initial highlighting, if not complete yet
         global tid_high_init
         if {$tid_high_init ne ""} {
           after cancel $tid_high_init
@@ -8979,7 +8980,7 @@ set tlb_find {}
 # This variable is used to remember search pattern and options while a
 # background search highlighting is active and afterwards to avoid
 # unnecessarily repeating the search while the pattern is unchanged.
-# The pattern is set to en empty string when no highlights are shown.
+# The pattern is set to an empty string when no highlights are shown.
 set tlb_cur_hall_opt {{} {}}
 
 # This variable contains the stack of previously used search expressions

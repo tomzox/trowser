@@ -9,7 +9,7 @@ cat > $BASEDIR/DEBIAN/control <<EoF
 Package: trowser
 Priority: optional
 Section: text
-Maintainer: T.Zoerner <tomzo@users.sourceforge.net>
+Maintainer: Th. Zoerner <tomzo@users.sourceforge.net>
 Architecture: all
 Version: 1.3
 Depends: tcl8.4|tcl8.5, tk8.4|tk8.5
@@ -37,7 +37,7 @@ gzip -n -9 -c CHANGELOG.txt > $BASEDIR/usr/share/doc/trowser/changelog.gz
 gzip -n -9 -c trowser.pod > $BASEDIR/usr/share/doc/trowser/trowser.pod.gz
 
 cat > $BASEDIR/usr/share/doc/trowser/copyright <<EoF
-Copyright (C) 2007-2009 T.Zoerner. All rights reserved.
+Copyright (C) 2007-2009,2019 Th. Zoerner. All rights reserved.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
