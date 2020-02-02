@@ -109,69 +109,108 @@ private:
 
 // ----------------------------------------------------------------------------
 
-class HiglDef
+class SearchPar
 {
 public:
+    SearchPar() : m_opt_regexp(false), m_opt_case(false) {}
+    SearchPar(const QString& pat, bool opt_regexp, bool opt_case)
+        : m_pat(pat)
+        , m_opt_regexp(opt_regexp)
+        , m_opt_case(opt_case)
+    {
+    }
+    void reset() { m_pat.clear(); m_opt_regexp = false; m_opt_case = false; }
+
     QString m_pat;
     bool  m_opt_regexp;
     bool  m_opt_case;
+};
 
-    QTextCharFormat m_fmt;
+class HiglFmtSpec
+{
+public:
+    static constexpr unsigned INVALID_COLOR = QRgb(0x00000000);
 
-    QRgb        m_bgCol;  // 0 means invalid
-    QRgb        m_fgCol;  // 0 means invalid
-    bool        m_bold;
-    bool        m_underline;
-    bool        m_overstrike;
+    QRgb                m_bgCol = INVALID_COLOR;
+    QRgb                m_fgCol = INVALID_COLOR;
+    Qt::BrushStyle      m_bgStyle = Qt::NoBrush;
+    Qt::BrushStyle      m_fgStyle = Qt::NoBrush;
+    bool                m_bold = false;
+    bool                m_underline = false;
+    bool                m_overstrike = false;
+    bool                m_outline = false;
+    QString             m_font;
     // relief: "", raised, sunken, ridge, groove
     // relief borderwidth: 1,2,...,9
     // spacing: 0,1,2,...
 };
 
-class Highlighter
+using HiglId = unsigned;
+
+class HiglPat
 {
 public:
-    Highlighter() {}
+    SearchPar       m_srch;
+    HiglFmtSpec     m_fmtSpec;
+    QTextCharFormat m_fmt;
+    HiglId          m_id;
+};
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+class Highlighter : public QWidget
+{
+    Q_OBJECT
+
+public:
+    Highlighter();
     void connectWidgets(MainText * textWid);
-    void addSearchInc(QTextCursor& c, QRgb col);
-    void addSearchHall(QTextCursor& c, QRgb col);
+    QJsonArray getRcValues();
+    void setRcValues(const QJsonValue& val);
     void removeInc(QTextDocument * doc);
-    void removeHall(QTextDocument * doc, QRgb col);
-    void clear(QTextDocument * doc);
 
     void highlightInit();
-    void highlightInitBg(int pat_idx, int line, int loop_cnt);
-    int  highlightLines(const QString& pat, int tagnam, bool opt_regexp, bool opt_case, int line);
-    void highlightAll(const QString& pat, int tagnam, bool opt_regexp, bool opt_case, int line=0, int loop_cnt=0);
-    void highlightVisible(const QString& pat, int tagnam, bool opt_regexp, bool opt_case);
-    void highlightYviewCallback(double frac1, double frac2);
-    void highlightYviewRedirect();
-    //void highlightConfigure(int tagname, w);
+    void highlightAll(const HiglPat& pat, int line = 0, int loop_cnt = 0);
+    void highlightVisible(const HiglPat& pat);
+    void searchHighlightMatch(QTextCursor& match);
     void searchHighlightClear();
-    void searchHighlightReset();
-    void searchHighlightUpdate(const QString& pat, bool opt_regexp, bool opt_case);
-    void searchHighlightAll(const QString& pat, int tagnam, bool opt_regexp, bool opt_case, int line=0, int loop_cnt=0);
+    void searchHighlightUpdate(const QString& pat, bool opt_regexp, bool opt_case, bool onlyVisible);
+    void searchHighlightAll(const HiglPat& pat, int line = 0, int loop_cnt = 0);
 
     static const int TAG_NAME_FIND = 1;
 
 private:
+    void addSearchInc(QTextCursor& sel);
+    void addSearchHall(QTextCursor& sel, const QTextCharFormat& fmt, HiglId id);
+    void removeHall(QTextDocument * doc, HiglId id);
     void redraw(QTextDocument * doc, int blkNum);
+    void clearAll(QTextDocument * doc);
+    const QTextCharFormat* getFmtById(HiglId id);
+
+    void configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec);
+    void addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec);
+    void highlightInitBg(int pat_idx, int line = 0, int loop_cnt = 0);
+    int  highlightLines(const HiglPat& pat, int line);
+    void highlightYviewRedirect();
+    void highlightYviewCallback(int value);
 
 private:
     MainText    * m_mainText = nullptr;
     QProgressBar* m_hipro = nullptr;
 
-    std::multimap<int,QRgb> m_tags;
+    std::multimap<int,HiglId> m_tags;
     int           m_findIncPos = -1;
 
-    std::vector<HiglDef> patlist;
+    std::vector<HiglPat> m_patList;
+    HiglPat       m_hallPat;
+    HiglId        m_lastId = 0;
+    bool          m_hallPatComplete = false;
+    int           m_hallYview = 0;
+    bool          m_yViewRedirected = false;  // TODO obsolete
 
     static const bool block_bg_tasks = false;  //TODO
     ATimer      * tid_high_init = nullptr;
     ATimer      * tid_search_hall = nullptr;
-    QString       tlb_cur_hall_str;
-    bool          tlb_cur_hall_regexp = false;
-    bool          tlb_cur_hall_case = false;
 };
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -250,22 +289,6 @@ private:
 
 // ----------------------------------------------------------------------------
 
-class SearchPar
-{
-public:
-    SearchPar(const QString& pat, bool opt_regexp, bool opt_case)
-        : m_pat(pat)
-        , m_opt_regexp(opt_regexp)
-        , m_opt_case(opt_case)
-    {
-    }
-    QString m_pat;
-    bool  m_opt_regexp;
-    bool  m_opt_case;
-};
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
 class MainSearch : public QWidget
 {
     Q_OBJECT
@@ -273,6 +296,7 @@ class MainSearch : public QWidget
 public:
     MainSearch(MainWin * mainWin);
     void connectWidgets(MainText    * textWid,
+                        Highlighter * higl,
                         MainFindEnt * f2_e,
                         QCheckBox   * f2_hall,
                         QCheckBox   * f2_mcase,
@@ -322,6 +346,7 @@ private:
 private:
     MainWin     * const m_mainWin;
     MainText    * m_mainText;
+    Highlighter * m_higl;
     MainFindEnt * m_f2_e;
     QCheckBox   * m_f2_hall;
     QCheckBox   * m_f2_mcase;
@@ -343,7 +368,6 @@ private:
     std::vector<SearchPar> tlb_history;  // TODO store flags case&regexp
     static const uint TLB_HIST_MAXLEN = 50;
     static const int SEARCH_INC_DELAY = 100; // in ms
-    Highlighter   m_higl;
 };
 
 // ----------------------------------------------------------------------------
@@ -389,13 +413,13 @@ private:
     QMenu       * m_menubar_srch;
     QMenu       * m_menubar_mark;
     QMenu       * m_menubar_help;
-    QFont         m_fontContent;
     MainText    * m_f1_t;
     StatusMsg   * m_stline;
-    //Highlighter * m_higl;
     MainSearch  * m_search;
+    Highlighter   m_higl;
     QTimer      * m_timUpdateRc;
     qint64        m_tsUpdateRc;
+    QFont         m_fontContent;
     QString       m_curFileName;
 };
 
