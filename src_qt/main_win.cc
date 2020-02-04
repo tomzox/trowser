@@ -36,7 +36,6 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QToolBar>
-#include <QStatusBar>
 #include <QFontDialog>
 #include <QTextBlock>
 #include <QTextDocument>
@@ -58,6 +57,7 @@
 #include <string>
 
 #include "main_win.h"
+#include "dlg_higl.h"
 
 static int load_file_mode = 0;
 static int load_buf_size = 0x100000;
@@ -135,7 +135,7 @@ void StatusMsg::showStatusMsg(const QString& msg, QRgb col)
 
 void StatusMsg::showPlain(QWidget * widget, const QString& msg)
 {
-    auto pal = QApplication::palette(m_lab) ;
+    auto pal = QApplication::palette(m_lab);
 
     showStatusMsg(msg, pal.color(QPalette::Window).rgba());
     m_owner = widget;
@@ -434,11 +434,11 @@ void Highlighter::configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec)
 
     if (   (fmtSpec.m_fgCol != HiglFmtSpec::INVALID_COLOR)
         && (fmtSpec.m_fgStyle != Qt::NoBrush))
-        fmt.setBackground(QBrush(QColor(fmtSpec.m_fgCol), fmtSpec.m_fgStyle));
+        fmt.setForeground(QBrush(QColor(fmtSpec.m_fgCol), fmtSpec.m_fgStyle));
     else if (fmtSpec.m_fgCol != HiglFmtSpec::INVALID_COLOR)
-        fmt.setBackground(QColor(fmtSpec.m_fgCol));
+        fmt.setForeground(QColor(fmtSpec.m_fgCol));
     else if (fmtSpec.m_fgStyle != Qt::NoBrush)
-        fmt.setBackground(fmtSpec.m_fgStyle);
+        fmt.setForeground(fmtSpec.m_fgStyle);
 
     if (!fmtSpec.m_font.isEmpty())
     {
@@ -451,6 +451,8 @@ void Highlighter::configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec)
         fmt.setFontUnderline(true);
     if (fmtSpec.m_bold)
         fmt.setFontWeight(QFont::Bold);
+    if (fmtSpec.m_italic)
+        fmt.setFontItalic(true);
     if (fmtSpec.m_overstrike)
         fmt.setFontStrikeOut(true);
 }
@@ -493,6 +495,8 @@ QJsonArray Highlighter::getRcValues()
             obj.insert("font_underline", QJsonValue(true));
         if (pat.m_fmtSpec.m_bold)
             obj.insert("font_bold", QJsonValue(true));
+        if (pat.m_fmtSpec.m_italic)
+            obj.insert("font_italic", QJsonValue(true));
         if (pat.m_fmtSpec.m_overstrike)
             obj.insert("font_overstrike", QJsonValue(true));
 
@@ -539,6 +543,8 @@ void Highlighter::setRcValues(const QJsonValue& val)
                 fmtSpec.m_underline = true;
             else if (var == "font_bold")
                 fmtSpec.m_bold = true;
+            else if (var == "font_italic")
+                fmtSpec.m_italic = true;
             else if (var == "font_overstrike")
                 fmtSpec.m_overstrike = true;
 
@@ -758,7 +764,7 @@ void Highlighter::highlightVisible(const HiglPat& pat)
  * to detect changes in the view to update highlighting if the highlighting
  * task is not complete yet. The event is forwarded to the vertical scrollbar.
  */
-void Highlighter::highlightYviewCallback(int value)
+void Highlighter::highlightYviewCallback(int)
 {
     if (tid_high_init->isActive())
     {
@@ -1751,6 +1757,50 @@ void MainText::cursorJumpStackReset()
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+/**
+ * Helper function for calling the search function on the text document with
+ * the given parameters.
+ */
+QTextCursor MainText::findInDoc(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, int start_pos)
+{
+    QTextCursor c1 = this->textCursor();
+    c1.setPosition(start_pos);
+
+    QTextCursor c2;
+    while (true)
+    {
+        // invoke the actual search in the selected portion of the document
+        QTextDocument::FindFlags flags = QTextDocument::FindFlags(is_fwd ? 0 : QTextDocument::FindBackward);
+        if (opt_regexp)
+        {
+            QRegularExpression::PatternOptions reflags =
+                    opt_case ? QRegularExpression::NoPatternOption
+                             : QRegularExpression::CaseInsensitiveOption;
+            QRegularExpression re(pat, reflags);
+            c2 = this->document()->find(re, c1, flags);
+        }
+        else
+        {
+            if (opt_case)
+                flags = QTextDocument::FindFlags(flags | QTextDocument::FindCaseSensitively);
+            c2 = this->document()->find(pat, c1, flags);
+        }
+
+        // work-around for backwards search:
+        // make sure the matching text is entirely to the left side of the cursor
+        if (!is_fwd && !c2.isNull() &&
+            (std::max(c2.position(), c2.anchor()) >= start_pos))
+        {
+            // match overlaps: search further backwards
+            c1.setPosition(std::min(c2.position(), c2.anchor()));
+            continue;
+        }
+        break;
+    }
+    return c2;
+}
+
+
 bool MainText::findInBlocks(const QString &patStr, int from, bool is_fwd, bool opt_regexp,
                             bool opt_case, int& matchPos, int& matchLen)
 {
@@ -2103,49 +2153,16 @@ bool MainSearch::searchAtomic(const QString& pat, bool opt_regexp, bool opt_case
 
     if (!pat.isEmpty() && searchExprCheck(pat, opt_regexp, true))
     {
-        tlb_last_dir = is_fwd;
-        //set search_opt [Search_GetOptions $pat $is_re $use_case $tlb_last_dir]
-        int start_pos = searchGetBase(is_fwd, false);
-        QTextCursor c1 = m_mainText->textCursor();
-        c1.setPosition(start_pos);
-
         m_mainText->cursorJumpPushPos();
-        QTextCursor c2;
+        tlb_last_dir = is_fwd;
 
-        while (true)
-        {
-            // invoke the actual search in the selected portion of the document
-            QTextDocument::FindFlags flags = QTextDocument::FindFlags(is_fwd ? 0 : QTextDocument::FindBackward);
-            if (opt_regexp)
-            {
-                QRegularExpression::PatternOptions reflags =
-                        opt_case ? QRegularExpression::NoPatternOption
-                                 : QRegularExpression::CaseInsensitiveOption;
-                QRegularExpression re(pat, reflags);
-                c2 = m_mainText->document()->find(re, c1, flags);
-            }
-            else
-            {
-                if (opt_case)
-                    flags = QTextDocument::FindFlags(flags | QTextDocument::FindCaseSensitively);
-                c2 = m_mainText->document()->find(pat, c1, flags);
-            }
+        int start_pos = searchGetBase(is_fwd, false);
 
-            // work-around for backwards search:
-            // make sure the matching text is entirely to the left side of the cursor
-            if (!is_fwd && !c2.isNull() &&
-                (std::max(c2.position(), c2.anchor()) >= start_pos))
-            {
-                // match overlaps: search further backwards
-                c1.setPosition(std::min(c2.position(), c2.anchor()));
-                continue;
-            }
-            found = !c2.isNull();
-            break;
-        }
+        auto c2 = m_mainText->findInDoc(pat, opt_regexp, opt_case, is_fwd, start_pos);
 
         // update cursor position and highlight
         searchHandleMatch(c2, pat, opt_regexp, opt_case, is_changed);
+        found = !c2.isNull();
     }
     else
     {
@@ -2180,7 +2197,7 @@ void MainSearch::searchHandleMatch(QTextCursor& match, const QString& pat,
         // move the cursor to the beginning of the matching text
         match.setPosition(std::min(match.position(), match.anchor()));
         m_mainText->setTextCursor(match);
-        m_mainText->centerCursor();
+        //m_mainText->centerCursor();
 
         //TODO SearchList_HighlightLine find $tlb_find_line
         //TODO SearchList_MatchView $tlb_find_line
@@ -2397,6 +2414,52 @@ void MainSearch::searchGetParams()
     tlb_regexp = m_f2_regexp->isChecked();
     tlb_case   = m_f2_mcase->isChecked();
     tlb_hall   = m_f2_hall->isChecked();
+}
+
+/**
+ * This function is used by the highlight pattern dialog for searching one or
+ * more of the defined patterns. The cursor is set onto the first line matching
+ * one of the patterns in the given direction, if any.
+ */
+void MainSearch::searchFirst(bool is_fwd, const std::vector<SearchPar>& patList)
+{
+    searchGetParams(); // update tlb_hall (for match handling)
+    m_mainText->cursorJumpPushPos();
+    QTextCursor match;
+    const SearchPar * matchPar = nullptr;
+
+    int start_pos = searchGetBase(is_fwd, false);
+
+    for (auto& pat : patList)
+    {
+        if (pat.m_pat.isEmpty() || !searchExprCheck(pat.m_pat, pat.m_opt_regexp, true))
+            continue;
+
+        searchAddHistory(pat.m_pat, pat.m_opt_regexp, pat.m_opt_case);
+
+        auto c2 = m_mainText->findInDoc(pat.m_pat, pat.m_opt_regexp, pat.m_opt_case, is_fwd, start_pos);
+
+        if (   !c2.isNull()
+            && (match.isNull() || (is_fwd ? (c2 < match) : (c2 > match))) )
+        {
+            match = c2;
+            matchPar = &pat;
+        }
+    }
+
+    if (matchPar != nullptr)
+    {
+        searchHandleMatch(match, matchPar->m_pat, matchPar->m_opt_regexp, matchPar->m_opt_case, true);
+        m_mainWin->clearMessage(this);
+
+        //TODO Mark_Line(min_line);
+        //TODO SearchList_HighlightLine("find", min_line);
+        //TODO SearchList_MatchView(min_line);
+    }
+    else
+    {
+        searchHandleNoMatch("", is_fwd);
+    }
 }
 
 /**
@@ -2886,7 +2949,7 @@ void MainSearch::searchWord(bool is_fwd)
 
         // add regexp to match on word boundaries
         if (tlb_regexp)
-            word = QString("\\m") + word + "\\M";
+            word = QString("\\b") + word + "\\b";
 
         tlb_find = word;
         m_f2_e->setText(tlb_find);
@@ -3004,6 +3067,7 @@ MainWin::MainWin(QApplication * app)
 MainWin::~MainWin()
 {
     delete m_search;
+    delete m_stline;
 }
 
 void MainWin::populateMenus()
@@ -3033,6 +3097,7 @@ void MainWin::populateMenus()
     m_menubar_srch = menuBar()->addMenu("&Search");
     act = m_menubar_srch->addAction("Search history...");
     act = m_menubar_srch->addAction("Edit highlight patterns...");
+        connect(act, &QAction::triggered, this, &MainWin::menuCmdSearchEdit);
     m_menubar_srch->addSeparator();
     act = m_menubar_srch->addAction("List all search matches...");
         connect(act, &QAction::triggered, [=](){ m_search->searchAll(true, 0); });
@@ -3065,9 +3130,26 @@ void MainWin::populateMenus()
         connect(act, &QAction::triggered, m_mainApp, &QApplication::aboutQt);
 }
 
-QWidget * MainWin::focusWidget()
+QWidget * MainWin::focusWidget() const
 {
     return m_mainApp->focusWidget();
+}
+
+QStyle * MainWin::getAppStyle() const
+{
+    return m_mainApp->style();
+}
+
+const QColor& MainWin::getFgColDefault() const
+{
+    auto& pal = m_f1_t->palette();
+    return pal.color(QPalette::Text);
+}
+
+const QColor& MainWin::getBgColDefault() const
+{
+    auto& pal = m_f1_t->palette();
+    return pal.color(QPalette::Base);
 }
 
 
@@ -3361,6 +3443,11 @@ void MainWin::LoadFile(const QString& fileName)
                               QString("Error opening file ") + fileName,
                               QMessageBox::Ok);
     }
+}
+
+void MainWin::menuCmdSearchEdit(bool)
+{
+    DlgHigl::openDialog(&m_higl, m_search, this);
 }
 
 // ----------------------------------------------------------------------------

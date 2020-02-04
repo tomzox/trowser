@@ -32,5 +32,5 @@ DESTDIR = build
 OBJECTS_DIR = build
 
 # Input
-HEADERS += main_win.h
-SOURCES += main_win.cc
+HEADERS += main_win.h dlg_higl.h
+SOURCES += main_win.cc dlg_higl.cc

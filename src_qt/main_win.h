@@ -35,6 +35,7 @@
 #include <QTimer>
 
 class QApplication;
+class QStyle;
 class QMenu;
 class QPlainTextEdit;
 class QCheckBox;
@@ -136,6 +137,7 @@ public:
     Qt::BrushStyle      m_bgStyle = Qt::NoBrush;
     Qt::BrushStyle      m_fgStyle = Qt::NoBrush;
     bool                m_bold = false;
+    bool                m_italic = false;
     bool                m_underline = false;
     bool                m_overstrike = false;
     bool                m_outline = false;
@@ -168,6 +170,7 @@ public:
     QJsonArray getRcValues();
     void setRcValues(const QJsonValue& val);
     void removeInc(QTextDocument * doc);
+    const std::vector<HiglPat>& getPatList() const { return m_patList; }
 
     void highlightInit();
     void highlightAll(const HiglPat& pat, int line = 0, int loop_cnt = 0);
@@ -242,6 +245,7 @@ public:
     void cursorJumpStackReset();
     void keyCmdClear();
 
+    QTextCursor findInDoc(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, int start_pos);
     bool findInBlocks(const QString &patStr, int from, bool is_fwd, bool opt_regex,
                       bool opt_case, int& matchPos, int& matchLen);
 
@@ -305,6 +309,7 @@ public:
     void setRcValues(const QJsonObject& obj);
     void searchAll(bool raiseWin, int direction);
     bool searchNext(bool isFwd);
+    void searchFirst(bool is_fwd, const std::vector<SearchPar>& patList);
     void searchEnter(bool is_fwd, QWidget * parent = nullptr);
     void searchOptToggleHall();
     void searchOptToggleRegExp();
@@ -331,6 +336,7 @@ private:
     void searchBackground(const QString& pat, bool is_fwd, bool opt_regexp, bool opt_case,
                           int start, bool is_changed,
                           const std::function<void(QTextCursor&)>& callback);
+    QTextCursor findInDoc(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, int start_pos);
     bool searchAtomic(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, bool is_changed);
     void searchHighlightUpdateCurrent();
     void searchHighlightUpdate(const QString& pat, bool opt_regexp, bool opt_case);
@@ -383,7 +389,11 @@ public:
     void keyCmdZoomFontSize(bool zoomIn);
     void LoadFile(const QString& fileName);
 
-    QWidget * focusWidget();
+    QWidget * focusWidget() const;
+    QStyle * getAppStyle() const;
+    const QFont& getFontContent() const { return m_fontContent; }
+    const QColor& getFgColDefault() const;
+    const QColor& getBgColDefault() const;
     void showWarning(QWidget * widget, const QString& msg) { m_stline->showWarning(widget, msg); }
     void showError(QWidget * widget, const QString& msg) { m_stline->showWarning(widget, msg); }
     void clearMessage(QWidget * widget) { m_stline->clearMessage(widget); }
@@ -399,6 +409,7 @@ private slots:
     void menuCmdSelectFont(bool checked);
     void menuCmdGotoLine(bool checked);
     void menuCmdAbout(bool checked);
+    void menuCmdSearchEdit(bool checked);
     void toggleLineWrap(bool checked);
 
 private:
