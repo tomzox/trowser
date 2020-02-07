@@ -457,16 +457,22 @@ void Highlighter::configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec)
         fmt.setFontStrikeOut(true);
 }
 
-void Highlighter::addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec)
+HiglId Highlighter::addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id)
 {
     HiglPat fmt;
 
     configFmt(fmt.m_fmt, fmtSpec);
     fmt.m_srch = srch;
     fmt.m_fmtSpec = fmtSpec;
-    fmt.m_id = ++m_lastId;
+
+    if (id == INVALID_HIGL_ID)
+        fmt.m_id = ++m_lastId;
+    else
+        fmt.m_id = id;
 
     m_patList.push_back(fmt);
+
+    return fmt.m_id;
 }
 
 // TODO save search & inc highlight formats
@@ -553,6 +559,46 @@ void Highlighter::setRcValues(const QJsonValue& val)
         }
         addPattern(srch, fmtSpec);
     }
+}
+
+void Highlighter::getPatList(std::vector<HiglPatExport>& exp) const
+{
+    for (auto& w : m_patList)
+    {
+        exp.emplace_back(HiglPatExport{w.m_srch, w.m_fmtSpec, w.m_id});
+    }
+}
+
+void Highlighter::setList(std::vector<HiglPatExport>& patList)
+{
+    for (auto& w : m_patList)
+    {
+        removeHall(m_mainText->document(), w.m_id);
+    }
+    m_patList.clear();
+
+    for (auto& w : patList)
+    {
+        w.m_id = addPattern(w.m_srch, w.m_fmtSpec, w.m_id);
+    }
+    tid_high_init->stop();
+    highlightInit();
+
+#if 0 //TODO
+
+    // remove the highlight in other dialogs, if currently open
+    //TODO SearchList_DeleteTag(tagname)
+    //TODO SearchList_CreateHighlightTags()
+    //TODO MarkList_DeleteTag(tagname)
+    //TODO MarkList_CreateHighlightTags()
+
+    //TODO UpdateRcAfterIdle()
+
+    // changing a single pattern
+    HighlightAll(w[0], w[4], opt)
+
+    searchHighlightClear()
+#endif
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2408,6 +2454,12 @@ int MainSearch::searchGetBase(bool is_fwd, bool is_init)
     return start_pos;
 }
 
+SearchPar MainSearch::getCurSearchParams()
+{
+    searchGetParams(); // update tlb_find et.al. from widget state
+    return SearchPar(tlb_find, tlb_regexp, tlb_case);
+}
+
 void MainSearch::searchGetParams()
 {
     tlb_find   = m_f2_e->text();
@@ -2425,9 +2477,10 @@ void MainSearch::searchFirst(bool is_fwd, const std::vector<SearchPar>& patList)
 {
     searchGetParams(); // update tlb_hall (for match handling)
     m_mainText->cursorJumpPushPos();
+    searchHighlightClear();
+
     QTextCursor match;
     const SearchPar * matchPar = nullptr;
-
     int start_pos = searchGetBase(is_fwd, false);
 
     for (auto& pat : patList)
@@ -2460,6 +2513,26 @@ void MainSearch::searchFirst(bool is_fwd, const std::vector<SearchPar>& patList)
     {
         searchHandleNoMatch("", is_fwd);
     }
+}
+
+/**
+ * This function is used by the highlight editor to copy a set of search
+ * parameters into the respective entry fields.
+ */
+void MainSearch::searchEnterOpt(const SearchPar& pat)
+{
+    // force focus into find entry field & suppress "Enter" event
+    searchInit();
+    tlb_find_focus = true;
+    m_f2_e->setFocus(Qt::ShortcutFocusReason);
+    m_f2_e->activateWindow();
+    searchHighlightClear();
+
+    m_f2_e->setText(pat.m_pat);
+    m_f2_regexp->setChecked(pat.m_opt_regexp);
+    m_f2_mcase->setChecked(pat.m_opt_case);
+
+    searchNext(tlb_last_dir);
 }
 
 /**
@@ -3037,20 +3110,21 @@ MainWin::MainWin(QApplication * app)
 
     populateMenus();
 
+    // shortcuts for functions which have no button widget
     QAction * act;
-    act = new QAction(central_wid);
+    act = new QAction(central_wid);  // move focus into search text entry field
         act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_F));
         connect(act, &QAction::triggered, [=](){ m_search->searchEnter(true); });
         central_wid->addAction(act);
-    act = new QAction(central_wid);
+    act = new QAction(central_wid);  // "search all below"
         act->setShortcut(QKeySequence(Qt::ALT + Qt::SHIFT + Qt::Key_N));
         connect(act, &QAction::triggered, [=](){ m_search->searchAll(false, 1); });
         central_wid->addAction(act);
-    act = new QAction(central_wid);
+    act = new QAction(central_wid);  // "search all above"
         act->setShortcut(QKeySequence(Qt::ALT + Qt::SHIFT + Qt::Key_P));
         connect(act, &QAction::triggered, [=](){ m_search->searchAll(false, -1); });
         central_wid->addAction(act);
-    act = new QAction(central_wid);
+    act = new QAction(central_wid);  // toggle "highlight all" option
         act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_H));
         connect(act, &QAction::triggered, [=](){ m_search->searchOptToggleHall(); });
         central_wid->addAction(act);
@@ -3503,9 +3577,9 @@ void MainWin::loadRcFile()
                     //else if (var == "rcfile_version")     rcfile_version = val;
                     //else if (var == "rc_compat_version")  rc_compat_version = val;
                     //else if (var == "rc_timestamp")       { /* nop */ }
-                    //else if (var.startswith("win_geom:"))  win_geom[var[9:]] = val;
                     else if (var == "main_win_state")       this->restoreState(QByteArray::fromHex(val.toString().toLatin1()));
                     else if (var == "main_win_geom")        this->restoreGeometry(QByteArray::fromHex(val.toString().toLatin1()));
+                    else if (var == "dlg_highlight")        DlgHigl::setRcValues(val);
                     else
                         fprintf(stderr, "trowser: ignoring unknown keyword in rcfile: %s\n", var.toLatin1().data());
                 }
@@ -3545,12 +3619,6 @@ void MainWin::updateRcFile()
     //puts $rcfile [list set rc_compat_version $rcfile_compat]
     //puts $rcfile [list set rc_timestamp [clock seconds]]
 
-    // dump color palette
-    //puts $rcfile [list set col_palette {}]
-    //foreach val $col_palette {
-    //  puts $rcfile [list lappend col_palette $val]
-    //}
-
     // frame number parser patterns
     //puts $rcfile [list set tick_pat_sep $tick_pat_sep]
     //puts $rcfile [list set tick_pat_num $tick_pat_num]
@@ -3562,18 +3630,18 @@ void MainWin::updateRcFile()
     // dump highlighting patterns
     obj.insert("highlight", m_higl.getRcValues());
 
+    // dump highlight dialog options: color palette, window geometry
+    obj.insert("dlg_highlight", DlgHigl::getRcValues());
+
     // dialog sizes
     //puts $rcfile [list set dlg_mark_geom $dlg_mark_geom]
     //puts $rcfile [list set dlg_hist_geom $dlg_hist_geom]
     //puts $rcfile [list set dlg_srch_geom $dlg_srch_geom]
-    //puts $rcfile [list set dlg_tags_geom $dlg_tags_geom]
     obj.insert("main_win_geom", QJsonValue(QString(this->saveGeometry().toHex())));
     obj.insert("main_win_state", QJsonValue(QString(this->saveState().toHex())));
 
     // font and color settings
     obj.insert("font_content", QJsonValue(m_fontContent.toString()));
-    //puts $rcfile [list set col_bg_content $col_bg_content]
-    //puts $rcfile [list set col_fg_content $col_fg_content]
     //puts $rcfile [list set fmt_find $fmt_find]
     //puts $rcfile [list set fmt_findinc $fmt_findinc]
     //puts $rcfile [list set fmt_selection $fmt_selection]

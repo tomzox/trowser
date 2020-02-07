@@ -149,6 +149,14 @@ public:
 
 using HiglId = unsigned;
 
+class HiglPatExport
+{
+public:
+    SearchPar       m_srch;
+    HiglFmtSpec     m_fmtSpec;
+    HiglId          m_id;
+};
+
 class HiglPat
 {
 public:
@@ -170,7 +178,8 @@ public:
     QJsonArray getRcValues();
     void setRcValues(const QJsonValue& val);
     void removeInc(QTextDocument * doc);
-    const std::vector<HiglPat>& getPatList() const { return m_patList; }
+    void getPatList(std::vector<HiglPatExport>&) const;
+    void setList(std::vector<HiglPatExport>& patList);
 
     void highlightInit();
     void highlightAll(const HiglPat& pat, int line = 0, int loop_cnt = 0);
@@ -180,7 +189,7 @@ public:
     void searchHighlightUpdate(const QString& pat, bool opt_regexp, bool opt_case, bool onlyVisible);
     void searchHighlightAll(const HiglPat& pat, int line = 0, int loop_cnt = 0);
 
-    static const int TAG_NAME_FIND = 1;
+    static const int INVALID_HIGL_ID = 0;
 
 private:
     void addSearchInc(QTextCursor& sel);
@@ -191,7 +200,7 @@ private:
     const QTextCharFormat* getFmtById(HiglId id);
 
     void configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec);
-    void addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec);
+    HiglId addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id = INVALID_HIGL_ID);
     void highlightInitBg(int pat_idx, int line = 0, int loop_cnt = 0);
     int  highlightLines(const HiglPat& pat, int line);
     void highlightYviewRedirect();
@@ -206,7 +215,7 @@ private:
 
     std::vector<HiglPat> m_patList;
     HiglPat       m_hallPat;
-    HiglId        m_lastId = 0;
+    HiglId        m_lastId = INVALID_HIGL_ID;
     bool          m_hallPatComplete = false;
     int           m_hallYview = 0;
     bool          m_yViewRedirected = false;  // TODO obsolete
@@ -310,6 +319,7 @@ public:
     void searchAll(bool raiseWin, int direction);
     bool searchNext(bool isFwd);
     void searchFirst(bool is_fwd, const std::vector<SearchPar>& patList);
+    void searchEnterOpt(const SearchPar& pat);
     void searchEnter(bool is_fwd, QWidget * parent = nullptr);
     void searchOptToggleHall();
     void searchOptToggleRegExp();
@@ -330,6 +340,7 @@ public:
     void searchComplete();
     void searchCompleteLeft();
     void searchWord(bool is_fwd);
+    SearchPar getCurSearchParams();
 
 private slots:
 private:

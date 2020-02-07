@@ -14,11 +14,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
- *
- * DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
- * This is a translation from the original implementation in Tcl/Tk.
- *
- * ----------------------------------------------------------------------------
  */
 
 #include <QWidget>
@@ -27,11 +22,14 @@
 
 class QTableView;
 class QPushButton;
+class QDialogButtonBox;
+class QAbstractButton;
 class Highlighter;
 class MainSearch;
 class MainWin;
 class DlgHiglModel;
 class DlgHidlFmtDraw;
+class QJsonObject;
 
 class DlgHigl : public QMainWindow
 {
@@ -41,32 +39,57 @@ public:
     static DlgHigl * s_instance;
     static QByteArray s_winGeometry;
     static QByteArray s_winState;
+    static std::vector<QRgb> s_defaultColPalette;
+
     static void openDialog(Highlighter * higl, MainSearch * search, MainWin * mainWin);
+    static QJsonObject getRcValues();
+    static void setRcValues(const QJsonValue& val);
+
 private:
+    // constructor can only be invoked via the static interface
     DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin);
     DlgHigl(const DlgHigl&) = delete;
     DlgHigl& operator=(const DlgHigl&) = delete;
     ~DlgHigl();
 
-    void cmdSearch(bool is_fwd);
-    void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected);
     void closeEvent(QCloseEvent *);
+    void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected);
+    void cbDataChanged(const QModelIndex &, const QModelIndex &);
+    void showContextMenu(const QPoint& pos);
+    void cmdButton(QAbstractButton * button);
+    void cmdShiftUp(bool);
+    void cmdShiftDown(bool);
+    void cmdSearch(bool is_fwd);
+    void cmdSearchList(int direction);
+    void cmdAdd(bool);
+    void cmdCopyToMain(bool);
+    void cmdCopyFromMain(bool);
+    void cmdRemove(bool);
+    void cmdChangeBgColor(bool);
+    void cmdChangeFgColor(bool);
+    void cmdToggleFontUnderline(const QModelIndex& index, bool checked);
+    void cmdToggleFontBold(const QModelIndex& index, bool checked);
+    void cmdToggleFontItalic(const QModelIndex& index, bool checked);
+    void cmdToggleFontOverstrike(const QModelIndex& index, bool checked);
+    void cmdResetFont(const QModelIndex& index);
+    void cmdChangeFont(bool);
 
 private:
     Highlighter * const m_higl;
     MainSearch * const  m_search;
     MainWin * const     m_mainWin;
-    QTableView        * m_table;
-    DlgHiglModel      * m_model;
-    DlgHidlFmtDraw    * m_fmtDelegate;
+    QTableView        * m_table = nullptr;
+    DlgHiglModel      * m_model = nullptr;
+    DlgHidlFmtDraw    * m_fmtDelegate = nullptr;
 
-    QPushButton       * m_f1_del;
-    QPushButton       * m_f1_up;
-    QPushButton       * m_f1_down;
-    QPushButton       * m_f1_fmt;
-    QPushButton       * m_f2_bn;
-    QPushButton       * m_f2_bp;
-    QPushButton       * m_f2_ball;
-    QPushButton       * m_f2_ballb;
-    QPushButton       * m_f2_balla;
+    QDialogButtonBox  * m_cmdButs = nullptr;
+    QPushButton       * m_f1_del = nullptr;
+    QPushButton       * m_f1_up = nullptr;
+    QPushButton       * m_f1_down = nullptr;
+    QPushButton       * m_f1_fmt = nullptr;
+    QPushButton       * m_f2_bn = nullptr;
+    QPushButton       * m_f2_bp = nullptr;
+    QPushButton       * m_f2_ball = nullptr;
+    QPushButton       * m_f2_ballb = nullptr;
+    QPushButton       * m_f2_balla = nullptr;
 };
