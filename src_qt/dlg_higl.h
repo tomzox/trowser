@@ -15,6 +15,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
  */
+#ifndef _DLG_HIGL_H
+#define _DLG_HIGL_H
 
 #include <QWidget>
 #include <QMainWindow>
@@ -52,7 +54,7 @@ private:
     DlgHigl& operator=(const DlgHigl&) = delete;
     ~DlgHigl();
 
-    void closeEvent(QCloseEvent *);
+    virtual void closeEvent(QCloseEvent *) override;
     void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected);
     void cbDataChanged(const QModelIndex &, const QModelIndex &);
     void showContextMenu(const QPoint& pos);
@@ -93,3 +95,5 @@ private:
     QPushButton       * m_f2_ballb = nullptr;
     QPushButton       * m_f2_balla = nullptr;
 };
+
+#endif /* _DLG_HIGL_H */

@@ -42,6 +42,9 @@
 #include <vector>
 
 #include "main_win.h"
+#include "main_text.h"
+#include "main_search.h"
+#include "highlighter.h"
 #include "dlg_higl.h"
 
 // ----------------------------------------------------------------------------
@@ -419,8 +422,8 @@ QSize DlgHidlFmtDraw::sizeHint(const QStyleOptionViewItem& /*option*/, const QMo
 // ----------------------------------------------------------------------------
 
 /**
- * This function creates or raises the color highlighting tags list dialog.
- * This dialog shows all currently defined tag assignments.
+ * This function creates the color highlighting editor dialog.
+ * This dialog shows all currently defined pattern definitions.
  */
 DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
     : m_higl(higl)
@@ -1066,7 +1069,7 @@ QByteArray DlgHigl::s_winState;
  * not included here, as the dialog class only holds a temporary copy while
  * open.
  */
-QJsonObject DlgHigl::getRcValues()
+QJsonObject DlgHigl::getRcValues()  /*static*/
 {
     QJsonObject obj;
 
@@ -1094,7 +1097,7 @@ QJsonObject DlgHigl::getRcValues()
  * This function is called during start-up to apply configuration variables.
  * The values are simply stored and applied when the dialog is actually opened.
  */
-void DlgHigl::setRcValues(const QJsonValue& val)
+void DlgHigl::setRcValues(const QJsonValue& val)  /*static*/
 {
     const QJsonObject obj = val.toObject();
     for (auto it = obj.begin(); it != obj.end(); ++it)
