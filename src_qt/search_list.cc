@@ -16,6 +16,17 @@
  * ----------------------------------------------------------------------------
  */
 
+/*
+ *  TODO:
+ *  - syntax highlighting
+ *  - progress bar
+ *  - bg task abort dialog
+ *  - performance optimization line list used by SearchListModel
+ *  - column for displaying bookmark, line no, frame no, frame delta
+ *  - line list load/save
+ *  - frame number pattern parsing
+ */
+
 #include <QWidget>
 #include <QTableView>
 #include <QAbstractItemModel>
@@ -34,6 +45,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QTextStream>
+#include <QDateTime>
 
 #include <cstdio>
 #include <string>
@@ -45,23 +57,9 @@
 #include "main_search.h"
 #include "highlighter.h"
 #include "search_list.h"
+#include "dlg_higl.h"
 
 // ----------------------------------------------------------------------------
-
-class SearchUndoRedo
-{
-public:
-    SearchUndoRedo(bool f, const std::initializer_list<int>& v)
-        : isAdded(f)
-        , lines(v)
-        {}
-    SearchUndoRedo(bool f, const std::vector<int>& v)
-        : isAdded(f)
-        , lines(v)
-        {}
-    bool             isAdded;
-    std::vector<int> lines;
-};
 
 class SearchListModel : public QAbstractItemModel
 {
@@ -115,18 +113,26 @@ public:
                && (size_t(idx) < dlg_srch_lines.size())
                && (dlg_srch_lines[idx] == line);
     }
+    int getLineOfIdx(int idx) const
+    {
+        return ((size_t(idx) < dlg_srch_lines.size()) ? dlg_srch_lines[idx] : -1);
+    }
     int lineCount() const
     {
         return dlg_srch_lines.size();
     }
     void insertLine(int line, int row = -1);
-    void insertLines(const std::vector<int>& line_list, const std::vector<int>& idx_list);
+    void insertLinePreSorted(const std::vector<int>& line_list, const std::vector<int>& idx_list);
+    void insertLines(const std::vector<int>::const_iterator lines_begin, const std::vector<int>::const_iterator lines_end);
+    void removeLinePreSorted(const std::vector<int>& idx_list);
+    void removeLines(const std::vector<int>::const_iterator lines_begin, const std::vector<int>::const_iterator lines_end);
+    void removeAll(std::vector<int>& removedLines);
 
 private:
     MainText * const            m_mainText;
+    // TODO? https://en.wikipedia.org/wiki/Skip_list#Indexable_skiplist
+    // simple alternative: list of length-limited vectors (e.g. max 1000)
     std::vector<int>            dlg_srch_lines;
-    std::vector<SearchUndoRedo> dlg_srch_undo;
-    std::vector<SearchUndoRedo> dlg_srch_redo;
 };
 
 QVariant SearchListModel::data(const QModelIndex &index, int role) const
@@ -140,23 +146,6 @@ QVariant SearchListModel::data(const QModelIndex &index, int role) const
     return QVariant();
 }
 
-#if 0
-bool SearchListModel::removeRows(int row, int count, const QModelIndex& parent)
-{
-    bool result = false;
-
-    if (size_t(row) + size_t(count) <= dlg_srch_lines.size())
-    {
-        this->beginRemoveRows(parent, row, row + count - 1);
-        //dlg_srch_lines.erase(dlg_srch_lines.begin() + row,
-        //                dlg_srch_lines.begin() + (row + count));
-        this->endRemoveRows();
-        result = true;
-    }
-    return result;
-}
-#endif
-
 void SearchListModel::insertLine(int line, int row)
 {
     if (row < 0)
@@ -167,21 +156,23 @@ void SearchListModel::insertLine(int line, int row)
         this->beginInsertRows(QModelIndex(), row, row);
         dlg_srch_lines.insert(dlg_srch_lines.begin() + row, line);
         this->endInsertRows();
-
-        dlg_srch_undo.push_back(SearchUndoRedo(true, {line}));
-        dlg_srch_redo.clear();
     }
 }
 
-void SearchListModel::insertLines(const std::vector<int>& line_list, const std::vector<int>& idx_list)
+// ATTN: indices must be pre-compensated for insertion
+// i.e. when inserting two lines at index N, index list must indicate N and N+1 repectively
+void SearchListModel::insertLinePreSorted(const std::vector<int>& line_list,
+                                          const std::vector<int>& idx_list)
 {
     Q_ASSERT(line_list.size() == idx_list.size());
 
     dlg_srch_lines.reserve(dlg_srch_lines.size() + line_list.size());
 
     int idx = 0;
-    while (size_t(idx) < line_list.size())
+    int prev = -1;
+    while (size_t(idx) < idx_list.size())
     {
+        Q_ASSERT(idx_list[idx] > prev); prev = idx_list[idx];
         int count = 1;
         while ((size_t(idx + count) < idx_list.size()) && (idx_list[idx] + count == idx_list[idx + count]))
             ++count;
@@ -195,9 +186,73 @@ void SearchListModel::insertLines(const std::vector<int>& line_list, const std::
 
         idx += count;
     }
+}
 
-    dlg_srch_undo.push_back(SearchUndoRedo(true, line_list));
-    dlg_srch_redo.clear();
+void SearchListModel::insertLines(const std::vector<int>::const_iterator lines_begin,
+                                  const std::vector<int>::const_iterator lines_end)
+{
+    for (auto it = lines_begin; it != lines_end; ++it)
+    {
+        // TODO optimize by removing consecutive indices in one call
+        int idx;
+        if (getLineIdx(*it, idx) == false)
+        {
+            // insert line into display
+            this->beginInsertRows(QModelIndex(), idx, idx);
+            dlg_srch_lines.insert(dlg_srch_lines.begin() + idx, *it);
+            this->endInsertRows();
+        }
+    }
+}
+
+void SearchListModel::removeLinePreSorted(const std::vector<int>& idx_list)
+{
+    int prev = dlg_srch_lines.size();
+    int idx = 0;
+    while (size_t(idx) < idx_list.size())
+    {
+        // detect consecutive index values in descending order(!)
+        Q_ASSERT(idx_list[idx] < prev); prev = idx_list[idx];
+        int count = 1;
+        while ((size_t(idx + count) < idx_list.size()) && (idx_list[idx] == idx_list[idx + count] + count))
+            ++count;
+
+        int row = idx_list[idx + count - 1];
+        this->beginRemoveRows(QModelIndex(), row, row + count - 1);
+        dlg_srch_lines.erase(dlg_srch_lines.begin() + row,
+                             dlg_srch_lines.begin() + row + count);
+        this->endRemoveRows();
+
+        idx += count;
+    }
+}
+
+void SearchListModel::removeLines(const std::vector<int>::const_iterator lines_begin,
+                                  const std::vector<int>::const_iterator lines_end)
+{
+    for (auto it = lines_begin; it != lines_end; ++it)
+    {
+        // TODO optimize by removing consecutive indices in one call
+        int idx;
+        if (getLineIdx(*it, idx))
+        {
+            // remove line from display
+            this->beginRemoveRows(QModelIndex(), idx, idx);
+            dlg_srch_lines.erase(dlg_srch_lines.begin() + idx);
+            this->endRemoveRows();
+        }
+    }
+}
+
+void SearchListModel::removeAll(std::vector<int>& removedLines)
+{
+    if (dlg_srch_lines.size() != 0)
+    {
+        this->beginRemoveRows(QModelIndex(), 0, dlg_srch_lines.size() - 1);
+        removedLines = std::move(dlg_srch_lines);
+        this->endRemoveRows();
+    }
+    Q_ASSERT(dlg_srch_lines.size() == 0);
 }
 
 
@@ -244,6 +299,174 @@ int SearchListModel::getLineIdx(int ins_line) const
 }
 
 
+// ----------------------------------------------------------------------------
+
+class UndoRedoItem
+{
+public:
+    using OpCode = enum { OPCODE_ADDED = 1, OPCODE_REMOVED = -1,
+                          OPCODE_ADDED_BG = 2, OPCODE_REMOVED_BG = -2 };
+
+    UndoRedoItem(OpCode opc, const std::initializer_list<int>& v)
+        : opcode(opc)
+        , lines(v)
+        {}
+    UndoRedoItem(OpCode opc, const std::vector<int>& v)
+        : opcode(opc)
+        , lines(v)
+        {}
+    UndoRedoItem(OpCode opc, std::vector<int>&& v)
+        : opcode(opc)
+        , lines(std::move(v))
+        {}
+public:
+    OpCode           opcode;
+    std::vector<int> lines;
+};
+
+class SearchListUndo
+{
+public:
+    SearchListUndo() = default;
+    void appendChange(bool do_add, const std::vector<int>& lines);
+    void prepareBgChange();
+    void appendBgChange(bool forUndo, bool do_add,
+                        std::vector<int>::const_iterator lines_begin,
+                        std::vector<int>::const_iterator lines_end);
+    void finalizeBgChange(bool forUndo);
+    void adjustLineNums(int top_l, int bottom_l);
+
+    bool hasUndo() const { return dlg_srch_undo.size() != 0; }
+    bool hasRedo() const { return dlg_srch_redo.size() != 0; }
+    std::pair<bool,int>&& describeFirstOp(bool forUndo);
+    bool popUndo(bool forUndo, std::vector<int>& lines);
+
+private:
+    std::vector<UndoRedoItem> dlg_srch_undo;
+    std::vector<UndoRedoItem> dlg_srch_redo;
+};
+
+void SearchListUndo::appendChange(bool do_add, const std::vector<int>& lines)
+{
+    auto opcode = do_add ? UndoRedoItem::OPCODE_ADDED
+                         : UndoRedoItem::OPCODE_REMOVED;
+
+    dlg_srch_undo.push_back(UndoRedoItem(opcode, lines));
+    dlg_srch_redo.clear();
+}
+
+void SearchListUndo::prepareBgChange()
+{
+    dlg_srch_redo.clear();
+}
+
+/**
+ * This function is during background tasks which fill the search match dialog
+ * after adding new matches. The function adds the respective line numbers to
+ * the undo list. If there's already an undo item for the current search, the
+ * numbers are merged into it.
+ */
+void SearchListUndo::appendBgChange(bool forUndo, bool do_add,
+                                    std::vector<int>::const_iterator lines_begin,
+                                    std::vector<int>::const_iterator lines_end)
+{
+    std::vector<UndoRedoItem>& undo_list = forUndo ? dlg_srch_undo : dlg_srch_redo;
+    auto opcode = do_add ? UndoRedoItem::OPCODE_ADDED_BG
+                         : UndoRedoItem::OPCODE_REMOVED_BG;
+    if (undo_list.size() != 0)
+    {
+        UndoRedoItem& prev_undo = undo_list.back();
+        if (prev_undo.opcode == opcode)
+          prev_undo.lines.insert(prev_undo.lines.end(), lines_begin, lines_end);
+        else
+          undo_list.emplace_back(UndoRedoItem(opcode, std::vector<int>(lines_begin, lines_end)));
+    }
+    else
+      undo_list.emplace_back(UndoRedoItem(opcode, std::vector<int>(lines_begin, lines_end)));
+}
+
+
+/**
+ * This function is invoked at the end of background tasks which fill the
+ * search list window to mark the entry on the undo list as closed (so that
+ * future search matches go into a new undo element.)
+ */
+void SearchListUndo::finalizeBgChange(bool forUndo)
+{
+    std::vector<UndoRedoItem>& undo_list = forUndo ? dlg_srch_undo : dlg_srch_redo;
+
+    if (undo_list.size() != 0)
+    {
+        auto prev_op = undo_list.back().opcode;
+        if (prev_op == UndoRedoItem::OPCODE_ADDED_BG)
+        {
+            prev_op = UndoRedoItem::OPCODE_ADDED;
+        }
+        else if (prev_op == UndoRedoItem::OPCODE_REMOVED_BG)
+        {
+            prev_op = UndoRedoItem::OPCODE_REMOVED;
+        }
+    }
+}
+
+void SearchListUndo::adjustLineNums(int top_l, int bottom_l)
+{
+    std::vector<UndoRedoItem> tmp2;
+    for (const auto& cmd : dlg_srch_undo)
+    {
+        std::vector<int> tmpl;
+        tmpl.reserve(dlg_srch_undo.size());
+
+        for (int line : cmd.lines)
+        {
+            if ((line >= top_l) && ((line < bottom_l) || (bottom_l == 0)))
+            {
+                tmpl.push_back(line - top_l + 1);
+            }
+        }
+
+        if (tmpl.size() > 0)
+        {
+            tmp2.emplace_back(UndoRedoItem(cmd.opcode, std::move(tmpl)));
+        }
+    }
+
+    dlg_srch_undo = std::move(tmp2);
+    dlg_srch_redo.clear();
+}
+
+bool SearchListUndo::popUndo(bool forUndo, std::vector<int>& lines)
+{
+    std::vector<UndoRedoItem>& undo_list = forUndo ? dlg_srch_undo : dlg_srch_redo;
+
+    if (undo_list.size() != 0)
+    {
+        bool doAdd = (   (undo_list.back().opcode == UndoRedoItem::OPCODE_ADDED)
+                      || (undo_list.back().opcode == UndoRedoItem::OPCODE_ADDED_BG));
+        lines = std::move(undo_list.back().lines);
+
+        undo_list.pop_back();
+
+        return doAdd;
+    }
+    Q_ASSERT(false);
+    return false;
+}
+
+std::pair<bool,int>&& SearchListUndo::describeFirstOp(bool forUndo)
+{
+    std::vector<UndoRedoItem>& undo_list = forUndo ? dlg_srch_undo : dlg_srch_redo;
+    int count = 0;
+    bool doAdd = false;
+
+    if (undo_list.size() != 0)
+    {
+        doAdd = (   (undo_list.back().opcode == UndoRedoItem::OPCODE_ADDED)
+                      || (undo_list.back().opcode == UndoRedoItem::OPCODE_ADDED_BG));
+        count = undo_list.back().lines.size();
+    }
+    return std::move(std::make_pair(doAdd, count));
+}
 
 // ----------------------------------------------------------------------------
 
@@ -325,7 +548,7 @@ void SearchListDraw::paint(QPainter *pt, const QStyleOptionViewItem& option, con
 
         QFontMetricsF metrics(font);
         auto data = m_model->data(index);
-        pt->drawText(TXT_MARGIN, TXT_MARGIN + metrics.ascent(),
+        pt->drawText(TXT_MARGIN, metrics.ascent(),
                      data.toString());
         pt->restore();
     }
@@ -350,26 +573,88 @@ SearchList::SearchList()
   //PreemptBgTasks()
     this->setWindowTitle("Search matches"); //TODO + cur_filename
     auto central_wid = new QWidget();
+        setCentralWidget(central_wid);
     auto layout_top = new QVBoxLayout(central_wid);
         layout_top->setContentsMargins(0, 0, 0, 0);
+
+    tid_search_list = new ATimer(central_wid);
 
     m_model = new SearchListModel(s_mainText);
     m_draw = new SearchListDraw(m_model,
                                 s_mainWin->getFontContent(),
                                 s_mainWin->getFgColDefault(),
                                 s_mainWin->getBgColDefault());
+    m_undo = new SearchListUndo();
 
+    QFontMetricsF metrics(s_mainWin->getFontContent());
     m_table = new QTableView(central_wid);
         m_table->setModel(m_model);
         m_table->setShowGrid(false);
-        m_table->verticalHeader()->setVisible(false);
         m_table->horizontalHeader()->setVisible(false);
-        m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
         m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+        m_table->verticalHeader()->setVisible(false);
+        m_table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+        m_table->verticalHeader()->setDefaultSectionSize(metrics.height());
+        m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
         m_table->setItemDelegate(m_draw);
+        m_table->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(m_table, &QAbstractItemView::customContextMenuRequested, this, &SearchList::showContextMenu);
         connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &SearchList::selectionChanged);
         layout_top->addWidget(m_table);
 
+    if (!s_winGeometry.isEmpty())
+        this->restoreGeometry(s_winGeometry);
+    if (!s_winState.isEmpty())
+        this->restoreState(s_winState);
+
+    populateMenus();
+    auto act = new QAction(central_wid);
+        act->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_G));
+        connect(act, &QAction::triggered, this, &SearchList::displayStats);
+        central_wid->addAction(act);
+    act = new QAction(central_wid);
+        act->setShortcut(QKeySequence(Qt::Key_Escape));
+        connect(act, &QAction::triggered, [=](){ searchAbort(false); });
+        central_wid->addAction(act);
+
+    m_table->setFocus(Qt::ShortcutFocusReason);
+    this->show();
+    //ResumeBgTasks()
+}
+
+SearchList::~SearchList()
+{
+    //TODO searchAbort(false);
+    delete m_model;
+    delete m_draw;
+    delete m_undo;
+}
+
+/**
+ * This overriding function is called when the dialog window receives the close
+ * event. The function stops background processes and destroys the class
+ * instance to release all resources. The event is always accepted.
+ */
+void SearchList::closeEvent(QCloseEvent * event)
+{
+    // TODO? override resizeEvent(QResizeEvent *event) to call updateRcAfterIdle() (needed in case user terminates app via CTRL-C while window still open)
+    s_winGeometry = this->saveGeometry();
+    s_winState = this->saveState();
+    s_mainWin->updateRcAfterIdle();
+
+    event->accept();
+
+    s_instance->deleteLater();
+    s_instance = nullptr;
+}
+
+void SearchList::cmdClose(bool)
+{
+    QCoreApplication::postEvent(this, new QCloseEvent());
+}
+
+void SearchList::populateMenus()
+{
     auto men = menuBar()->addMenu("Control");
     auto act = men->addAction("Load line numbers...");
         //command=SearchList_LoadFrom)
@@ -379,49 +664,50 @@ SearchList::SearchList()
         //command=lambda:SearchList_SaveFileAs(1))
     men->addSeparator();
     act = men->addAction("Clear all");
-        //command=SearchList_Clear)
+        connect(act, &QAction::triggered, this, &SearchList::cmdClearAll);
     act = men->addAction("Close");
-        //command=wt.dlg_srch.destroy)
+        connect(act, &QAction::triggered, this, &SearchList::cmdClose);
 
     men = menuBar()->addMenu("Edit");
-    act = men->addAction("Undo");
-        //command=SearchList_Undo
-        //accelerator="u")
-    act = men->addAction("Redo");
-        //command=SearchList_Redo
-        //accelerator="^r")
+        connect(men, &QMenu::aboutToShow, this, &SearchList::editMenuAboutToShow);
+    m_menActUndo = men->addAction("Undo");
+        m_menActUndo->setShortcut(QKeySequence(Qt::Key_U));
+        connect(m_menActUndo, &QAction::triggered, this, &SearchList::cmdUndo);
+    m_menActRedo = men->addAction("Redo");
+        m_menActRedo->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_R));
+        connect(m_menActRedo, &QAction::triggered, this, &SearchList::cmdRedo);
     men->addSeparator();
     act = men->addAction("Import selected lines from main window");
-        //command=SearchList_CopyCurrentLine)
+        connect(act, &QAction::triggered, this, &SearchList::copyCurrentLine);
     men->addSeparator();
     act = men->addAction("Remove selected lines");
-        //accelerator="Del");
-        //command=SearchList_RemoveSelection)
+        act->setShortcut(QKeySequence(Qt::Key_Delete));
+        connect(act, &QAction::triggered, this, &SearchList::cmdRemoveSelection);
     men->addSeparator();
     act = men->addAction("Add main window search matches");
-        //command=lambda:SearchList_AddMatches(0))
+        connect(act, &QAction::triggered, [=](){ addMatches(0); });
     act = men->addAction("Remove main window search matches");
-        //command=lambda:SearchList_RemoveMatches(0))
+        connect(act, &QAction::triggered, [=](){ removeMatches(0); });
 
     men = menuBar()->addMenu("Search");
     act = men->addAction("Search history...");
         //command=SearchHistory_Open)
     act = men->addAction("Edit highlight patterns...");
-        //command=TagList_OpenDialog)
+        connect(act, &QAction::triggered, [=](){ DlgHigl::openDialog(s_higl, s_search, s_mainWin); });
     men->addSeparator();
     act = men->addAction("Insert all search matches...");
-        //command=lambda:SearchAll(1, 0)
-        //accelerator="ALT-a")
+        act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_A));
+        connect(act, &QAction::triggered, [=](){ s_search->searchAll(true, 0); });
     act = men->addAction("Insert all matches above...");
-        //command=lambda:SearchAll(1 -1)
-        //accelerator="ALT-P")
+        act->setShortcut(QKeySequence(Qt::ALT + Qt::SHIFT + Qt::Key_P));
+        connect(act, &QAction::triggered, [=](){ s_search->searchAll(true, -1); });
     act = men->addAction("Insert all matches below...");
-        //command=lambda:SearchAll(1, 1)
-        //accelerator="ALT-N")
+        act->setShortcut(QKeySequence(Qt::ALT + Qt::SHIFT + Qt::Key_N));
+        connect(act, &QAction::triggered, [=](){ s_search->searchAll(true, 1); });
     men->addSeparator();
     act = men->addAction("Clear search highlight");
-        //command=SearchHighlightClear
-        //accelerator="&")
+        act->setShortcut(QKeySequence(Qt::Key_Ampersand));
+        connect(act, &QAction::triggered, s_search, &MainSearch::searchHighlightClear);
 
 
     men = menuBar()->addMenu("Options");
@@ -429,14 +715,21 @@ SearchList::SearchList()
         act->setCheckable(true);
         //command=SearchList_ToggleHighlight, variable=dlg_srch_highlight
         //accelerator="ALT-h")
+    act = men->addAction("Show line number");
+        act->setCheckable(true);
+        //command=SearchList_ToggleLineNo, variable=dlg_srch_show_line
+        //accelerator="ALT-f")
 #if 0
     act = men->addAction("Show frame number");
+        act->setCheckable(true);
         //command=SearchList_ToggleFrameNo, variable=dlg_srch_show_fn
         //accelerator="ALT-f")
     act = men->addAction("Show tick number");
+        act->setCheckable(true);
         //command=SearchList_ToggleFrameNo, variable=dlg_srch_show_tick
         //accelerator="ALT-t")
     act = men->addAction("Show tick num. delta");
+        act->setCheckable(true);
         //command=SearchList_ToggleFrameNo, variable=dlg_srch_tick_delta
         //accelerator="ALT-d")
     men->addSeparator();
@@ -444,83 +737,257 @@ SearchList::SearchList()
         //command=SearchList_SetFnRoot
         //accelerator="ALT-0")
 #endif
-
-    setCentralWidget(central_wid);
-    if (!s_winGeometry.isEmpty())
-        this->restoreGeometry(s_winGeometry);
-    if (!s_winState.isEmpty())
-        this->restoreState(s_winState);
-    m_table->setFocus(Qt::ShortcutFocusReason);
-
-    act = new QAction(central_wid);
-        act->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_G));
-        connect(act, &QAction::triggered, this, &SearchList::displayStats);
-        central_wid->addAction(act);
-#if 0
-    // create/reset variables to default values
-    dlg_srch_shown = true
-    SearchList_Init()
-    dlg_srch_show_fn = BooleanVar(tk, false)
-    dlg_srch_show_tick = BooleanVar(tk, false)
-    dlg_srch_tick_delta = BooleanVar(tk, false)
-    dlg_srch_highlight = BooleanVar(tk, false)
-
-    wt.dlg_srch_f1_l.bind("<ButtonRelease-3>", lambda e:BindCallAndBreak(lambda:SearchList_ContextMenu(e.x, e.y)))
-    wt.dlg_srch_f1_l.bind("<Delete>", lambda e:BindCallAndBreak(SearchList_RemoveSelection))
-    wt.dlg_srch_f1_l.bind("<Control-plus>", lambda e:BindCallKeyClrBreak(lambda:ChangeFontSize(1)))
-    wt.dlg_srch_f1_l.bind("<Control-minus>", lambda e:BindCallKeyClrBreak(lambda:ChangeFontSize(-1)))
-    wt.dlg_srch_f1_l.bind("<Control-Key-g>", lambda e:BindCallKeyClrBreak(lambda:SearchList_DisplayStats()))
-    KeyCmdBind(wt.dlg_srch_f1_l, "/", lambda:SearchEnter(1, wt.dlg_srch_f1_l))
-    KeyCmdBind(wt.dlg_srch_f1_l, "?", lambda:SearchEnter(0, wt.dlg_srch_f1_l))
-    KeyCmdBind(wt.dlg_srch_f1_l, "n", lambda:SearchList_SearchNext(1))
-    KeyCmdBind(wt.dlg_srch_f1_l, "N", lambda:SearchList_SearchNext(0))
-    KeyCmdBind(wt.dlg_srch_f1_l, "&", SearchHighlightClear)
-    KeyCmdBind(wt.dlg_srch_f1_l, "m", SearchList_ToggleMark)
-    KeyCmdBind(wt.dlg_srch_f1_l, "u", SearchList_Undo)
-    wt.dlg_srch_f1_l.bind("<Control-Key-r>", lambda e: SearchList_Redo())
-    wt.dlg_srch_f1_l.bind("<space>", lambda e:SearchList_SelectionChange(dlg_srch_sel.TextSel_GetSelection()))
-    wt.dlg_srch_f1_l.bind("<Escape>", lambda e:SearchList_SearchAbort(0))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-h>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("highlight")))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-f>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("show_fn")))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-t>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("show_tick")))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-d>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("tick_delta")))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-0>", lambda e:BindCallAndBreak(SearchList_SetFnRoot))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-n>", lambda e:BindCallAndBreak(lambda:SearchNext(1)))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-p>", lambda e:BindCallAndBreak(lambda:SearchNext(0)))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-a>", lambda e:BindCallAndBreak(lambda:SearchAll(0, 0)))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-N>", lambda e:BindCallAndBreak(lambda:SearchAll(0, 1)))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-P>", lambda e:BindCallAndBreak(lambda:SearchAll(0, -1)))
-
-    wt.dlg_srch_ctxmen = Menu(wt.dlg_srch, tearoff=0)
-
-    SearchList_CreateHighlightTags()
-#endif
-
-    this->show();
-    //ResumeBgTasks()
-}
-
-SearchList::~SearchList()
-{
-    //TODO SearchList_SearchAbort(0)
-    delete m_model;
-    delete m_draw;
 }
 
 /**
- * This function is bound to destruction events on the search list dialog window.
- * The function stops background processes and releases all dialog resources.
+ * This function is called when the "edit" menu in the search list dialog is opened.
  */
-void SearchList::closeEvent(QCloseEvent * event)
+void SearchList::editMenuAboutToShow()
 {
-    s_winGeometry = this->saveGeometry();
-    s_winState = this->saveState();
+    if (m_undo->hasUndo())
+    {
+        std::pair<bool,int> info = m_undo->describeFirstOp(true);
+        QString txt;
+        QTextStream(&txt) << "Undo (" << (info.first ? "addition" : "removal")
+                          << " of " << info.second << " lines)";
+        m_menActUndo->setText(txt);
+        m_menActUndo->setEnabled(true);
+    }
+    else
+    {
+        m_menActUndo->setText("Undo");
+        m_menActUndo->setEnabled(false);
+    }
 
-    event->accept();
-
-    s_instance->deleteLater();
-    s_instance = nullptr;
+    // code is copy/paste from above except for "Redo" instead of "Undo"
+    if (m_undo->hasRedo())
+    {
+        std::pair<bool,int> info = m_undo->describeFirstOp(false);
+        QString txt;
+        QTextStream(&txt) << "Redo (" << (info.first ? "addition" : "removal")
+                          << " of " << info.second << " lines)";
+        m_menActRedo->setText(txt);
+        m_menActRedo->setEnabled(true);
+    }
+    else
+    {
+        m_menActRedo->setText("Redo");
+        m_menActRedo->setEnabled(false);
+    }
 }
+
+
+/**
+ * This function pops up a context menu for the search list dialog.
+ */
+void SearchList::showContextMenu(const QPoint& pos)
+{
+    auto menu = new QMenu("Search list actions", this);
+    auto sel = m_table->selectionModel()->selectedRows();
+
+    auto act = menu->addAction("Select line as origin for tick delta");
+    act->setEnabled(false);
+
+    menu->addSeparator();
+    act = menu->addAction("Remove selected lines");
+    if (sel.size() > 0)
+    {
+        connect(act, &QAction::triggered, this, &SearchList::cmdRemoveSelection);
+        act->setEnabled(true);
+    }
+    else
+        act->setEnabled(false);
+
+    menu->exec(mapToGlobal(pos));
+}
+
+
+/**
+ * This function removes all content in the search list.
+ */
+void SearchList::cmdClearAll()
+{
+    searchAbort(false);
+
+    if (m_model->lineCount() > 0)
+    {
+        std::vector<int> lines;
+        m_model->removeAll(lines);
+
+        m_undo->appendChange(false, lines);
+    }
+}
+
+
+/**
+ * This function is bound to the "Remove selected lines" command in the
+ * search list dialog's context menu.  All currently selected text lines
+ * are removed from the search list.
+ */
+void SearchList::cmdRemoveSelection()
+{
+    if (searchAbort())
+    {
+        auto sel = m_table->selectionModel()->selectedRows();
+        if (sel.size() != 0)
+        {
+            std::vector<int> line_list;
+            std::vector<int> idx_list;
+            line_list.reserve(sel.size());
+            idx_list.reserve(sel.size());
+
+            // reverse-sort index list so that indices do not need adaption during removal
+            std::sort(sel.begin(), sel.end(),
+                      [](const QModelIndex& a, const QModelIndex&b)->bool {return a.row() > b.row();});
+
+            for (auto& midx : sel)
+            {
+                line_list.push_back(m_model->getLineOfIdx(midx.row()));
+                idx_list.push_back(midx.row());
+            }
+            m_model->removeLinePreSorted(idx_list);
+            m_undo->appendChange(false, line_list);
+        }
+    }
+}
+
+
+/**
+ * This function is bound to the "Undo" menu command any keyboard shortcut.
+ * This reverts the last modification of the line list (i.e. last removal or
+ * addition, either via search or manually.)
+ */
+void SearchList::cmdUndo()
+{
+    s_mainWin->clearMessage(this);
+
+    if (m_undo->hasUndo())
+    {
+        if (searchAbort())
+        {
+            std::vector<int> lines;
+            bool doAdd = m_undo->popUndo(true, lines);
+
+            tid_search_list->after(10, [=](){ bgUndoRedoLoop(doAdd, lines, -1, 0); });
+        }
+    }
+    else
+    {
+        s_mainWin->showError(this, "Already at oldest change in search list");
+    }
+}
+
+
+void SearchList::extUndo()  /*static*/
+{
+    if (s_instance != 0)
+        s_instance->cmdUndo();
+}
+
+
+/**
+ * This function is bound to the "Redo" menu command any keyboard shortcut.
+ * This reverts the last "undo", if any.
+ */
+void SearchList::cmdRedo()
+{
+    s_mainWin->clearMessage(this);
+    if (m_undo->hasRedo())
+    {
+        if (searchAbort())
+        {
+            std::vector<int> lines;
+            bool doAdd = m_undo->popUndo(false, lines);
+
+            tid_search_list->after(10, [=](){ bgUndoRedoLoop(doAdd, lines, 1, 0); });
+        }
+    }
+    else
+    {
+        s_mainWin->showError(this, "Already at newest change in search list");
+    }
+}
+
+
+void SearchList::extRedo()  /*static*/
+{
+    if (s_instance != 0)
+        s_instance->cmdRedo();
+}
+
+
+/**
+ * This function acts as background process for undo and redo operations.
+ * Each iteration of this task works on at most 250-500 lines.
+ */
+void SearchList::bgUndoRedoLoop(bool doAdd, const std::vector<int>& lines, int mode, int off)
+{
+#if 0
+    if (block_bg_tasks || (tid_search_inc != nullptr) || (tid_search_hall != nullptr))
+    {
+        // background tasks are suspended - re-schedule with timer
+        tid_search_list = tk.after(100, lambda: SearchList_BgUndoRedoLoop(doAdd, lines, mode, off))
+    }
+    else
+#endif
+    {
+        auto anchor = getViewAnchor();
+        const size_t CHUNK_SIZE = 400;
+        auto lines_begin = lines.cbegin() + off;
+        auto lines_end = ((lines.size() >= size_t(off) + CHUNK_SIZE)
+                                ? (lines.cbegin() + off) : lines.cend());
+        off += CHUNK_SIZE;
+
+        applyUndoRedo(doAdd, mode, lines_begin, lines_end);
+
+        if (mode < 0)  //FIXME replace with bool
+          m_undo->appendBgChange(false, doAdd, lines_begin, lines_end);
+        else
+          m_undo->appendBgChange(true, doAdd, lines_begin, lines_end);
+
+        // select previously selected line again
+        seeViewAnchor(anchor);
+
+        if (lines_end != lines.end())
+        {
+            // create or update the progress bar
+            //TODO ratio = int(100.0 * off / lines.size())
+            //TODO SearchList_SearchProgress(ratio)
+
+            tid_search_list->after(0, [=](){ bgUndoRedoLoop(doAdd, lines, mode, off); });
+        }
+        else
+        {
+            m_undo->finalizeBgChange(mode >= 0);
+
+            //TODO SafeDestroy(wt.dlg_srch_slpro)
+            //TODO SafeDestroy(wt.srch_abrt)
+            m_table->setCursor(Qt::ArrowCursor);
+        }
+    }
+}
+
+
+/**
+ * This function performs a command for "undo" and "redo".
+ */
+void SearchList::applyUndoRedo(bool doAdd, int mode,
+                               std::vector<int>::const_iterator lines_begin,
+                               std::vector<int>::const_iterator lines_end)
+{
+    int op = (doAdd ? 1 : -1);
+    if (op * mode < 0)
+    {
+        // undo insertion, i.e. delete lines again
+        m_model->removeLines(lines_begin, lines_end);
+    }
+    else if (op * mode > 0)
+    {
+        // re-insert previously removed lines
+        m_model->insertLines(lines_begin, lines_end);
+    }
+}
+
 
 /**
  * Wrapper functions to simplify external interfaces
@@ -545,20 +1012,227 @@ void SearchList::removeMatches(int direction)
  * performed in a background task, i.e. it's not completed when this
  * function returns.
  */
-//void SearchList::searchMatches(bool do_add, const QString& pat, bool is_re, bool use_case, int direction)  /*static*/
-void SearchList::searchMatches(bool /*do_add*/, int /*direction*/, const SearchPar& par)
+void SearchList::searchMatches(bool do_add, int direction, const SearchPar& par)
 {
     if (!par.m_pat.isEmpty())
     {
-#if 0 //TODO
-        if (SearchExprCheck(par.m_pat, par.opt_regexp, true))
+        if (s_search->searchExprCheck(par.m_pat, par.m_opt_regexp, true))
         {
-            hl = [pat, is_re, use_case]
-            pat_list = [hl]
-            startSearchAll(pat_list, do_add, direction)
+            startSearchAll(std::vector<SearchPar>({par}), do_add, direction);
         }
-#endif
     }
+}
+
+/**
+ * This function starts the search in the main text content for all matches
+ * to a given pattern.  Matching lines are either inserted or removed from the
+ * search list. The search is performed in the background and NOT finished when
+ * this function returns.  Possibly still running older searches are aborted.
+ */
+void SearchList::startSearchAll(const std::vector<SearchPar>& pat_list, bool do_add, int direction)
+{
+    if (searchAbort())
+    {
+        int textPos = ((direction == 0) ? 0 : s_mainText->textCursor().position());
+
+        // reset redo list
+        m_undo->prepareBgChange();
+
+        tid_search_list->after(10, [=](){ bgSearchLoop(pat_list, do_add, direction, textPos, 0, 0); });
+    }
+}
+
+
+/**
+ * This function acts as background process to fill the search list window.
+ * The search loop continues for at most 100ms, then the function re-schedules
+ * itself as idle task.
+ */
+void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add, int direction, int textPos, int pat_idx, int loop_cnt)
+{
+#if 0 //TODO
+    if (block_bg_tasks || (tid_search_inc != nullptr) || (tid_search_hall != nullptr))
+    {
+      // background tasks are suspended - re-schedule with timer
+      tid_search_list = tk.after(100, lambda line=line: SearchList_BgSearchLoop(pat_list, do_add, direction, textPos, pat_idx, 0))
+    }
+    else
+#endif
+    if (loop_cnt > 10)
+    {
+        tid_search_list->after(10, [=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx, 0); });
+    }
+    else
+    {
+        auto anchor = getViewAnchor();
+        qint64 start_t = QDateTime::currentMSecsSinceEpoch();
+        const SearchPar& pat = pat_list[pat_idx];
+        std::vector<int> line_list;
+        std::vector<int> idx_list;
+        int idxOff = 0;
+
+        while (true)
+        {
+            QTextBlock block;
+            int matchPos, matchLen;
+            if (s_mainText->findInBlocks(pat, textPos, direction>=0, matchPos, matchLen, &block))
+            {
+                int line = block.blockNumber();
+                int idx;
+                bool found = m_model->getLineIdx(line, idx);
+                if (do_add && !found)
+                {
+                    line_list.push_back(line);
+                    idx_list.push_back(idx + idxOff);
+                    idxOff += 1;
+                }
+                else if (!do_add && found)
+                {
+                    line_list.push_back(line);
+                    idx_list.push_back(idx);
+                }
+                textPos = block.position() + block.length();
+            }
+            else if (matchPos >= 0)
+            {
+                textPos = matchPos;
+            }
+            else
+            {
+                textPos = -1;
+                break;
+            }
+
+            // limit the runtime of the loop - return start line number for the next invocation
+            qint64 now = QDateTime::currentMSecsSinceEpoch();
+            if (now - start_t > 100)
+                break;
+        }
+
+        if (line_list.size() > 0)
+        {
+            if (do_add)
+            {
+                if (direction < 0)
+                {
+                    std::reverse(line_list.begin(), line_list.end());
+                    std::reverse(idx_list.begin(), idx_list.end());
+                }
+                m_model->insertLinePreSorted(line_list, idx_list);
+            }
+            else
+            {
+                if (direction >= 0)
+                {
+                    std::reverse(idx_list.begin(), idx_list.end());
+                }
+                m_model->removeLinePreSorted(idx_list);
+            }
+
+            m_undo->appendBgChange(true, do_add, line_list.begin(), line_list.end());
+            // select previously selected line again
+            seeViewAnchor(anchor);
+        }
+
+        if (textPos >= 0)
+        {
+#if 0 // TODO progress
+            // create or update the progress bar
+            if (direction == 0)
+            {
+                ratio = textPos / max_line
+            }
+            else if (direction < 0)
+            {
+                thresh = int(wt.f1_t.index("insert").split(".")[0])
+                ratio = 1 - (textPos / thresh)
+            }
+            else
+            {
+                thresh = int(wt.f1_t.index("insert").split(".")[0])
+                ratio = textPos / (max_line - thresh)
+            }
+            ratio = int(100.0*(ratio + pat_idx)/pat_list.size())
+            SearchList_SearchProgress(ratio)
+#endif
+
+            loop_cnt += 1;
+            tid_search_list->after(0, [=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx, loop_cnt); });
+        }
+        else  // done
+        {
+            m_undo->finalizeBgChange(true);
+            pat_idx += 1;
+            if (size_t(pat_idx) < pat_list.size())
+            {
+                loop_cnt += 1;
+                int textPos = ((direction == 0) ? 0 : s_mainText->textCursor().position());
+
+                tid_search_list->after(0, [=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx, loop_cnt); });
+            }
+            else
+            {
+                //TODO SafeDestroy(wt.dlg_srch_slpro)
+                //TODO SafeDestroy(wt.srch_abrt)
+                m_table->setCursor(Qt::ArrowCursor);
+            }
+        }
+    }
+}
+
+
+/**
+ * This helper function is called before modifications of the search result
+ * list by the various background tasks to determine a line which can serve
+ * as "anchor" for the view, i.e. which will be made visible again after the
+ * insertions or removals (which may lead to scrolling.)
+ */
+SearchList::ListViewAnchor&& SearchList::getViewAnchor()
+{
+    bool haveSel = false;
+    int line = -1;
+
+    auto sel = m_table->selectionModel()->selectedRows();
+    if (sel.size() != 0)
+    {
+        // keep selection visible
+        line = m_model->getLineOfIdx(sel.front().row());
+        haveSel = true;
+    }
+    else
+    {
+        // no selection - check if line near cursor in main win is visible
+        auto midx = m_table->indexAt(m_table->rect().topLeft());
+        if (midx.row() < m_model->lineCount())
+            line = m_model->getLineOfIdx(midx.row());
+    }
+    return std::move(std::make_pair(haveSel, line));
+}
+
+
+/**
+ * This helper function is called after modifications of the search result
+ * list by the various background tasks to make the previously determined
+ * "anchor" line visible and to adjust the selection.
+ */
+void SearchList::seeViewAnchor(ListViewAnchor& anchor)
+{
+    if (anchor.second >= 0)
+    {
+        int idx;
+        if (m_model->getLineIdx(anchor.second, idx))
+        {
+            QModelIndex midx = m_model->index(idx, 0);
+            m_table->scrollTo(midx);
+            if (anchor.first)
+            {
+                m_ignoreSelCb = idx;
+                m_table->selectionModel()->select(midx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+            }
+            return;
+        }
+    }
+    m_table->selectionModel()->select(QModelIndex(), QItemSelectionModel::Clear);
 }
 
 /**
@@ -595,6 +1269,8 @@ void SearchList::addMainSelection(QTextCursor& c)
 
                 QModelIndex midx = m_model->index(idx_list.back(), 0);
                 sel.select(midx, midx);
+                if (m_ignoreSelCb == -1)
+                    m_ignoreSelCb = idx_list.back();
             }
             c.movePosition(QTextCursor::NextBlock);
             if (c.atEnd())
@@ -603,7 +1279,8 @@ void SearchList::addMainSelection(QTextCursor& c)
 
         if (line_list.size() > 0)
         {
-            m_model->insertLines(line_list, idx_list);
+            m_model->insertLinePreSorted(line_list, idx_list);
+            m_undo->appendChange(true, line_list);
 
             m_table->selectionModel()->select(sel, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
 
@@ -640,6 +1317,7 @@ void SearchList::copyCurrentLine()
                 // line is not yet included
                 m_model->insertLine(line, idx);
             }
+            m_undo->appendChange(true, std::vector<int>{line});
 
             // make line visible & select it
             matchViewInt(line, idx);
@@ -649,7 +1327,7 @@ void SearchList::copyCurrentLine()
 
 /**
  * This function adjusts the view in the search result list so that the given
- * main window's text line becomes visible.
+ * text line becomes visible.
  */
 void SearchList::matchViewInt(int line, int idx)
 {
@@ -662,13 +1340,15 @@ void SearchList::matchViewInt(int line, int idx)
     {
         QModelIndex midx = m_model->index(idx, 0);
         m_table->scrollTo(midx);
-        m_table->selectionModel()->select(midx, QItemSelectionModel::Clear);
+
+        // ignore selection chage callback triggered by following sel. changes
+        m_ignoreSelCb = idx;
 
         // move selection onto the line; clear selection if line is not in the list
         if (m_model->isIdxValid(line, idx))
-        {
-            m_table->selectionModel()->select(midx, QItemSelectionModel::Select | QItemSelectionModel::Rows);
-        }
+            m_table->selectionModel()->select(midx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        else
+            m_table->selectionModel()->select(midx, QItemSelectionModel::Clear);
     }
 }
 
@@ -680,7 +1360,6 @@ void SearchList::matchView(int line) /*static*/
     }
 }
 
-
 /**
  * This function is a callback for selection changes in the search list dialog.
  * If a single line is selected, the view in the main window is changed to
@@ -691,15 +1370,20 @@ void SearchList::selectionChanged(const QItemSelection& /*selected*/, const QIte
     auto sel = m_table->selectionModel()->selectedRows();
     if (sel.size() == 1)
     {
+        if (m_ignoreSelCb == sel.front().row())
+        {
+            // FIXME WA for ignoring callback triggered by matchViewInt()
+        }
+        else
+        {
+            int line = m_model->getLineOfIdx(sel.front().row());
+            if (line >= 0)
+            {
+                s_search->highlightFixedLine(line);
+            }
+        }
     }
-#if 0
-  if (sel.size() == 1)
-  {
-    idx = sel[0]
-    if (idx < dlg_srch_lines.size())
-    {
-      Mark_Line(dlg_srch_lines[idx])
-#endif
+    m_ignoreSelCb = -1;
 }
 
 
@@ -745,6 +1429,12 @@ QByteArray    SearchList::s_winState;
 QJsonObject SearchList::getRcValues()  /*static*/
 {
     QJsonObject obj;
+
+    if (s_instance)
+    {
+      s_winGeometry = s_instance->saveGeometry();
+      s_winState = s_instance->saveState();
+    }
 
     obj.insert("win_geom", QJsonValue(QString(s_winGeometry.toHex())));
     obj.insert("win_state", QJsonValue(QString(s_winState.toHex())));

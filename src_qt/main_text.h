@@ -26,8 +26,10 @@
 #include <vector>
 #include <unordered_map>
 
+class QTextBlock;
 class MainWin;
 class MainSearch;
+class SearchPar;
 
 // ----------------------------------------------------------------------------
 
@@ -61,8 +63,8 @@ public:
     void keyCmdClear();
 
     QTextCursor findInDoc(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, int start_pos);
-    bool findInBlocks(const QString &patStr, int from, bool is_fwd, bool opt_regex,
-                      bool opt_case, int& matchPos, int& matchLen);
+    bool findInBlocks(const SearchPar& par, int from, bool is_fwd,
+                      int& matchPos, int& matchLen, QTextBlock *matchBlock = nullptr);
 
 private slots:
 

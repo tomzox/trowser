@@ -478,14 +478,14 @@ int Highlighter::highlightLines(const HiglPat& pat, int line)
 
     while (true)
     {
-        //TODO search range? (Tcl used "end")
+        QTextBlock block;
         int matchPos, matchLen;
-        if (m_mainText->findInBlocks(pat.m_srch.m_pat, line, true, pat.m_srch.m_opt_regexp, pat.m_srch.m_opt_case, matchPos, matchLen))
+        if (m_mainText->findInBlocks(pat.m_srch, line, true, matchPos, matchLen, &block))
         {
             // match found, highlight this line
             //wt.f1_t.tag_add(tagnam, "%d.0" % line, "%d.0" % (line + 1))
-            QTextCursor match = m_mainText->textCursor();
-            match.setPosition(matchPos);
+            QTextCursor match(block);
+            match.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, matchPos - block.position());
             match.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, matchLen);
             addSearchHall(match, pat.m_fmt, pat.m_id);
 
@@ -561,12 +561,13 @@ void Highlighter::highlightVisible(const HiglPat& pat)
 
     while (line < line_end)
     {
+        QTextBlock block;
         int matchPos, matchLen;
-        if (m_mainText->findInBlocks(pat.m_srch.m_pat, line, true, pat.m_srch.m_opt_regexp, pat.m_srch.m_opt_case, matchPos, matchLen))
+        if (m_mainText->findInBlocks(pat.m_srch, line, true, matchPos, matchLen, &block))
         {
             //wt.f1_t.tag_add(tagnam, "%d.0" % line, "%d.0" % (line + 1))
-            QTextCursor match = m_mainText->textCursor();
-            match.setPosition(matchPos);
+            QTextCursor match(block);
+            match.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, matchPos - block.position());
             match.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, matchLen);
             addSearchHall(match, pat.m_fmt, pat.m_id);
             line = matchPos + matchLen;
@@ -620,6 +621,7 @@ void Highlighter::highlightYviewRedirect()
     if (m_yViewRedirected == false)
     {
         // TODO/FIXME does not work when scrolling via keyboard control
+        //  ?? reimplement virtual function scrollContentsBy of QAbstractScrollArea
         connect(m_mainText->verticalScrollBar(), &QAbstractSlider::valueChanged, this, &Highlighter::highlightYviewCallback);
         m_yViewRedirected = true;
     }
@@ -691,6 +693,7 @@ void Highlighter::searchHighlightUpdate(const QString& pat, bool opt_regexp, boo
  */
 void Highlighter::searchHighlightAll(const HiglPat& pat, int line, int loop_cnt)
 {
+    // FIXME this is a work-around because highlightYviewRedirect does not work
     if (m_hallYview != m_mainText->verticalScrollBar()->value())
     {
         m_hallYview = m_mainText->verticalScrollBar()->value();

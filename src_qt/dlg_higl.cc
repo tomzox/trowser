@@ -1073,6 +1073,12 @@ QJsonObject DlgHigl::getRcValues()  /*static*/
 {
     QJsonObject obj;
 
+    if (s_instance)
+    {
+      s_winGeometry = s_instance->saveGeometry();
+      s_winState = s_instance->saveState();
+    }
+
     obj.insert("win_geom", QJsonValue(QString(s_winGeometry.toHex())));
     obj.insert("win_state", QJsonValue(QString(s_winState.toHex())));
 

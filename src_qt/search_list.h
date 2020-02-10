@@ -22,7 +22,9 @@
 #include <QMainWindow>
 #include <QItemSelection>
 
-#include <main_search.h>  // for SearchPar
+#include <utility>        // pair
+
+#include "main_search.h"  // for SearchPar
 
 class QTableView;
 class QTextCursor;
@@ -34,6 +36,8 @@ class MainText;
 class MainWin;
 class SearchListModel;
 class SearchListDraw;
+class SearchListUndo;
+class ATimer;
 
 class SearchList : public QMainWindow
 {
@@ -46,11 +50,13 @@ public:
     static std::vector<QRgb> s_defaultColPalette;
 
     static void connectWidgets(Highlighter * higl, MainSearch * search, MainWin * mainWin, MainText * mainText);
-    static void openDialog(bool raiseWin);
     static QJsonObject getRcValues();
     static void setRcValues(const QJsonValue& val);
     static SearchList* getInstance(bool raiseWin = true);
+    static void openDialog(bool raiseWin);
     static void matchView(int line);
+    static void extUndo();
+    static void extRedo();
 
     // external interfaces
     void copyCurrentLine();
@@ -63,10 +69,25 @@ private:
     SearchList();
     ~SearchList();
 
+    void populateMenus();
     virtual void closeEvent(QCloseEvent *) override;
     void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected);
+    void showContextMenu(const QPoint& pos);
 
+    void cmdClose(bool);
+    void cmdClearAll();
+    void editMenuAboutToShow();
+    void cmdRemoveSelection();
+    void cmdUndo();
+    void cmdRedo();
+    void bgUndoRedoLoop(bool doAdd, const std::vector<int>& lines, int mode, int off);
+    void applyUndoRedo(bool doAdd, int mode, std::vector<int>::const_iterator lines_begin, std::vector<int>::const_iterator lines_end);
+    void startSearchAll(const std::vector<SearchPar>& pat_list, bool do_add, int direction);
+    void bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add, int direction, int line, int pat_idx, int loop_cnt);
     bool searchAbort(bool doWarn __attribute__((unused)) = true) { return true; } //dummy,TODO
+    using ListViewAnchor = std::pair<bool,int>;
+    ListViewAnchor&& getViewAnchor();
+    void seeViewAnchor(ListViewAnchor& anchor);
     void addMainSelection(QTextCursor& c);
     void matchViewInt(int line, int idx = -1);
     void displayStats(bool);
@@ -80,6 +101,11 @@ private:
     QTableView        * m_table = nullptr;
     SearchListModel   * m_model = nullptr;
     SearchListDraw    * m_draw = nullptr;
+    SearchListUndo    * m_undo = nullptr;
+    QAction           * m_menActUndo = nullptr;
+    QAction           * m_menActRedo = nullptr;
+    ATimer            * tid_search_list = nullptr;
+    int                 m_ignoreSelCb = -1;
 
     bool dlg_srch_highlight = false;
 };

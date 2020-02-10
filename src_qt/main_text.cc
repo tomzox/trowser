@@ -89,7 +89,7 @@ MainText::MainText(MainWin * mainWin, MainSearch * search, QWidget * parent)
     //bind .f1.t <Key-BackSpace> {CursorMoveLeftRight .f1.t -1; break}
     m_keyCmdText.emplace('h', [=](){ QKeyEvent ne(QEvent::KeyPress, Qt::Key_Left, Qt::NoModifier); QPlainTextEdit::keyPressEvent(&ne); });
     m_keyCmdText.emplace('l', [=](){ QKeyEvent ne(QEvent::KeyPress, Qt::Key_Right, Qt::NoModifier); QPlainTextEdit::keyPressEvent(&ne); });
-    m_keyCmdText.emplace('\r', [=](){ cursorMoveLine(1, true); });
+    m_keyCmdText.emplace('\r', [=](){ cursorMoveLine(1, true); });  // Key_Return
     m_keyCmdText.emplace('w', [=](){ cursorMoveWord(true, false, false); });
     m_keyCmdText.emplace('e', [=](){ cursorMoveWord(true, false, true); });
     m_keyCmdText.emplace('b', [=](){ cursorMoveWord(false, false, false); });
@@ -116,8 +116,8 @@ MainText::MainText(MainWin * mainWin, MainSearch * search, QWidget * parent)
 
     // misc
     m_keyCmdText.emplace('i', [=](){ SearchList::getInstance(false)->copyCurrentLine(); });
-    //TODO m_keyCmdText.emplace('u', [=](){ SearchList_Undo(); });
-    //TODO m_keyCmdCtrl.emplace(Qt::Key_R, [=](){ SearchList_Redo(); });
+    m_keyCmdText.emplace('u', [=](){ SearchList::extUndo(); });
+    m_keyCmdCtrl.emplace(Qt::Key_R, [=](){ SearchList::extRedo(); });
     m_keyCmdCtrl.emplace(Qt::Key_G, [=](){ m_mainWin->menuCmdDisplayLineNo(); });
     //bind .f1.t <Double-Button-1> {if {%s == 0} {Mark_ToggleAtInsert; KeyClr; break}};
     //TODO m_keyCmdText.emplace('m', [=](){ Mark_ToggleAtInsert(); });
@@ -327,8 +327,7 @@ void MainText::YviewSet(char where, int col)
     }
 
     // synchronize the search result list (if open) with the main text
-    //TODO scan [.f1.t index insert] "%d" line
-    //TODO SearchList_MatchView $line
+    SearchList::matchView(this->textCursor().block().blockNumber());
 }
 
 /**
@@ -635,9 +634,8 @@ void MainText::cursorSetLineStart()
 void MainText::cursorSetLineEnd()
 {
     QTextCursor c = this->textCursor();
-    c.movePosition(QTextCursor::StartOfBlock, QTextCursor::MoveAnchor);
+    c.movePosition(QTextCursor::EndOfBlock, QTextCursor::MoveAnchor);
     this->setTextCursor(c);
-    this->ensureCursorVisible();
 }
 
 
@@ -811,7 +809,7 @@ void MainText::cursorJumpToggle()
             this->setTextCursor(c);
             this->ensureCursorVisible();
 
-            //TODO SearchList_MatchView $line
+            SearchList::matchView(c.block().blockNumber());
         }
         else
             m_mainWin->showWarning(this, "Already on the mark."); // warn
@@ -861,7 +859,7 @@ void MainText::cursorJumpHistory(int rel)
         this->setTextCursor(c);
         this->ensureCursorVisible();
 
-        //SearchList_MatchView $line
+        SearchList::matchView(c.block().blockNumber());
     }
     else
         m_mainWin->showError(this, "Jump stack is empty."); //error
@@ -920,10 +918,10 @@ QTextCursor MainText::findInDoc(const QString& pat, bool opt_regexp, bool opt_ca
 }
 
 
-bool MainText::findInBlocks(const QString &patStr, int from, bool is_fwd, bool opt_regexp,
-                            bool opt_case, int& matchPos, int& matchLen)
+bool MainText::findInBlocks(const SearchPar& par, int from, bool is_fwd,
+                            int& matchPos, int& matchLen, QTextBlock *matchBlock)
 {
-    if (patStr.isEmpty())
+    if (par.m_pat.isEmpty())
     {
         matchPos = -1;
         return false;
@@ -931,7 +929,8 @@ bool MainText::findInBlocks(const QString &patStr, int from, bool is_fwd, bool o
 
     int pos = from;
     // for backward search exclude match on string starting at given start pos
-    if (is_fwd == false) {
+    if (is_fwd == false)
+    {
         if (pos <= 0)
             return false;
         pos -= 1;
@@ -940,12 +939,12 @@ bool MainText::findInBlocks(const QString &patStr, int from, bool is_fwd, bool o
     int blockOffset = pos - block.position();
     int cnt = 50000;
 
-    if (opt_regexp)
+    if (par.m_opt_regexp)
     {
         QRegularExpression::PatternOptions reflags =
-                opt_case ? QRegularExpression::NoPatternOption
-                         : QRegularExpression::CaseInsensitiveOption;
-        QRegularExpression expr(patStr, reflags);
+                par.m_opt_case ? QRegularExpression::NoPatternOption
+                               : QRegularExpression::CaseInsensitiveOption;
+        QRegularExpression expr(par.m_pat, reflags);
 
         if (is_fwd)
         {
@@ -960,6 +959,8 @@ bool MainText::findInBlocks(const QString &patStr, int from, bool is_fwd, bool o
                     matchLen = mat.captured(0).length();
                     if (matchLen == 0) // may occur for "^" et.al.
                         matchLen = 1;
+                    if (matchBlock)
+                        *matchBlock = block;
                     return true;
                 }
                 block = block.next();
@@ -979,6 +980,8 @@ bool MainText::findInBlocks(const QString &patStr, int from, bool is_fwd, bool o
                     matchLen = mat.captured(0).length();
                     if (matchLen == 0)
                         matchLen = 1;
+                    if (matchBlock)
+                        *matchBlock = block;
                     return true;
                 }
                 if (condUnlikely(--cnt <= 0))
@@ -990,18 +993,20 @@ bool MainText::findInBlocks(const QString &patStr, int from, bool is_fwd, bool o
     }
     else  /* sub-string search */
     {
-        Qt::CaseSensitivity flags = opt_case ? Qt::CaseSensitive : Qt::CaseInsensitive;
+        Qt::CaseSensitivity flags = par.m_opt_case ? Qt::CaseSensitive : Qt::CaseInsensitive;
 
         if (is_fwd)
         {
             while (condLikely(block.isValid() && --cnt))
             {
                 QString text = block.text();
-                int idx = text.indexOf(patStr, blockOffset, flags);
+                int idx = text.indexOf(par.m_pat, blockOffset, flags);
                 if (condUnlikely(idx >= 0))
                 {
                     matchPos = block.position() + idx;
-                    matchLen = patStr.length();
+                    matchLen = par.m_pat.length();
+                    if (matchBlock)
+                        *matchBlock = block;
                     return true;
                 }
                 block = block.next();
@@ -1013,11 +1018,13 @@ bool MainText::findInBlocks(const QString &patStr, int from, bool is_fwd, bool o
             while (condLikely(block.isValid()))
             {
                 QString text = block.text();
-                int idx = text.lastIndexOf(patStr, blockOffset, flags);
+                int idx = text.lastIndexOf(par.m_pat, blockOffset, flags);
                 if (condUnlikely(idx >= 0))
                 {
                     matchPos = block.position() + idx;
-                    matchLen = patStr.length();
+                    matchLen = par.m_pat.length();
+                    if (matchBlock)
+                        *matchBlock = block;
                     return true;
                 }
                 if (condUnlikely(--cnt <= 0))

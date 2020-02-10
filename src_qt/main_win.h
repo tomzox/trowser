@@ -111,7 +111,6 @@ private slots:
     void menuCmdSelectFont(bool checked);
     void menuCmdGotoLine(bool checked);
     void menuCmdAbout(bool checked);
-    void menuCmdSearchEdit(bool checked);
     void toggleLineWrap(bool checked);
 
 private:

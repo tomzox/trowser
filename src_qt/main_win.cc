@@ -21,6 +21,9 @@
  * ----------------------------------------------------------------------------
  */
 
+// QT sources:
+// https://code.woboq.org/qt5/qtbase/src/gui/text/qtextdocument.cpp.html
+
 #include <QApplication>
 #include <QWidget>
 #include <QMenu>
@@ -282,7 +285,7 @@ void MainWin::populateMenus()
     m_menubar_srch = menuBar()->addMenu("&Search");
     act = m_menubar_srch->addAction("Search history...");
     act = m_menubar_srch->addAction("Edit highlight patterns...");
-        connect(act, &QAction::triggered, this, &MainWin::menuCmdSearchEdit);
+        connect(act, &QAction::triggered, [=](){ DlgHigl::openDialog(m_higl, m_search, this); });
     m_menubar_srch->addSeparator();
     act = m_menubar_srch->addAction("List all search matches...");
         connect(act, &QAction::triggered, [=](){ m_search->searchAll(true, 0); });
@@ -628,11 +631,6 @@ void MainWin::LoadFile(const QString& fileName)
                               QString("Error opening file ") + fileName,
                               QMessageBox::Ok);
     }
-}
-
-void MainWin::menuCmdSearchEdit(bool)
-{
-    DlgHigl::openDialog(m_higl, m_search, this);
 }
 
 // ----------------------------------------------------------------------------

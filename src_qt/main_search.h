@@ -113,12 +113,13 @@ public:
     void searchComplete();
     void searchCompleteLeft();
     void searchWord(bool is_fwd);
+    bool searchExprCheck(const QString& pat, bool is_re, bool display);
+    void highlightFixedLine(int line);
     SearchPar getCurSearchParams();
 
 private slots:
 private:
-    void searchBackground(const QString& pat, bool is_fwd, bool opt_regexp, bool opt_case,
-                          int start, bool is_changed,
+    void searchBackground(const SearchPar& par, bool is_fwd, int start, bool is_changed,
                           const std::function<void(QTextCursor&)>& callback);
     QTextCursor findInDoc(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, int start_pos);
     bool searchAtomic(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, bool is_changed);
@@ -129,7 +130,6 @@ private:
     void searchHandleNoMatch(const QString& pat, bool is_fwd);
     void searchIncMatch(QTextCursor& match, const QString& pat, bool is_fwd, bool is_changed);
     void searchEscapeSpecialChars(QString& word, bool is_re);
-    bool searchExprCheck(const QString& pat, bool is_re, bool display);
     int  searchGetBase(bool is_fwd, bool is_init);
     void searchGetParams();
 

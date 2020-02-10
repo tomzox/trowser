@@ -307,8 +307,7 @@ void MainSearch::searchHighlightClear()
 // of text, then re-schedules itself as an "idle" task.  The search can be aborted
 // at any time by canceling the task.
 //
-void MainSearch::searchBackground(const QString& pat, bool is_fwd, bool opt_regexp, bool opt_case,
-                                  int startPos, bool is_changed,
+void MainSearch::searchBackground(const SearchPar& par, bool is_fwd, int startPos, bool is_changed,
                                   const std::function<void(QTextCursor&)>& callback)
 {
     //if {$block_bg_tasks} {
@@ -330,7 +329,7 @@ void MainSearch::searchBackground(const QString& pat, bool is_fwd, bool opt_rege
     {
         // invoke the actual search in the selected portion of the document
         int matchPos, matchLen;
-        bool found = m_mainText->findInBlocks(pat, startPos, is_fwd, opt_regexp, opt_case, matchPos, matchLen);
+        bool found = m_mainText->findInBlocks(par, startPos, is_fwd, matchPos, matchLen);
         //printf("XXX %d -> %d,%d found?:%d\n", startPos, matchPos, matchLen, found);
 
         if (found)
@@ -340,14 +339,14 @@ void MainSearch::searchBackground(const QString& pat, bool is_fwd, bool opt_rege
             c2.setPosition(matchPos);
             c2.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, matchLen);
 
-            searchHandleMatch(c2, pat, opt_regexp, opt_case, is_changed);
+            searchHandleMatch(c2, par.m_pat, par.m_opt_regexp, par.m_opt_case, is_changed);
             callback(c2);
         }
         else if (matchPos >= 0)
         {
             // no match found in this portion -> reschedule next iteration
             m_timSearchInc->disconnect();
-            connect(m_timSearchInc, &QTimer::timeout, [=](){ MainSearch::searchBackground(pat, is_fwd, opt_regexp, opt_case, matchPos, is_changed, callback); });
+            connect(m_timSearchInc, &QTimer::timeout, [=](){ MainSearch::searchBackground(par, is_fwd, matchPos, is_changed, callback); });
             m_timSearchInc->setInterval(0);
             m_timSearchInc->start();
         }
@@ -357,7 +356,7 @@ void MainSearch::searchBackground(const QString& pat, bool is_fwd, bool opt_rege
     if (isDone)
     {
         QTextCursor c2;
-        searchHandleMatch(c2, pat, opt_regexp, opt_case, is_changed);
+        searchHandleMatch(c2, par.m_pat, par.m_opt_regexp, par.m_opt_case, is_changed);
         callback(c2);
     }
 }
@@ -421,7 +420,7 @@ void MainSearch::searchHandleMatch(QTextCursor& match, const QString& pat,
         //m_mainText->centerCursor();
 
         //TODO SearchList_HighlightLine find $tlb_find_line
-        //TODO SearchList_MatchView $tlb_find_line
+        SearchList::matchView(match.block().blockNumber());
     }
 
     if (tlb_hall)
@@ -496,7 +495,8 @@ void MainSearch::searchIncrement(bool is_fwd, bool is_changed)
         else
             start_pos = searchGetBase(is_fwd, false);
 
-        searchBackground(tlb_find, is_fwd, tlb_regexp, tlb_case, start_pos, is_changed,
+        searchBackground(SearchPar(tlb_find, tlb_regexp, tlb_case),
+                         is_fwd, start_pos, is_changed,
                          [=](QTextCursor& c){ searchIncMatch(c, tlb_find, is_fwd, is_changed); });
     }
     else
@@ -603,6 +603,7 @@ int MainSearch::searchGetBase(bool is_fwd, bool is_init)
     }
     else
     {
+        printf("XXX#2\n");
         start_pos = is_fwd ? view_start : view_end;
         c.setPosition(cur_pos);
         m_mainText->setTextCursor(c);
@@ -677,12 +678,8 @@ void MainSearch::searchFirst(bool is_fwd, const std::vector<SearchPar>& patList)
 
     if (matchPar != nullptr)
     {
-        searchHandleMatch(match, matchPar->m_pat, matchPar->m_opt_regexp, matchPar->m_opt_case, true);
         m_mainWin->clearMessage(this);
-
-        //TODO Mark_Line(min_line);
-        //TODO SearchList_HighlightLine("find", min_line);
-        //TODO SearchList_MatchView(min_line);
+        searchHandleMatch(match, matchPar->m_pat, matchPar->m_opt_regexp, matchPar->m_opt_case, true);
     }
     else
     {
@@ -1226,4 +1223,19 @@ void MainSearch::searchEscapeSpecialChars(QString& word, bool is_re)
     }
 }
 
+// legacy name was Mark_Line()
+void MainSearch::highlightFixedLine(int line)
+{
+    m_mainText->cursorJumpPushPos();
 
+    // move the cursor into the specified line
+    QTextBlock block = m_mainText->document()->findBlockByNumber(line);
+    QTextCursor c(block);
+    m_mainText->setTextCursor(c);
+
+    // remove a possible older highlight
+    searchHighlightClear();
+
+    // highlight the specified line
+    m_higl->searchHighlightMatch(c);
+}
