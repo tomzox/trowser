@@ -18,11 +18,11 @@
 
 /*
  *  TODO:
- *  - syntax highlighting
- *  - progress bar
+ *  - BUG: undo broken: missing entries after "search all"
+ *  - searchNext
+ *  - bookmarking
  *  - bg task abort dialog
  *  - performance optimization line list used by SearchListModel
- *  - column for displaying bookmark, line no, frame no, frame delta
  *  - line list load/save
  *  - frame number pattern parsing
  */
@@ -38,6 +38,7 @@
 #include <QMenu>
 #include <QVBoxLayout>
 #include <QPushButton>
+#include <QProgressBar>
 #include <QMessageBox>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -64,6 +65,8 @@
 class SearchListModel : public QAbstractItemModel
 {
 public:
+    enum TblColIdx { COL_IDX_BOOK, COL_IDX_LINE, COL_IDX_LINE_D, COL_IDX_TXT, COL_COUNT };
+
     SearchListModel(MainText * mainText)
         : m_mainText(mainText)
     {
@@ -85,7 +88,7 @@ public:
     }
     virtual int columnCount(const QModelIndex& parent __attribute__((unused)) = QModelIndex()) const override
     {
-        return 1;
+        return COL_COUNT;
     }
     virtual Qt::ItemFlags flags(const QModelIndex& index __attribute__((unused))) const override
     {
@@ -128,8 +131,12 @@ public:
     void removeLines(const std::vector<int>::const_iterator lines_begin, const std::vector<int>::const_iterator lines_end);
     void removeAll(std::vector<int>& removedLines);
 
+    void setLineDeltaRoot(int line);
+    void forceRedraw(int line = -1);
+
 private:
     MainText * const            m_mainText;
+    int                         m_rootLineIdx = 0;
     // TODO? https://en.wikipedia.org/wiki/Skip_list#Indexable_skiplist
     // simple alternative: list of length-limited vectors (e.g. max 1000)
     std::vector<int>            dlg_srch_lines;
@@ -140,8 +147,22 @@ QVariant SearchListModel::data(const QModelIndex &index, int role) const
     if (   (role == Qt::DisplayRole)
         && ((size_t)index.row() < dlg_srch_lines.size()))
     {
-        QTextBlock block = m_mainText->document()->findBlockByNumber(dlg_srch_lines[index.row()]);
-        return QVariant(block.text());
+        int line = dlg_srch_lines[index.row()];
+        switch (index.column())
+        {
+            case COL_IDX_LINE:
+                return QVariant(QString::number(line));
+            case COL_IDX_LINE_D:
+                return QVariant(QString::number(line - m_rootLineIdx));
+            case COL_IDX_TXT:
+            {
+                QTextBlock block = m_mainText->document()->findBlockByNumber(line);
+                return QVariant(block.text());
+            }
+            case COL_IDX_BOOK:
+            case COL_COUNT:
+                break;
+        }
     }
     return QVariant();
 }
@@ -296,6 +317,36 @@ int SearchListModel::getLineIdx(int ins_line) const
         }
     }
     return max;
+}
+
+void SearchListModel::setLineDeltaRoot(int line)
+{
+    m_rootLineIdx = line;
+
+    if (dlg_srch_lines.size() != 0)
+    {
+        emit dataChanged(createIndex(COL_IDX_LINE_D, 0),
+                         createIndex(COL_IDX_LINE_D, dlg_srch_lines.size() - 1));
+    }
+}
+
+// called when highlighting options have changed
+void SearchListModel::forceRedraw(int line)
+{
+    if (dlg_srch_lines.size() != 0)
+    {
+        int idx;
+        if (line < 0)
+        {
+            emit dataChanged(createIndex(COL_IDX_TXT, 0),
+                             createIndex(COL_IDX_TXT, dlg_srch_lines.size() - 1));
+        }
+        else if (getLineIdx(line, idx))
+        {
+            auto midx = createIndex(COL_IDX_TXT, 0);
+            emit dataChanged(midx, midx);
+        }
+    }
 }
 
 
@@ -473,8 +524,10 @@ std::pair<bool,int>&& SearchListUndo::describeFirstOp(bool forUndo)
 class SearchListDraw : public QAbstractItemDelegate
 {
 public:
-    SearchListDraw(SearchListModel * model, const QFont& fontDdefault, const QColor& fg, const QColor& bg)
+    SearchListDraw(SearchListModel * model, Highlighter * higl,
+                   const QFont& fontDdefault, const QColor& fg, const QColor& bg)
         : m_model(model)
+        , m_higl(higl)
         , m_fontDefault(fontDdefault)
         , m_fgColDefault(fg)
         , m_bgColDefault(bg)
@@ -484,6 +537,7 @@ public:
 private:
     const int TXT_MARGIN = 3;
     SearchListModel * const m_model;
+    Highlighter * const m_higl;
     const QFont& m_fontDefault;
     const QColor& m_fgColDefault;
     const QColor& m_bgColDefault;
@@ -491,11 +545,12 @@ private:
 
 void SearchListDraw::paint(QPainter *pt, const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
-    HiglFmtSpec f;
-    const HiglFmtSpec * fmtSpec = &f; //TODO
+    int line = m_model->getLineOfIdx(index.row());
+    const HiglFmtSpec * fmtSpec = m_higl->getFmtSpecForLine(line);
+
+    QFont font(m_fontDefault);
     if (fmtSpec != nullptr)
     {
-        QFont font(m_fontDefault);
         if (!fmtSpec->m_font.isEmpty())
         {
             font.fromString(fmtSpec->m_font);
@@ -508,50 +563,54 @@ void SearchListDraw::paint(QPainter *pt, const QStyleOptionViewItem& option, con
             font.setItalic(true);
         if (fmtSpec->m_overstrike)
             font.setStrikeOut(true);
-
-        int w = option.rect.width();
-        int h = option.rect.height();
-
-        pt->save();
-        pt->translate(option.rect.topLeft());
-        pt->setClipRect(QRectF(0, 0, w, h));
-        pt->setFont(font);
-
-        if (option.state & QStyle::State_Selected)
-        {
-            // TODO simply reverse colors for selection
-            pt->fillRect(0, 0, w, h, m_fgColDefault);
-            pt->setPen(m_bgColDefault);
-        }
-        else
-        {
-            if (   (fmtSpec->m_bgCol != HiglFmtSpec::INVALID_COLOR)
-                && (fmtSpec->m_bgStyle != Qt::NoBrush))
-                pt->fillRect(0, 0, w, h, QBrush(QColor(fmtSpec->m_bgCol), fmtSpec->m_bgStyle));
-            else if (fmtSpec->m_bgCol != HiglFmtSpec::INVALID_COLOR)
-                pt->fillRect(0, 0, w, h, QColor(fmtSpec->m_bgCol));
-            else if (fmtSpec->m_bgStyle != Qt::NoBrush)
-                pt->fillRect(0, 0, w, h, fmtSpec->m_bgStyle);
-            else
-                pt->fillRect(0, 0, w, h, m_bgColDefault);
-
-            if (   (fmtSpec->m_fgCol != HiglFmtSpec::INVALID_COLOR)
-                && (fmtSpec->m_fgStyle != Qt::NoBrush))
-                pt->setBrush(QBrush(QColor(fmtSpec->m_fgCol), fmtSpec->m_fgStyle));
-            else if (fmtSpec->m_fgCol != HiglFmtSpec::INVALID_COLOR)
-                pt->setPen(QColor(fmtSpec->m_fgCol));
-            else if (fmtSpec->m_fgStyle != Qt::NoBrush)
-                pt->setBrush(fmtSpec->m_fgStyle);
-            else
-                pt->setPen(m_fgColDefault);
-        }
-
-        QFontMetricsF metrics(font);
-        auto data = m_model->data(index);
-        pt->drawText(TXT_MARGIN, metrics.ascent(),
-                     data.toString());
-        pt->restore();
     }
+
+    int w = option.rect.width();
+    int h = option.rect.height();
+
+    pt->save();
+    pt->translate(option.rect.topLeft());
+    pt->setClipRect(QRectF(0, 0, w, h));
+    pt->setFont(font);
+
+    if (option.state & QStyle::State_Selected)
+    {
+        pt->fillRect(0, 0, w, h, option.palette.color(QPalette::Highlight));
+        pt->setPen(option.palette.color(QPalette::HighlightedText));
+    }
+    else if (fmtSpec != nullptr)
+    {
+        if (   (fmtSpec->m_bgCol != HiglFmtSpec::INVALID_COLOR)
+            && (fmtSpec->m_bgStyle != Qt::NoBrush))
+            pt->fillRect(0, 0, w, h, QBrush(QColor(fmtSpec->m_bgCol), fmtSpec->m_bgStyle));
+        else if (fmtSpec->m_bgCol != HiglFmtSpec::INVALID_COLOR)
+            pt->fillRect(0, 0, w, h, QColor(fmtSpec->m_bgCol));
+        else if (fmtSpec->m_bgStyle != Qt::NoBrush)
+            pt->fillRect(0, 0, w, h, fmtSpec->m_bgStyle);
+        else
+            pt->fillRect(0, 0, w, h, m_bgColDefault);
+
+        if (   (fmtSpec->m_fgCol != HiglFmtSpec::INVALID_COLOR)
+            && (fmtSpec->m_fgStyle != Qt::NoBrush))
+            pt->setBrush(QBrush(QColor(fmtSpec->m_fgCol), fmtSpec->m_fgStyle));
+        else if (fmtSpec->m_fgCol != HiglFmtSpec::INVALID_COLOR)
+            pt->setPen(QColor(fmtSpec->m_fgCol));
+        else if (fmtSpec->m_fgStyle != Qt::NoBrush)
+            pt->setBrush(fmtSpec->m_fgStyle);
+        else
+            pt->setPen(m_fgColDefault);
+    }
+    else
+    {
+        pt->fillRect(0, 0, w, h, m_bgColDefault);
+        pt->setPen(m_fgColDefault);
+    }
+
+    QFontMetricsF metrics(font);
+    auto data = m_model->data(index);
+    pt->drawText(TXT_MARGIN, metrics.ascent(), data.toString());
+
+    pt->restore();
 }
 
 QSize SearchListDraw::sizeHint(const QStyleOptionViewItem& /*option*/, const QModelIndex& /*index*/) const
@@ -560,6 +619,81 @@ QSize SearchListDraw::sizeHint(const QStyleOptionViewItem& /*option*/, const QMo
     QFontMetricsF metrics(m_fontDefault);
     return QSize(1, metrics.height());
 }
+
+// ----------------------------------------------------------------------------
+
+class SearchListView : public QTableView
+{
+public:
+    SearchListView(QWidget *parent)
+        : QTableView(parent)
+    {
+        this->resizeColumnToContents(SearchListModel::COL_IDX_BOOK);
+    }
+    virtual void keyPressEvent(QKeyEvent *e) override;
+    virtual int sizeHintForColumn(int column) const override;
+    void setDocLineCount(int lineCount);
+
+private:
+    const int TXT_MARGIN = 5;
+    int m_docLineCount = 0;
+};
+
+int SearchListView::sizeHintForColumn(int column) const
+{
+    if (   (column == SearchListModel::COL_IDX_LINE)
+        || (column == SearchListModel::COL_IDX_LINE_D))
+    {
+        int maxLine = (column == SearchListModel::COL_IDX_LINE)
+                         ? m_docLineCount : -m_docLineCount;
+
+        QFontMetricsF metrics(viewOptions().font);
+        int width = metrics.boundingRect(QString::number(maxLine)).width();
+        return width + TXT_MARGIN * 2;
+    }
+    else
+        return 100;  // never reached
+}
+
+void SearchListView::setDocLineCount(int lineCount)
+{
+    m_docLineCount = lineCount;
+
+    this->resizeColumnToContents(SearchListModel::COL_IDX_LINE);
+    this->resizeColumnToContents(SearchListModel::COL_IDX_LINE_D);
+}
+
+void SearchListView::keyPressEvent(QKeyEvent *e)
+{
+    switch (e->key())
+    {
+        // Firstly make Home key behave same with and without CTRL
+        // Secondly correct behavior so that target line is selected
+        case Qt::Key_Home:
+            if (model()->rowCount() != 0)
+            {
+                // following updates selection, anchor (for key up/down) and view at once
+                // whereas scrollTo() and selectionModel()->select() fail to update anchor
+                // NOTE: given column must not be hidden, else scrollTo() does nothing
+                QModelIndex midx = model()->index(SearchListModel::COL_IDX_BOOK, 0);
+                this->setCurrentIndex(midx);
+            }
+            break;
+
+        case Qt::Key_End:
+            if (int count = model()->rowCount())
+            {
+                QModelIndex midx = model()->index(count - 1, 0);
+                this->setCurrentIndex(midx);
+            }
+            break;
+
+        default:
+            QTableView::keyPressEvent(e);
+            break;
+    }
+}
+
 
 // ----------------------------------------------------------------------------
 
@@ -580,27 +714,37 @@ SearchList::SearchList()
     tid_search_list = new ATimer(central_wid);
 
     m_model = new SearchListModel(s_mainText);
-    m_draw = new SearchListDraw(m_model,
+    m_draw = new SearchListDraw(m_model, s_higl,
                                 s_mainWin->getFontContent(),
                                 s_mainWin->getFgColDefault(),
                                 s_mainWin->getBgColDefault());
     m_undo = new SearchListUndo();
 
     QFontMetricsF metrics(s_mainWin->getFontContent());
-    m_table = new QTableView(central_wid);
+    m_table = new SearchListView(central_wid);
         m_table->setModel(m_model);
         m_table->setShowGrid(false);
         m_table->horizontalHeader()->setVisible(false);
-        m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+        m_table->horizontalHeader()->setSectionResizeMode(SearchListModel::COL_IDX_TXT, QHeaderView::Stretch);
         m_table->verticalHeader()->setVisible(false);
         m_table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
         m_table->verticalHeader()->setDefaultSectionSize(metrics.height());
         m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-        m_table->setItemDelegate(m_draw);
+        m_table->setItemDelegateForColumn(SearchListModel::COL_IDX_TXT, m_draw);
         m_table->setContextMenuPolicy(Qt::CustomContextMenu);
+        m_table->setColumnWidth(SearchListModel::COL_IDX_BOOK, 10); // TODO with of image
+        m_table->setDocLineCount(s_mainText->document()->lineCount());
+        configureColumnVisibility();
         connect(m_table, &QAbstractItemView::customContextMenuRequested, this, &SearchList::showContextMenu);
         connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &SearchList::selectionChanged);
         layout_top->addWidget(m_table);
+
+    m_hipro = new QProgressBar(m_table);
+        m_hipro->setOrientation(Qt::Horizontal);
+        m_hipro->setTextVisible(true);
+        m_hipro->setMinimum(0);
+        m_hipro->setMaximum(100);
+        m_hipro->setVisible(false);
 
     if (!s_winGeometry.isEmpty())
         this->restoreGeometry(s_winGeometry);
@@ -616,6 +760,29 @@ SearchList::SearchList()
         act->setShortcut(QKeySequence(Qt::Key_Escape));
         connect(act, &QAction::triggered, [=](){ searchAbort(false); });
         central_wid->addAction(act);
+    act = new QAction(central_wid);
+        act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_0));
+        connect(act, &QAction::triggered, this, &SearchList::cmdSetDeltaColRoot);
+        central_wid->addAction(act);
+
+#if 0
+    wt.dlg_srch_f1_l.bind("<ButtonRelease-3>", lambda e:BindCallAndBreak(lambda:SearchList_ContextMenu(e.x, e.y)))
+    wt.dlg_srch_f1_l.bind("<Control-plus>", lambda e:BindCallKeyClrBreak(lambda:ChangeFontSize(1)))
+    wt.dlg_srch_f1_l.bind("<Control-minus>", lambda e:BindCallKeyClrBreak(lambda:ChangeFontSize(-1)))
+    KeyCmdBind(wt.dlg_srch_f1_l, "/", lambda:SearchEnter(1, wt.dlg_srch_f1_l))
+    KeyCmdBind(wt.dlg_srch_f1_l, "?", lambda:SearchEnter(0, wt.dlg_srch_f1_l))
+    KeyCmdBind(wt.dlg_srch_f1_l, "n", lambda:SearchList_SearchNext(1))
+    KeyCmdBind(wt.dlg_srch_f1_l, "N", lambda:SearchList_SearchNext(0))
+    KeyCmdBind(wt.dlg_srch_f1_l, "m", SearchList_ToggleMark)
+    wt.dlg_srch_f1_l.bind("<space>", lambda e:SearchList_SelectionChange(dlg_srch_sel.TextSel_GetSelection()))
+    wt.dlg_srch_f1_l.bind("<Alt-Key-h>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("highlight")))
+    wt.dlg_srch_f1_l.bind("<Alt-Key-f>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("show_fn")))
+    wt.dlg_srch_f1_l.bind("<Alt-Key-t>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("show_tick")))
+    wt.dlg_srch_f1_l.bind("<Alt-Key-d>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("tick_delta")))
+    wt.dlg_srch_f1_l.bind("<Alt-Key-n>", lambda e:BindCallAndBreak(lambda:SearchNext(1)))
+    wt.dlg_srch_f1_l.bind("<Alt-Key-p>", lambda e:BindCallAndBreak(lambda:SearchNext(0)))
+    //TODO navigation key controls equivalent legacy "TextSel" class
+#endif
 
     m_table->setFocus(Qt::ShortcutFocusReason);
     this->show();
@@ -711,14 +878,19 @@ void SearchList::populateMenus()
 
 
     men = menuBar()->addMenu("Options");
-    act = men->addAction("Highlight all matches");
-        act->setCheckable(true);
-        //command=SearchList_ToggleHighlight, variable=dlg_srch_highlight
-        //accelerator="ALT-h")
+    //act = men->addAction("Highlight all matches");
+    //    act->setCheckable(true);
+    //    act->setChecked(m_showSrchHall);
+    //    act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_H));
+    //    connect(act, &QAction::triggered, this, &SearchList::cmdToggleSearchHighlight);
     act = men->addAction("Show line number");
         act->setCheckable(true);
-        //command=SearchList_ToggleLineNo, variable=dlg_srch_show_line
-        //accelerator="ALT-f")
+        act->setChecked(m_showLineIdx);
+        connect(act, &QAction::triggered, this, &SearchList::cmdToggleShowLineNumber);
+    m_actShowLineDelta = men->addAction("Show line number delta");
+        m_actShowLineDelta->setCheckable(true);
+        m_actShowLineDelta->setChecked(m_showLineDelta);
+        connect(m_actShowLineDelta, &QAction::triggered, this, &SearchList::cmdToggleShowLineDelta);
 #if 0
     act = men->addAction("Show frame number");
         act->setCheckable(true);
@@ -732,10 +904,14 @@ void SearchList::populateMenus()
         act->setCheckable(true);
         //command=SearchList_ToggleFrameNo, variable=dlg_srch_tick_delta
         //accelerator="ALT-d")
+#endif
     men->addSeparator();
+    act = men->addAction("Select line as origin for line number delta");
+        connect(act, &QAction::triggered, this, &SearchList::cmdSetLineIdxRoot);
+        // shortcut ALT-0 is shared with other columns and thus has different callback
+#if 0
     act = men->addAction("Select line as origin for tick delta");
         //command=SearchList_SetFnRoot
-        //accelerator="ALT-0")
 #endif
 }
 
@@ -785,8 +961,23 @@ void SearchList::showContextMenu(const QPoint& pos)
     auto menu = new QMenu("Search list actions", this);
     auto sel = m_table->selectionModel()->selectedRows();
 
+    auto act = menu->addAction("Select line as origin for line number delta");
+        act->setEnabled(m_showLineDelta && (sel.size() == 1));
+        connect(act, &QAction::triggered, this, &SearchList::cmdSetLineIdxRoot);
+#if 0
     auto act = menu->addAction("Select line as origin for tick delta");
     act->setEnabled(false);
+    if ((sel.size() == 1) && ((tick_pat_sep != "") || (tick_pat_num != "")))
+    {
+        int line = m_model->getLineOfIdx(sel.front().row());
+        fn = ParseFrameTickNo("$line.0", dlg_srch_fn_cache);
+        if (fn != "")
+        {
+            connect(act, &QAction::triggered, this, &SearchList::setFnRoot);
+            act->setEnabled(true);
+        }
+    }
+#endif
 
     menu->addSeparator();
     act = menu->addAction("Remove selected lines");
@@ -799,6 +990,94 @@ void SearchList::showContextMenu(const QPoint& pos)
         act->setEnabled(false);
 
     menu->exec(mapToGlobal(pos));
+}
+
+void SearchList::configureColumnVisibility()
+{
+    if (m_showLineDelta)
+        m_table->showColumn(SearchListModel::COL_IDX_LINE_D);
+    else
+        m_table->hideColumn(SearchListModel::COL_IDX_LINE_D);
+
+    if (m_showLineIdx)
+        m_table->showColumn(SearchListModel::COL_IDX_LINE);
+    else
+        m_table->hideColumn(SearchListModel::COL_IDX_LINE);
+}
+
+#if 0  // needed? requires filtering Hall ID from fmtSpec
+void SearchList::cmdToggleSearchHighlight(bool checked)
+{
+    m_showSrchHall = checked;
+    m_model->showSearchHall(m_showSrchHall);
+}
+#endif
+
+void SearchList::cmdToggleShowLineNumber(bool checked)
+{
+    m_showLineIdx = checked;
+    configureColumnVisibility();
+}
+
+void SearchList::cmdToggleShowLineDelta(bool checked)
+{
+    m_showLineDelta = checked;
+    configureColumnVisibility();
+}
+
+void SearchList::cmdSetLineIdxRoot(bool)
+{
+    auto sel = m_table->selectionModel()->selectedRows();
+    if (sel.size() == 1)
+    {
+        int line = m_model->getLineOfIdx(sel.front().row());
+        m_model->setLineDeltaRoot(line);
+    }
+}
+
+
+/**
+ * This function is bound to ALT-0 in the search result list and to the
+ * "Select root FN" context menu command. The function sets the currently
+ * selected line as origin for frame number delta calculations and enables
+ * frame number delta display, which requires a complete refresh of the list.
+ */
+void SearchList::cmdSetDeltaColRoot(bool)
+{
+    auto sel = m_table->selectionModel()->selectedRows();
+    if (sel.size() == 1)
+    {
+        int line = m_model->getLineOfIdx(sel.front().row());
+
+        // when multiple columns are supported: auto-enable last used option
+        if (!m_showLineDelta) // && !m_tickFrameDelta
+        {
+            m_actShowLineDelta->activate(QAction::Trigger);
+        }
+
+        if (m_showLineDelta)
+        {
+            m_model->setLineDeltaRoot(line);
+        }
+#if 0
+        else if (m_tickFrameDelta)
+        {
+            //if ((tick_pat_sep != "") || (tick_pat_num != ""))
+            // extract the frame number from the text in the main window around the referenced line
+            fn = ParseFrameTickNo("%d.0" % line, dlg_srch_fn_cache)
+            if (fn != "")
+            {
+                dlg_srch_tick_delta = 1
+                dlg_srch_tick_root = fn.split(" ")[0]
+                SearchList_Refill()
+            }
+            else
+                s_mainWin->showError(this, "Parsing did not yield a number for this line");
+        }
+#endif
+    }
+    else
+        s_mainWin->showError(this, "Select a text line as origin for delta display");
 }
 
 
@@ -951,8 +1230,7 @@ void SearchList::bgUndoRedoLoop(bool doAdd, const std::vector<int>& lines, int m
         if (lines_end != lines.end())
         {
             // create or update the progress bar
-            //TODO ratio = int(100.0 * off / lines.size())
-            //TODO SearchList_SearchProgress(ratio)
+            searchProgress(100 * off / lines.size());
 
             tid_search_list->after(0, [=](){ bgUndoRedoLoop(doAdd, lines, mode, off); });
         }
@@ -960,9 +1238,8 @@ void SearchList::bgUndoRedoLoop(bool doAdd, const std::vector<int>& lines, int m
         {
             m_undo->finalizeBgChange(mode >= 0);
 
-            //TODO SafeDestroy(wt.dlg_srch_slpro)
             //TODO SafeDestroy(wt.srch_abrt)
-            m_table->setCursor(Qt::ArrowCursor);
+            searchProgress(100);
         }
     }
 }
@@ -1021,6 +1298,11 @@ void SearchList::searchMatches(bool do_add, int direction, const SearchPar& par)
             startSearchAll(std::vector<SearchPar>({par}), do_add, direction);
         }
     }
+}
+
+void SearchList::searchMatches(bool do_add, int direction, const std::vector<SearchPar>& pat_list)
+{
+    startSearchAll(pat_list, do_add, direction);
 }
 
 /**
@@ -1136,25 +1418,29 @@ void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add
 
         if (textPos >= 0)
         {
-#if 0 // TODO progress
             // create or update the progress bar
+            QTextBlock lastBlock = s_mainText->document()->lastBlock();
+            int textLength = std::max(lastBlock.position() + lastBlock.length(), 1);
+            double ratio;
             if (direction == 0)
             {
-                ratio = textPos / max_line
+                ratio = double(textPos) / textLength;
             }
             else if (direction < 0)
             {
-                thresh = int(wt.f1_t.index("insert").split(".")[0])
-                ratio = 1 - (textPos / thresh)
+                // FIXME base should be original start position not end
+                //thresh = int(wt.f1_t.index("insert").split(".")[0])
+                //ratio = 1 - (textPos / thresh)
+                ratio = 1 - (double(textPos) / textLength);
             }
             else
             {
-                thresh = int(wt.f1_t.index("insert").split(".")[0])
-                ratio = textPos / (max_line - thresh)
+                // FIXME base should be original start position not 0
+                //thresh = int(wt.f1_t.index("insert").split(".")[0])
+                //ratio = textPos / (max_line - thresh)
+                ratio = double(textPos) / textLength;
             }
-            ratio = int(100.0*(ratio + pat_idx)/pat_list.size())
-            SearchList_SearchProgress(ratio)
-#endif
+            searchProgress(100 * (ratio + pat_idx) / pat_list.size());
 
             loop_cnt += 1;
             tid_search_list->after(0, [=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx, loop_cnt); });
@@ -1172,14 +1458,37 @@ void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add
             }
             else
             {
-                //TODO SafeDestroy(wt.dlg_srch_slpro)
+                searchProgress(100);
                 //TODO SafeDestroy(wt.srch_abrt)
-                m_table->setCursor(Qt::ArrowCursor);
             }
         }
     }
 }
 
+
+/**
+ * This function is called by the background search processes to display or
+ * update the progress bar. The given percent value has to be in range 0 to
+ * 100. The progress bar is removed when the value reaches 100.
+ */
+void SearchList::searchProgress(int percent)
+{
+    if ((m_hipro->isVisible() == false) && (percent < 100))
+    {
+        m_table->setCursor(Qt::BusyCursor);
+        m_hipro->setValue(percent);
+        m_hipro->setVisible(true);
+    }
+    else if (percent < 100)
+    {
+        m_hipro->setValue(percent);
+    }
+    else
+    {
+        m_hipro->setVisible(false);
+        m_table->setCursor(Qt::ArrowCursor);
+    }
+}
 
 /**
  * This helper function is called before modifications of the search result
@@ -1322,6 +1631,32 @@ void SearchList::copyCurrentLine()
             // make line visible & select it
             matchViewInt(line, idx);
         }
+    }
+}
+
+/**
+ * This function is called out of the main window's highlight loop for every line
+ * to which a search-match highlight is applied.
+ */
+void SearchList::signalHighlightLine(int line)  /*static*/
+{
+    if (s_instance != nullptr)
+    {
+        //TODO if (m_showSrchHall || (tid_high_init != nullptr))
+        s_instance->m_model->forceRedraw(line);
+    }
+}
+
+
+/**
+ * This function is bound to the "Toggle highlight" checkbutton in the
+ * search list dialog's menu.  The function enables or disables search highlight.
+ */
+void SearchList::signalHighlightReconfigured()  /*static*/
+{
+    if (s_instance != nullptr)
+    {
+        s_instance->m_model->forceRedraw();
     }
 }
 

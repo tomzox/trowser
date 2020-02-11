@@ -45,6 +45,7 @@
 #include "main_text.h"
 #include "main_search.h"
 #include "highlighter.h"
+#include "search_list.h"
 #include "dlg_higl.h"
 
 // ----------------------------------------------------------------------------
@@ -445,7 +446,6 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
 
     m_table = new QTableView(central_wid);
         m_table->setModel(m_model);
-        m_table->setCornerButtonEnabled(false);
         m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
         m_table->horizontalHeader()->setSectionResizeMode(DlgHiglModel::COL_IDX_PAT, QHeaderView::Stretch);
         m_table->horizontalHeader()->setSectionResizeMode(DlgHiglModel::COL_IDX_FMT, QHeaderView::ResizeToContents);
@@ -505,17 +505,17 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
         f2->addWidget(m_f2_bp);
     m_f2_ball = new QPushButton("&All", f2);
         m_f2_ball->setEnabled(false);
-        connect(m_f2_bp, &QPushButton::clicked, [=](){ cmdSearchList(0); });
+        connect(m_f2_ball, &QPushButton::clicked, [=](){ cmdSearchList(0); });
         f2->addWidget(m_f2_ball);
     m_f2_ballb = new QPushButton("All below", f2);
         m_f2_ballb->setEnabled(false);
         m_f2_ballb->setShortcut(QKeySequence(Qt::ALT + Qt::SHIFT + Qt::Key_N));
-        connect(m_f2_bp, &QPushButton::clicked, [=](){ cmdSearchList(1); });
+        connect(m_f2_ballb, &QPushButton::clicked, [=](){ cmdSearchList(1); });
         f2->addWidget(m_f2_ballb);
     m_f2_balla = new QPushButton("All above", f2);
         m_f2_balla->setEnabled(false);
         m_f2_balla->setShortcut(QKeySequence(Qt::ALT + Qt::SHIFT + Qt::Key_P));
-        connect(m_f2_bp, &QPushButton::clicked, [=](){ cmdSearchList(-1); });
+        connect(m_f2_balla, &QPushButton::clicked, [=](){ cmdSearchList(-1); });
         f2->addWidget(m_f2_balla);
 
     setCentralWidget(central_wid);
@@ -828,11 +828,11 @@ void DlgHigl::cmdSearch(bool is_fwd)
 }
 
 /**
- * This function is bound to the "List all" button in the color tags dialog.
- * The function opens the search result window and adds all lines matching
- * the pattern for the currently selected color tags.
+ * This function is bound to the "All", "All below" and "All above" buttons in
+ * the color tags dialog.  The function opens the search result window and adds
+ * all lines matching the pattern for the currently selected color tags.
  */
-void DlgHigl::cmdSearchList(int /*direction*/)
+void DlgHigl::cmdSearchList(int direction)
 {
     QItemSelectionModel * sel = m_table->selectionModel();
 
@@ -840,14 +840,12 @@ void DlgHigl::cmdSearchList(int /*direction*/)
     {
         m_mainWin->clearMessage(this);
 
-        std::vector<HiglId> idList;
+        std::vector<SearchPar> patList;
         for (auto& row : sel->selectedRows())
         {
-            // FIXME using ID will not work without applying; pass parameters directly instead?
-            idList.push_back(m_model->getFmtId(row));
+            patList.push_back(m_model->getSearchPar(row));
         }
-        //TODO SearchList_Open(false);
-        //TODO SearchList_StartSearchTags(idList, direction);
+        SearchList::getInstance(false)->searchMatches(true, direction, patList);
     }
     else  // should never occur as button (incl. shortcut) gets disabled
         m_mainWin->showError(this, "No pattern is selected in the list");

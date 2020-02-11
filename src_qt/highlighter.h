@@ -39,6 +39,8 @@ class MainText;
 class HiglFmtSpec
 {
 public:
+    HiglFmtSpec() = default;
+    void merge(const HiglFmtSpec& other);
     static constexpr unsigned INVALID_COLOR = QRgb(0x00000000);
 
     QRgb                m_bgCol = INVALID_COLOR;
@@ -88,6 +90,7 @@ public:
     void removeInc(QTextDocument * doc);
     void getPatList(std::vector<HiglPatExport>&) const;
     void setList(std::vector<HiglPatExport>& patList);
+    const HiglFmtSpec * getFmtSpecForLine(int line);
 
     void highlightInit();
     void highlightAll(const HiglPat& pat, int line = 0, int loop_cnt = 0);
@@ -105,7 +108,7 @@ private:
     void removeHall(QTextDocument * doc, HiglId id);
     void redraw(QTextDocument * doc, int blkNum);
     void clearAll(QTextDocument * doc);
-    const QTextCharFormat* getFmtById(HiglId id);
+    const HiglPat* getPatById(HiglId id);
 
     void configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec);
     HiglId addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id = INVALID_HIGL_ID);

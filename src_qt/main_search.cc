@@ -419,8 +419,9 @@ void MainSearch::searchHandleMatch(QTextCursor& match, const QString& pat,
         m_mainText->setTextCursor(match);
         //m_mainText->centerCursor();
 
-        //TODO SearchList_HighlightLine find $tlb_find_line
-        SearchList::matchView(match.block().blockNumber());
+        int line = match.block().blockNumber();
+        SearchList::signalHighlightLine(line);
+        SearchList::matchView(line);
     }
 
     if (tlb_hall)
@@ -603,7 +604,6 @@ int MainSearch::searchGetBase(bool is_fwd, bool is_init)
     }
     else
     {
-        printf("XXX#2\n");
         start_pos = is_fwd ? view_start : view_end;
         c.setPosition(cur_pos);
         m_mainText->setTextCursor(c);

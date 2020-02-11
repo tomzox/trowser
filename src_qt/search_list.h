@@ -28,12 +28,14 @@
 
 class QTableView;
 class QTextCursor;
+class QProgressBar;
 class QJsonObject;
 
 class Highlighter;
 class MainSearch;
 class MainText;
 class MainWin;
+class SearchListView;
 class SearchListModel;
 class SearchListDraw;
 class SearchListUndo;
@@ -44,11 +46,6 @@ class SearchList : public QMainWindow
     Q_OBJECT
 
 public:
-    static SearchList * s_instance;
-    static QByteArray s_winGeometry;
-    static QByteArray s_winState;
-    static std::vector<QRgb> s_defaultColPalette;
-
     static void connectWidgets(Highlighter * higl, MainSearch * search, MainWin * mainWin, MainText * mainText);
     static QJsonObject getRcValues();
     static void setRcValues(const QJsonValue& val);
@@ -57,12 +54,13 @@ public:
     static void matchView(int line);
     static void extUndo();
     static void extRedo();
+    static void signalHighlightLine(int line);
+    static void signalHighlightReconfigured();
 
     // external interfaces
     void copyCurrentLine();
-    void addMatches(int direction);
-    void removeMatches(int direction);
     void searchMatches(bool do_add, int direction, const SearchPar& par);
+    void searchMatches(bool do_add, int direction, const std::vector<SearchPar>& pat_list);
 
 private:
     // constructor can only be invoked via the static interface
@@ -75,15 +73,23 @@ private:
     void showContextMenu(const QPoint& pos);
 
     void cmdClose(bool);
-    void cmdClearAll();
     void editMenuAboutToShow();
+    void configureColumnVisibility();
+    void cmdToggleShowLineNumber(bool checked);
+    void cmdToggleShowLineDelta(bool checked);
+    void cmdSetLineIdxRoot(bool checked);
+    void cmdSetDeltaColRoot(bool);
+    void cmdClearAll();
     void cmdRemoveSelection();
     void cmdUndo();
     void cmdRedo();
     void bgUndoRedoLoop(bool doAdd, const std::vector<int>& lines, int mode, int off);
     void applyUndoRedo(bool doAdd, int mode, std::vector<int>::const_iterator lines_begin, std::vector<int>::const_iterator lines_end);
+    void addMatches(int direction);
+    void removeMatches(int direction);
     void startSearchAll(const std::vector<SearchPar>& pat_list, bool do_add, int direction);
     void bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add, int direction, int line, int pat_idx, int loop_cnt);
+    void searchProgress(int percent);
     bool searchAbort(bool doWarn __attribute__((unused)) = true) { return true; } //dummy,TODO
     using ListViewAnchor = std::pair<bool,int>;
     ListViewAnchor&& getViewAnchor();
@@ -98,14 +104,26 @@ private:
     static MainWin     * s_mainWin;
     static MainText    * s_mainText;
 
-    QTableView        * m_table = nullptr;
+    static SearchList * s_instance;
+    static QByteArray s_winGeometry;
+    static QByteArray s_winState;
+    static std::vector<QRgb> s_defaultColPalette;
+
+    SearchListView    * m_table = nullptr;
     SearchListModel   * m_model = nullptr;
     SearchListDraw    * m_draw = nullptr;
     SearchListUndo    * m_undo = nullptr;
+    QProgressBar      * m_hipro = nullptr;
     QAction           * m_menActUndo = nullptr;
     QAction           * m_menActRedo = nullptr;
+    QAction           * m_actShowLineDelta = nullptr;
     ATimer            * tid_search_list = nullptr;
     int                 m_ignoreSelCb = -1;
+
+    bool                m_showLineIdx = false;
+    bool                m_showLineDelta = false;
+    //bool                m_showFrameIdx;
+    //bool                m_tickFrameDelta;
 
     bool dlg_srch_highlight = false;
 };

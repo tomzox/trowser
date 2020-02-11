@@ -147,17 +147,17 @@ void Highlighter::redraw(QTextDocument * doc, int blkNum)
 
         if (++it != pair.second)
         {
-            QTextCharFormat fmt(*getFmtById(firstId));
+            QTextCharFormat fmt(getPatById(firstId)->m_fmt);
 
             for (/*nop*/; it != pair.second; ++it)
             {
-                fmt.merge(*getFmtById(it->second));
+                fmt.merge(getPatById(it->second)->m_fmt);
             }
             c.setCharFormat(fmt);
         }
         else  // one highlight remaining in this line
         {
-            c.setCharFormat(*getFmtById(firstId));
+            c.setCharFormat(getPatById(firstId)->m_fmt);
         }
     }
     else  // no highlight remaining in this line
@@ -167,16 +167,16 @@ void Highlighter::redraw(QTextDocument * doc, int blkNum)
     }
 }
 
-const QTextCharFormat* Highlighter::getFmtById(HiglId id)
+const HiglPat* Highlighter::getPatById(HiglId id)
 {
     if (id == 0)
-        return &m_hallPat.m_fmt;
+        return &m_hallPat;
 
     for (auto& pat : m_patList)
         if (pat.m_id == id)
-            return &pat.m_fmt;
+            return &pat;
 
-    return &m_hallPat.m_fmt;  // should never happen
+    return &m_hallPat;  // should never happen
 }
 
 // UNUSED
@@ -189,6 +189,64 @@ void Highlighter::clearAll(QTextDocument * doc)
     c.setCharFormat(fmt);
 
     m_tags.clear();
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+// non-reentrant due to internal static buffer
+const HiglFmtSpec * Highlighter::getFmtSpecForLine(int line)
+{
+    const HiglFmtSpec * ptr = nullptr;
+
+    auto pair = m_tags.equal_range(line);
+    if (pair.first != pair.second)
+    {
+        auto firstId = pair.first->second;
+        auto it = pair.first;
+
+        if (++it != pair.second)
+        {
+            static HiglFmtSpec fmtSpecBuf;
+
+            fmtSpecBuf = getPatById(firstId)->m_fmtSpec;
+
+            for (/*nop*/; it != pair.second; ++it)
+            {
+                fmtSpecBuf.merge(getPatById(it->second)->m_fmtSpec);
+            }
+            ptr = &fmtSpecBuf;
+        }
+        else  // one highlight remaining in this line
+        {
+            ptr = &getPatById(firstId)->m_fmtSpec;
+        }
+    }
+    return ptr;
+}
+
+void HiglFmtSpec::merge(const HiglFmtSpec& other)
+{
+    if (   (other.m_bgCol != HiglFmtSpec::INVALID_COLOR)
+        || (other.m_bgStyle != Qt::NoBrush))
+    {
+        m_bgCol = other.m_bgCol;
+        m_bgStyle = other.m_bgStyle;
+    }
+    if (   (other.m_fgCol != HiglFmtSpec::INVALID_COLOR)
+        || (other.m_fgStyle != Qt::NoBrush))
+    {
+        m_fgCol = other.m_fgCol;
+        m_fgStyle = other.m_fgStyle;
+    }
+
+    m_bold |= other.m_bold;
+    m_italic |= other.m_italic;
+    m_underline |= other.m_underline;
+    m_overstrike |= other.m_overstrike;
+    m_outline |= other.m_outline;
+
+    if (!other.m_font.isEmpty())
+        m_font = other.m_font;
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -360,11 +418,10 @@ void Highlighter::setList(std::vector<HiglPatExport>& patList)
     tid_high_init->stop();
     highlightInit();
 
+    SearchList::signalHighlightReconfigured();
 #if 0 //TODO
 
     // remove the highlight in other dialogs, if currently open
-    //TODO SearchList_DeleteTag(tagname)
-    //TODO SearchList_CreateHighlightTags()
     //TODO MarkList_DeleteTag(tagname)
     //TODO MarkList_CreateHighlightTags()
 
@@ -490,7 +547,7 @@ int Highlighter::highlightLines(const HiglPat& pat, int line)
             addSearchHall(match, pat.m_fmt, pat.m_id);
 
             // trigger the search result list dialog in case the line is included there too
-            //TODO SearchList_HighlightLine(tagnam, line)
+            SearchList::signalHighlightLine(block.blockNumber());
 
             line = matchPos + matchLen;
         }
@@ -644,7 +701,8 @@ void Highlighter::searchHighlightClear()
     m_hallPatComplete = false;
 
     m_mainText->viewport()->setCursor(Qt::ArrowCursor);
-    //TODO SearchList_HighlightClear();
+
+    SearchList::signalHighlightReconfigured();
 }
 
 
