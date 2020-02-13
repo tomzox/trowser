@@ -115,7 +115,7 @@ MainText::MainText(MainWin * mainWin, MainSearch * search, QWidget * parent)
     m_keyCmdText.emplace('&', [=](){ m_search->searchHighlightClear(); });
 
     // misc
-    m_keyCmdText.emplace('i', [=](){ SearchList::getInstance(false)->copyCurrentLine(); });
+    m_keyCmdText.emplace('i', [=](){ SearchList::getInstance(false)->copyCurrentLine(true); });
     m_keyCmdText.emplace('u', [=](){ SearchList::extUndo(); });
     m_keyCmdCtrl.emplace(Qt::Key_R, [=](){ SearchList::extRedo(); });
     m_keyCmdCtrl.emplace(Qt::Key_G, [=](){ m_mainWin->menuCmdDisplayLineNo(); });
@@ -160,18 +160,22 @@ void MainText::keyPressEvent(QKeyEvent *e)
             QPlainTextEdit::keyPressEvent(&ne);
             break;
         }
+        case Qt::Key_Delete:  // reverse of 'i'
+            if ((e->modifiers() == Qt::NoModifier) && SearchList::isDialogOpen())
+                SearchList::getInstance(false)->copyCurrentLine(false);
+            break;
 
         // permissible standard key-bindings, filtered for read-only
         case Qt::Key_Up:
             if (e->modifiers() == Qt::NoModifier)
                 cursorMoveLine(-1, false);
-            else if (e->modifiers() == Qt::ControlModifier)
+            else
                 QPlainTextEdit::keyPressEvent(e);
             break;
         case Qt::Key_Down:
             if (e->modifiers() == Qt::NoModifier)
                 cursorMoveLine(1, false);
-            else if (e->modifiers() == Qt::ControlModifier)
+            else
                 QPlainTextEdit::keyPressEvent(e);
             break;
         case Qt::Key_Left:
@@ -869,6 +873,36 @@ void MainText::cursorJumpStackReset()
 {
     cur_jump_stack.clear();
     cur_jump_idx = -1;
+}
+
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+bool MainText::toggleBookmark(int line)
+{
+    bool result;
+
+    auto it = m_bookmarks.find(line);
+    if (it != m_bookmarks.end())
+    {
+        m_bookmarks.erase(it);
+        result = false;
+    }
+    else
+    {
+        QTextBlock block = this->document()->findBlockByNumber(line);
+        m_bookmarks[line] = block.text();
+        result = true;
+    }
+
+    SearchList::signalBookmarkLine(line);
+    return result;
+}
+
+bool MainText::isBookmarked(int line)
+{
+    auto it = m_bookmarks.find(line);
+    return (it != m_bookmarks.end());
 }
 
 

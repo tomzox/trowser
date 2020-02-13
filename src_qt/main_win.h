@@ -98,6 +98,7 @@ public:
     const QColor& getBgColDefault() const;
     void showWarning(QWidget * widget, const QString& msg) { m_stline->showWarning(widget, msg); }
     void showError(QWidget * widget, const QString& msg) { m_stline->showWarning(widget, msg); }
+    void showPlain(QWidget * widget, const QString& msg) { m_stline->showPlain(widget, msg); }
     void clearMessage(QWidget * widget) { m_stline->clearMessage(widget); }
     void loadRcFile();
     void updateRcFile();

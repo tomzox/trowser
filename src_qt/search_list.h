@@ -23,6 +23,7 @@
 #include <QItemSelection>
 
 #include <utility>        // pair
+#include <set>
 
 #include "main_search.h"  // for SearchPar
 
@@ -38,6 +39,7 @@ class MainWin;
 class SearchListView;
 class SearchListModel;
 class SearchListDraw;
+class SearchListDrawBok;
 class SearchListUndo;
 class ATimer;
 
@@ -50,15 +52,17 @@ public:
     static QJsonObject getRcValues();
     static void setRcValues(const QJsonValue& val);
     static SearchList* getInstance(bool raiseWin = true);
+    static bool isDialogOpen();
     static void openDialog(bool raiseWin);
     static void matchView(int line);
     static void extUndo();
     static void extRedo();
+    static void signalBookmarkLine(int line);
     static void signalHighlightLine(int line);
     static void signalHighlightReconfigured();
 
     // external interfaces
-    void copyCurrentLine();
+    void copyCurrentLine(bool doAdd);
     void searchMatches(bool do_add, int direction, const SearchPar& par);
     void searchMatches(bool do_add, int direction, const std::vector<SearchPar>& pat_list);
 
@@ -81,10 +85,10 @@ private:
     void cmdSetDeltaColRoot(bool);
     void cmdClearAll();
     void cmdRemoveSelection();
+    void cmdToggleBookmark(bool);
     void cmdUndo();
     void cmdRedo();
-    void bgUndoRedoLoop(bool doAdd, const std::vector<int>& lines, int mode, int off);
-    void applyUndoRedo(bool doAdd, int mode, std::vector<int>::const_iterator lines_begin, std::vector<int>::const_iterator lines_end);
+    void bgUndoRedoLoop(bool isRedo, int origCount);
     void addMatches(int direction);
     void removeMatches(int direction);
     void startSearchAll(const std::vector<SearchPar>& pat_list, bool do_add, int direction);
@@ -94,9 +98,12 @@ private:
     using ListViewAnchor = std::pair<bool,int>;
     ListViewAnchor&& getViewAnchor();
     void seeViewAnchor(ListViewAnchor& anchor);
-    void addMainSelection(QTextCursor& c);
     void matchViewInt(int line, int idx = -1);
-    void displayStats(bool);
+    void saveFile(const QString& fileName, bool lnum_only);
+    void cmdSaveFileAs(bool lnum_only);
+    void cmdLoadFrom(bool);
+    bool loadLineList(const QString& fileName, std::set<int>& line_list);
+    void cmdDisplayStats(bool);
 
 private:
     static Highlighter * s_higl;
@@ -108,10 +115,12 @@ private:
     static QByteArray s_winGeometry;
     static QByteArray s_winState;
     static std::vector<QRgb> s_defaultColPalette;
+    static QString    s_prevFileName;
 
     SearchListView    * m_table = nullptr;
     SearchListModel   * m_model = nullptr;
     SearchListDraw    * m_draw = nullptr;
+    SearchListDrawBok * m_drawBok = nullptr;
     SearchListUndo    * m_undo = nullptr;
     QProgressBar      * m_hipro = nullptr;
     QAction           * m_menActUndo = nullptr;

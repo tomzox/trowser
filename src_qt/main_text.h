@@ -22,9 +22,11 @@
 #include <QTextCursor>
 #include <QPlainTextEdit>
 #include <QTimer>
+#include <QString>
 
 #include <vector>
 #include <unordered_map>
+#include <map>
 
 class QTextBlock;
 class MainWin;
@@ -61,6 +63,8 @@ public:
     void cursorJumpPushPos();
     void cursorJumpStackReset();
     void keyCmdClear();
+    bool toggleBookmark(int line);
+    bool isBookmarked(int line);
 
     QTextCursor findInDoc(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, int start_pos);
     bool findInBlocks(const SearchPar& par, int from, bool is_fwd,
@@ -106,6 +110,7 @@ private:
     std::unordered_map<int,const std::function<void()>> m_keyCmdCtrl;
     std::vector<JumpPos> cur_jump_stack;
     int           cur_jump_idx = -1;
+    std::map<int,QString> m_bookmarks;
 };
 
 #endif /* _MAIN_TEXT_H */
