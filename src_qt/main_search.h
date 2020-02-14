@@ -24,6 +24,7 @@
 #include <QTimer>
 
 #include <vector>
+#include <set>
 
 
 class QCheckBox;
@@ -116,6 +117,8 @@ public:
     bool searchExprCheck(const QString& pat, bool is_re, bool display);
     void highlightFixedLine(int line);
     SearchPar getCurSearchParams();
+    const std::vector<SearchPar>& getHistory() const { return tlb_history; }
+    void removeFromHistory(const std::set<int>& excluded);
 
 private slots:
 private:
@@ -155,7 +158,7 @@ private:
     int           tlb_inc_yview = 0;
     int           tlb_hist_pos = -1;
     QString       tlb_hist_prefix;
-    std::vector<SearchPar> tlb_history;  // TODO store flags case&regexp
+    std::vector<SearchPar> tlb_history;
     static const uint TLB_HIST_MAXLEN = 50;
     static const int SEARCH_INC_DELAY = 100; // in ms
 };

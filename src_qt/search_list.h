@@ -112,10 +112,9 @@ private:
     static MainText    * s_mainText;
 
     static SearchList * s_instance;
-    static QByteArray s_winGeometry;
-    static QByteArray s_winState;
-    static std::vector<QRgb> s_defaultColPalette;
-    static QString    s_prevFileName;
+    static QByteArray   s_winGeometry;
+    static QByteArray   s_winState;
+    static QString      s_prevFileName;
 
     SearchListView    * m_table = nullptr;
     SearchListModel   * m_model = nullptr;
@@ -133,8 +132,6 @@ private:
     bool                m_showLineDelta = false;
     //bool                m_showFrameIdx;
     //bool                m_tickFrameDelta;
-
-    bool dlg_srch_highlight = false;
 };
 
 #endif /* _SEARCH_LIST_H */

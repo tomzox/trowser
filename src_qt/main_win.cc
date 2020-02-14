@@ -21,9 +21,6 @@
  * ----------------------------------------------------------------------------
  */
 
-// QT sources:
-// https://code.woboq.org/qt5/qtbase/src/gui/text/qtextdocument.cpp.html
-
 #include <QApplication>
 #include <QWidget>
 #include <QMenu>
@@ -61,6 +58,7 @@
 #include "highlighter.h"
 #include "search_list.h"
 #include "dlg_higl.h"
+#include "dlg_hist.h"
 
 static int load_file_mode = 0;
 static int load_buf_size = 0x100000;
@@ -218,6 +216,7 @@ MainWin::MainWin(QApplication * app)
     m_higl = new Highlighter(m_f1_t);
     m_search->connectWidgets(m_f1_t, m_higl, f2_e, f2_hall, f2_mcase, f2_regexp);
     SearchList::connectWidgets(m_higl, m_search, this, m_f1_t);
+    DlgHistory::connectWidgets(m_search, this, m_f1_t);
 
     layout_top->setContentsMargins(0, 0, 0, 0);
     setCentralWidget(central_wid);
@@ -284,6 +283,7 @@ void MainWin::populateMenus()
 
     m_menubar_srch = menuBar()->addMenu("&Search");
     act = m_menubar_srch->addAction("Search history...");
+        connect(act, &QAction::triggered, [=](){ DlgHistory::openDialog(); });
     act = m_menubar_srch->addAction("Edit highlight patterns...");
         connect(act, &QAction::triggered, [=](){ DlgHigl::openDialog(m_higl, m_search, this); });
     m_menubar_srch->addSeparator();
@@ -672,14 +672,11 @@ void MainWin::loadRcFile()
 
                     if (var == "main_search")               m_search->setRcValues(val.toObject());
                     else if (var == "highlight")            m_higl->setRcValues(val);
-                    //else if (var == "col_palette")        col_palette = val;
                     //else if (var == "tick_pat_sep")       tick_pat_sep = val;
                     //else if (var == "tick_pat_num")       tick_pat_num = val;
                     //else if (var == "tick_str_prefix")    tick_str_prefix = val;
                     else if (var == "font_content")         m_fontContent.fromString(val.toString());
                     //else if (var == "fmt_selection")      fmt_selection = val;
-                    //else if (var == "col_bg_content")     col_bg_content = val;
-                    //else if (var == "col_fg_content")     col_fg_content = val;
                     //else if (var == "fmt_find")           fmt_find = val;
                     //else if (var == "fmt_findinc")        fmt_findinc = val;
                     else if (var == "load_buf_size")        load_buf_size = val.toInt();
@@ -690,6 +687,7 @@ void MainWin::loadRcFile()
                     else if (var == "main_win_geom")        this->restoreGeometry(QByteArray::fromHex(val.toString().toLatin1()));
                     else if (var == "search_list")          SearchList::setRcValues(val);
                     else if (var == "dlg_highlight")        DlgHigl::setRcValues(val);
+                    else if (var == "dlg_history")          DlgHistory::setRcValues(val);
                     else
                         fprintf(stderr, "trowser: ignoring unknown keyword in rcfile: %s\n", var.toLatin1().data());
                 }
@@ -742,11 +740,11 @@ void MainWin::updateRcFile()
 
     // dump highlight dialog options: color palette, window geometry
     obj.insert("dlg_highlight", DlgHigl::getRcValues());
+    obj.insert("dlg_history", DlgHistory::getRcValues());
     obj.insert("search_list", SearchList::getRcValues());
 
     // dialog sizes
     //puts $rcfile [list set dlg_mark_geom $dlg_mark_geom]
-    //puts $rcfile [list set dlg_hist_geom $dlg_hist_geom]
     //puts $rcfile [list set dlg_srch_geom $dlg_srch_geom]
     obj.insert("main_win_geom", QJsonValue(QString(this->saveGeometry().toHex())));
     obj.insert("main_win_state", QJsonValue(QString(this->saveState().toHex())));

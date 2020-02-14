@@ -64,6 +64,7 @@
 #include "highlighter.h"
 #include "search_list.h"
 #include "dlg_higl.h"
+#include "dlg_hist.h"
 
 // ----------------------------------------------------------------------------
 
@@ -1104,7 +1105,7 @@ void SearchList::populateMenus()
 
     men = menuBar()->addMenu("Search");
     act = men->addAction("Search history...");
-        //command=SearchHistory_Open)
+        connect(act, &QAction::triggered, [=](){ DlgHistory::openDialog(); });
     act = men->addAction("Edit highlight patterns...");
         connect(act, &QAction::triggered, [=](){ DlgHigl::openDialog(s_higl, s_search, s_mainWin); });
     men->addSeparator();
@@ -1750,7 +1751,6 @@ void SearchList::searchProgress(int percent)
     }
 }
 
-
 /**
  * This helper function is called before modifications of the search result
  * list by the various background tasks to determine a line which can serve
@@ -2027,7 +2027,7 @@ void SearchList::saveFile(const QString& fileName, bool lnum_only)
             }
         }
         out << flush;
-        if (out.status() != QTextStream::Ok) 
+        if (out.status() != QTextStream::Ok)
         {
             QString msg = QString("Error writing file ") + fileName + ": " + fh->errorString();
             QMessageBox::warning(this, "trowser", msg, QMessageBox::Ok);
@@ -2118,7 +2118,7 @@ bool SearchList::loadLineList(const QString& fileName, std::set<int>& line_list)
         }
 
         // error handling
-        if (in.status() != QTextStream::Ok) 
+        if (in.status() != QTextStream::Ok)
         {
             QString msg = QString("Error while reading file ") + fileName + ": " + fh->errorString();
             QMessageBox::warning(this, "trowser", msg, QMessageBox::Ok);

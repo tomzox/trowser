@@ -431,12 +431,10 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
     , m_search(search)
     , m_mainWin(mainWin)
 {
-  //PreemptBgTasks()
     this->setWindowTitle("Color highlights list");
     auto style = m_mainWin->getAppStyle();
     auto central_wid = new QWidget();
     auto layout_top = new QVBoxLayout(central_wid);
-        //layout_top->setContentsMargins(0, 0, 0, 0);
 
     m_model = new DlgHiglModel(higl);
     m_fmtDelegate = new DlgHidlFmtDraw(m_model,
@@ -487,7 +485,7 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
         f1->addWidget(m_f1_down);
     m_f1_fmt = new QPushButton("Format...", f1);
         m_f1_fmt->setEnabled(false);
-        //connect(m_f1_fmt, &QAction::triggered, this, &DlgHigl::cmdEditFormat);
+        //TODO connect(m_f1_fmt, &QAction::triggered, this, &DlgHigl::cmdEditFormat);
         f1->addWidget(m_f1_fmt);
 
     auto f2 = new QToolBar("Find", this);
@@ -518,6 +516,11 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
         connect(m_f2_balla, &QPushButton::clicked, [=](){ cmdSearchList(-1); });
         f2->addWidget(m_f2_balla);
 
+    auto act = new QAction(central_wid);
+        act->setShortcut(QKeySequence(Qt::Key_Ampersand));
+        connect(act, &QAction::triggered, [=](){ m_search->searchHighlightClear(); });
+        central_wid->addAction(act);
+
     setCentralWidget(central_wid);
     if (!s_winGeometry.isEmpty())
         this->restoreGeometry(s_winGeometry);
@@ -525,14 +528,7 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
         this->restoreState(s_winState);
     m_table->setFocus(Qt::ShortcutFocusReason);
 
-#if 0
-    m_table->bind("<Key-slash>", lambda e:BindCallAndBreak(lambda: SearchEnter(1, wt.dlg_tags_f1_l)))
-    m_table->bind("<Key-question>", lambda e:BindCallAndBreak(lambda: SearchEnter(0, wt.dlg_tags_f1_l)))
-    m_table->bind("<Key-ampersand>", lambda e:BindCallAndBreak(SearchHighlightClear))
-#endif
-
     this->show();
-    //ResumeBgTasks()
 }
 
 DlgHigl::~DlgHigl()

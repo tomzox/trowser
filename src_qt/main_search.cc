@@ -41,6 +41,7 @@
 #include "main_search.h"
 #include "highlighter.h"
 #include "search_list.h"
+#include "dlg_hist.h"
 
 // ----------------------------------------------------------------------------
 
@@ -962,6 +963,27 @@ void MainSearch::searchReturn()
     }
 }
 
+// FIXME temporary interface to search history dialog
+// -> move history into sub-class, make this private and befriend the dialog
+void MainSearch::removeFromHistory(const std::set<int>& excluded)
+{
+    if (excluded.size() != 0)
+    {
+        std::vector<SearchPar> tmp;
+        tmp.reserve(TLB_HIST_MAXLEN + 1);
+
+        for (size_t idx = 0; idx < tlb_history.size(); ++idx)
+        {
+            if (excluded.find(idx) == excluded.end())
+                tmp.push_back(tlb_history[idx]);
+        }
+        tlb_history = tmp;
+
+        DlgHistory::signalHistoryChanged();
+        m_mainWin->updateRcAfterIdle();
+    }
+}
+
 /**
  * This function add the given search string to the search history stack.
  * If the string is already on the stack, it's moved to the top. Note: top
@@ -971,8 +993,6 @@ void MainSearch::searchAddHistory(const QString& txt, bool is_re, bool use_case)
 {
     if (!txt.isEmpty())
     {
-        //TODO set old_sel [SearchHistory_StoreSel]
-
         // search for the expression in the history (options not compared)
         // remove the element if already in the list
         for (auto it = tlb_history.begin(); it != tlb_history.end(); ++it)
@@ -995,8 +1015,7 @@ void MainSearch::searchAddHistory(const QString& txt, bool is_re, bool use_case)
 
         m_mainWin->updateRcAfterIdle();
 
-        //TODO SearchHistory_Fill();
-        //TODO SearchHistory_RestoreSel(old_sel);
+        DlgHistory::signalHistoryChanged();
     }
 }
 
@@ -1068,14 +1087,11 @@ void MainSearch::searchRemoveFromHistory()
 {
     if ((tlb_hist_pos >= 0) && (tlb_hist_pos < (long)tlb_history.size()))
     {
-        //TODO old_sel = SearchHistory_StoreSel();
-
         tlb_history.erase(tlb_history.begin() + tlb_hist_pos);
 
         m_mainWin->updateRcAfterIdle();
 
-        //TODO SearchHistory_Fill
-        //TODO SearchHistory_RestoreSel $old_sel
+        DlgHistory::signalHistoryChanged();
 
         if (tlb_history.size() == 0)
         {
