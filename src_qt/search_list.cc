@@ -33,7 +33,6 @@
 #include <QItemSelection>
 #include <QHeaderView>
 #include <QPainter>
-#include <QPixmap>
 #include <QApplication>
 #include <QMenuBar>
 #include <QMenu>
@@ -61,14 +60,16 @@
 #include "main_win.h"
 #include "main_text.h"
 #include "main_search.h"
+#include "bookmarks.h"
 #include "highlighter.h"
+#include "highl_view_dlg.h"
 #include "search_list.h"
 #include "dlg_higl.h"
 #include "dlg_hist.h"
 
 // ----------------------------------------------------------------------------
 
-class SearchListModel : public QAbstractItemModel
+class SearchListModel : public QAbstractItemModel, public HighlightViewModelIf
 {
 public:
     enum TblColIdx { COL_IDX_BOOK, COL_IDX_LINE, COL_IDX_LINE_D, COL_IDX_TXT, COL_COUNT };
@@ -141,7 +142,18 @@ public:
     void forceRedraw(TblColIdx col, int line = -1);
     const std::vector<int>& exportLineList() const
     {
-      return dlg_srch_lines;
+        return dlg_srch_lines;
+    }
+    void adjustLineNums(int top_l, int bottom_l);
+
+    // implementation of HighlightViewModelIf interfaces
+    virtual int higlModelGetLineOfIdx(int idx) const
+    {
+        return getLineOfIdx(idx);
+    }
+    virtual QVariant higlModelData(const QModelIndex& index, int role = Qt::DisplayRole) const
+    {
+        return data(index, role);
     }
 
 private:
@@ -361,6 +373,43 @@ void SearchListModel::forceRedraw(TblColIdx col, int line)  // ATTN row/col orde
     }
 }
 
+void SearchListModel::adjustLineNums(int top_l, int bottom_l)
+{
+    if (bottom_l >= 0)
+    {
+        // delete from [bottom_l ... end[
+        int idx = getLineIdx(bottom_l);
+        if (size_t(idx) < dlg_srch_lines.size())
+        {
+            this->beginRemoveRows(QModelIndex(), idx, dlg_srch_lines.size() - 1);
+            dlg_srch_lines.erase(dlg_srch_lines.begin() + idx, dlg_srch_lines.end());
+            this->endRemoveRows();
+        }
+    }
+
+    if (top_l > 0)
+    {
+        // delete lines from [0 ... topl[
+        int idx = getLineIdx(top_l);
+        if (idx > 0)
+        {
+            this->beginRemoveRows(QModelIndex(), 0, idx - 1);
+            dlg_srch_lines.erase(dlg_srch_lines.begin(), dlg_srch_lines.begin() + idx);
+            this->endRemoveRows();
+        }
+
+        // now actually adjust remaining line numbers
+        if (dlg_srch_lines.size() != 0)
+        {
+            for (int& line : dlg_srch_lines)
+                line -= top_l;
+
+            emit dataChanged(createIndex(0, COL_IDX_LINE),
+                             createIndex(dlg_srch_lines.size() - 1, COL_IDX_LINE));
+        }
+    }
+}
+
 
 // ----------------------------------------------------------------------------
 
@@ -570,13 +619,13 @@ void SearchListUndo::adjustLineNums(int top_l, int bottom_l)
     for (const auto& cmd : dlg_srch_undo)
     {
         std::vector<int> tmpl;
-        tmpl.reserve(dlg_srch_undo.size());
+        tmpl.reserve(cmd.lines.size());
 
         for (int line : cmd.lines)
         {
-            if ((line >= top_l) && ((line < bottom_l) || (bottom_l == 0)))
+            if ((line >= top_l) && ((line < bottom_l) || (bottom_l < 0)))
             {
-                tmpl.push_back(line - top_l + 1);
+                tmpl.push_back(line - top_l);
             }
         }
 
@@ -585,9 +634,10 @@ void SearchListUndo::adjustLineNums(int top_l, int bottom_l)
             tmp2.emplace_back(UndoRedoItem(cmd.isAdded, std::move(tmpl)));
         }
     }
-
     dlg_srch_undo = std::move(tmp2);
     dlg_srch_redo.clear();
+
+    SEARCH_LIST_UNDO_INVARIANT();
 }
 
 bool SearchListUndo::hasUndo(int *count) const
@@ -694,112 +744,10 @@ void SearchListUndo::invariant() const
 
 // ----------------------------------------------------------------------------
 
-class SearchListDraw : public QAbstractItemDelegate
-{
-public:
-    SearchListDraw(SearchListModel * model, Highlighter * higl,
-                   const QFont& fontDdefault, const QColor& fg, const QColor& bg)
-        : m_model(model)
-        , m_higl(higl)
-        , m_fontDefault(fontDdefault)
-        , m_fgColDefault(fg)
-        , m_bgColDefault(bg)
-        {}
-    virtual void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override;
-    virtual QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override;
-private:
-    const int TXT_MARGIN = 3;
-    SearchListModel * const m_model;
-    Highlighter * const m_higl;
-    const QFont& m_fontDefault;
-    const QColor& m_fgColDefault;
-    const QColor& m_bgColDefault;
-};
-
-void SearchListDraw::paint(QPainter *pt, const QStyleOptionViewItem& option, const QModelIndex& index) const
-{
-    int line = m_model->getLineOfIdx(index.row());
-    const HiglFmtSpec * fmtSpec = m_higl->getFmtSpecForLine(line);
-
-    QFont font(m_fontDefault);
-    if (fmtSpec != nullptr)
-    {
-        if (!fmtSpec->m_font.isEmpty())
-        {
-            font.fromString(fmtSpec->m_font);
-        }
-        if (fmtSpec->m_underline)
-            font.setUnderline(true);
-        if (fmtSpec->m_bold)
-            font.setWeight(QFont::Bold);
-        if (fmtSpec->m_italic)
-            font.setItalic(true);
-        if (fmtSpec->m_overstrike)
-            font.setStrikeOut(true);
-    }
-
-    int w = option.rect.width();
-    int h = option.rect.height();
-
-    pt->save();
-    pt->translate(option.rect.topLeft());
-    pt->setClipRect(QRectF(0, 0, w, h));
-    pt->setFont(font);
-
-    if (option.state & QStyle::State_Selected)
-    {
-        pt->fillRect(0, 0, w, h, option.palette.color(QPalette::Highlight));
-        pt->setPen(option.palette.color(QPalette::HighlightedText));
-    }
-    else if (fmtSpec != nullptr)
-    {
-        if (   (fmtSpec->m_bgCol != HiglFmtSpec::INVALID_COLOR)
-            && (fmtSpec->m_bgStyle != Qt::NoBrush))
-            pt->fillRect(0, 0, w, h, QBrush(QColor(fmtSpec->m_bgCol), fmtSpec->m_bgStyle));
-        else if (fmtSpec->m_bgCol != HiglFmtSpec::INVALID_COLOR)
-            pt->fillRect(0, 0, w, h, QColor(fmtSpec->m_bgCol));
-        else if (fmtSpec->m_bgStyle != Qt::NoBrush)
-            pt->fillRect(0, 0, w, h, fmtSpec->m_bgStyle);
-        else
-            pt->fillRect(0, 0, w, h, m_bgColDefault);
-
-        if (   (fmtSpec->m_fgCol != HiglFmtSpec::INVALID_COLOR)
-            && (fmtSpec->m_fgStyle != Qt::NoBrush))
-            pt->setBrush(QBrush(QColor(fmtSpec->m_fgCol), fmtSpec->m_fgStyle));
-        else if (fmtSpec->m_fgCol != HiglFmtSpec::INVALID_COLOR)
-            pt->setPen(QColor(fmtSpec->m_fgCol));
-        else if (fmtSpec->m_fgStyle != Qt::NoBrush)
-            pt->setBrush(fmtSpec->m_fgStyle);
-        else
-            pt->setPen(m_fgColDefault);
-    }
-    else
-    {
-        pt->fillRect(0, 0, w, h, m_bgColDefault);
-        pt->setPen(m_fgColDefault);
-    }
-
-    QFontMetricsF metrics(font);
-    auto data = m_model->data(index);
-    pt->drawText(TXT_MARGIN, metrics.ascent(), data.toString());
-
-    pt->restore();
-}
-
-QSize SearchListDraw::sizeHint(const QStyleOptionViewItem& /*option*/, const QModelIndex& /*index*/) const
-{
-    //TODO other fonts
-    QFontMetricsF metrics(m_fontDefault);
-    return QSize(1, metrics.height());
-}
-
-
-// ----------------------------------------------------------------------------
-
 class SearchListDrawBok : public QAbstractItemDelegate
 {
 public:
-    SearchListDrawBok(SearchListModel * model, MainText * mainText);
+    SearchListDrawBok(SearchListModel * model, MainText * mainText, Bookmarks * bookmarks);
     virtual void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override;
     virtual QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override;
     int widthHint() const;
@@ -810,12 +758,14 @@ private:
         "5BAEAAAEALAAAAAAHAAcAAAMUGDGsSwSMJ0RkpEIG4F2d5DBTkAAAOw==";
     SearchListModel * const m_model;
     MainText * const m_mainText;
+    Bookmarks * const m_bookmarks;
     QPixmap m_img;
 };
 
-SearchListDrawBok::SearchListDrawBok(SearchListModel * model, MainText * mainText)
+SearchListDrawBok::SearchListDrawBok(SearchListModel * model, MainText * mainText, Bookmarks * bookmarks)
         : m_model(model)
         , m_mainText(mainText)
+        , m_bookmarks(bookmarks)
 {
     QByteArray imgData = QByteArray::fromBase64(QByteArray(s_gif));
     if (m_img.loadFromData(imgData, "GIF") == false)
@@ -837,7 +787,7 @@ void SearchListDrawBok::paint(QPainter *pt, const QStyleOptionViewItem& option, 
         pt->fillRect(0, 0, w, h, option.palette.color(QPalette::Base));
 
     int line = m_model->getLineOfIdx(index.row());
-    if (m_mainText->isBookmarked(line))
+    if (m_bookmarks->isBookmarked(line))
     {
         int xoff = IMG_MARGIN;
         int yoff = (h - m_img.height() - IMG_MARGIN*2) / 2;
@@ -942,7 +892,12 @@ void SearchListView::keyPressEvent(QKeyEvent *e)
  */
 SearchList::SearchList()
 {
-    this->setWindowTitle("Search matches"); //TODO + cur_filename
+    const QString& fileName = s_mainWin->getFilename();
+    if (!fileName.isEmpty())
+      this->setWindowTitle("Search matches - " + fileName);
+    else
+      this->setWindowTitle("Search matches");
+
     auto central_wid = new QWidget();
         setCentralWidget(central_wid);
     auto layout_top = new QVBoxLayout(central_wid);
@@ -951,11 +906,11 @@ SearchList::SearchList()
     tid_search_list = new ATimer(central_wid);
 
     m_model = new SearchListModel(s_mainText);
-    m_draw = new SearchListDraw(m_model, s_higl,
-                                s_mainWin->getFontContent(),
-                                s_mainWin->getFgColDefault(),
-                                s_mainWin->getBgColDefault());
-    m_drawBok = new SearchListDrawBok(m_model, s_mainText);
+    m_draw = new HighlightViewDelegate(m_model, s_higl,
+                                       s_mainWin->getFontContent(),
+                                       s_mainWin->getFgColDefault(),
+                                       s_mainWin->getBgColDefault());
+    m_drawBok = new SearchListDrawBok(m_model, s_mainText, s_bookmarks);
     m_undo = new SearchListUndo();
 #ifndef QT_NO_DEBUG
     m_undo->connectModelForDebug(m_model);
@@ -1388,7 +1343,7 @@ void SearchList::cmdToggleBookmark(bool)
     if (sel.size() == 1)
     {
         int line = m_model->getLineOfIdx(sel.front().row());
-        s_mainText->toggleBookmark(line);
+        s_bookmarks->toggleBookmark(line);
     }
     else
     {
@@ -1751,6 +1706,7 @@ void SearchList::searchProgress(int percent)
     }
 }
 
+
 /**
  * This helper function is called before modifications of the search result
  * list by the various background tasks to determine a line which can serve
@@ -1890,12 +1846,13 @@ void SearchList::copyCurrentLine(bool doAdd)
  * This external interface function is called out of the bookmark manager when
  * a bookmark is added or removed for the given line.  If the search list
  * dialog is not open the function does nothing. Else it forces a redraw of the
- * bookmark column in the given line.
+ * bookmark column in the given line, or all lines in case the parameter is -1.
  */
 void SearchList::signalBookmarkLine(int line)  /*static*/
 {
     if (s_instance != nullptr)
     {
+        // note line parameter may be -1 for "all"
         s_instance->m_model->forceRedraw(SearchListModel::COL_IDX_BOOK, line);
     }
 }
@@ -1990,6 +1947,32 @@ void SearchList::selectionChanged(const QItemSelection& /*selected*/, const QIte
         }
     }
     m_ignoreSelCb = -1;
+}
+
+
+/**
+ * This function must be called when portions of the text in the main window
+ * have been deleted to update references to text lines. Parameter meaning:
+ *
+ * @param top_l     First line which is NOT deleted, or 0 to delete nothing at top
+ * @param bottom_l  This line and all below are removed, or -1 if none
+ */
+void SearchList::adjustLineNumsInt(int top_l, int bottom_l)
+{
+    m_model->adjustLineNums(top_l, bottom_l);
+    m_undo->adjustLineNums(top_l, bottom_l);
+
+    m_table->setDocLineCount(s_mainText->document()->lineCount());
+
+    //TODO dlg_srch_fn_cache = {}
+}
+
+void SearchList::adjustLineNums(int top_l, int bottom_l)  /*static*/
+{
+    if (s_instance != nullptr)
+    {
+        s_instance->adjustLineNumsInt(top_l, bottom_l);
+    }
 }
 
 
@@ -2090,8 +2073,8 @@ bool SearchList::loadLineList(const QString& fileName, std::set<int>& line_list)
 
         while (in.readLineInto(&line_str))
         {
-            static QRegularExpression re1("^(\\d+)(?:[^\\d\\w]|$)");
-            static QRegularExpression re2("^\\s*(?:#.*)?$");
+            static const QRegularExpression re1("^(\\d+)(?:[^\\d\\w]|$)");
+            static const QRegularExpression re2("^\\s*(?:#.*)?$");
             auto mat1 = re1.match(line_str);
             if (mat1.hasMatch())
             {
@@ -2134,7 +2117,7 @@ bool SearchList::loadLineList(const QString& fileName, std::set<int>& line_list)
             if (synerr > 0)
             {
                 if (skipped)
-                  msgBld << " and ";
+                    msgBld << " and ";
                 msgBld << synerr << " non-empty lines without a numeric value";
             }
             if (line_list.size() == 0)
@@ -2156,12 +2139,12 @@ bool SearchList::loadLineList(const QString& fileName, std::set<int>& line_list)
         }
         else
         {
-          result = true;
+            result = true;
         }
     }
     else
     {
-        QString msg = QString("Error creating file ") + fileName + ": " + fh->errorString();
+        QString msg = QString("Error opening file ") + fileName + ": " + fh->errorString();
         QMessageBox::critical(this, "trowser", msg, QMessageBox::Ok);
     }
     return result;
@@ -2253,13 +2236,15 @@ void SearchList::cmdDisplayStats(bool)
 // Static state & interface
 
 SearchList  * SearchList::s_instance = nullptr;
+QByteArray    SearchList::s_winGeometry;
+QByteArray    SearchList::s_winState;
+QString       SearchList::s_prevFileName(".");
+
 Highlighter * SearchList::s_higl;
 MainSearch  * SearchList::s_search;
 MainWin     * SearchList::s_mainWin;
 MainText    * SearchList::s_mainText;
-QByteArray    SearchList::s_winGeometry;
-QByteArray    SearchList::s_winState;
-QString       SearchList::s_prevFileName(".");
+Bookmarks   * SearchList::s_bookmarks;
 
 /**
  * This function is called when writing the config file to retrieve persistent
@@ -2325,12 +2310,14 @@ void SearchList::openDialog(bool raiseWin) /*static*/
     }
 }
 
-void SearchList::connectWidgets(Highlighter * higl, MainSearch * search, MainWin * mainWin, MainText * mainText) /*static*/
+void SearchList::connectWidgets(MainWin * mainWin, MainSearch * search, MainText * mainText,
+                                Highlighter * higl, Bookmarks * bookmarks) /*static*/
 {
-    s_higl = higl;
-    s_search = search;
     s_mainWin = mainWin;
+    s_search = search;
     s_mainText = mainText;
+    s_higl = higl;
+    s_bookmarks = bookmarks;
 }
 
 bool SearchList::isDialogOpen()

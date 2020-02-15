@@ -91,6 +91,7 @@ public:
     void getPatList(std::vector<HiglPatExport>&) const;
     void setList(std::vector<HiglPatExport>& patList);
     const HiglFmtSpec * getFmtSpecForLine(int line);
+    void adjustLineNums(int top_l, int bottom_l);
 
     void highlightInit();
     void highlightAll(const HiglPat& pat, int line = 0, int loop_cnt = 0);

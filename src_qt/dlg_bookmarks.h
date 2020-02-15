@@ -15,8 +15,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
  */
-#ifndef _DLG_HIST_H
-#define _DLG_HIST_H
+#ifndef _DLG_BOOKMARKS_H
+#define _DLG_BOOKMARKS_H
 
 #include <QWidget>
 #include <QMainWindow>
@@ -31,32 +31,39 @@ class QAbstractButton;
 class QModelIndex;
 class QJsonObject;
 
-class MainSearch;
 class MainText;
+class MainSearch;
 class MainWin;
-class DlgHistoryView;
-class DlgHistoryModel;
+class Bookmarks;
+class Highlighter;
+class DlgBookmarkView;
+class DlgBookmarkModel;
+class HighlightViewDelegate;
 
-class DlgHistory : public QMainWindow
+class DlgBookmarks : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    static void connectWidgets(MainWin * mainWin, MainSearch * search, MainText * mainText);
+    static void connectWidgets(MainWin*, MainSearch*, MainText*, Highlighter*, Bookmarks*);
     static QJsonObject getRcValues();
     static void setRcValues(const QJsonValue& val);
-    static DlgHistory* getInstance();
+    static DlgBookmarks* getInstance();
     static void openDialog();
-    static void signalHistoryChanged();
+    static void signalBookmarkListChanged();
+    static void signalHighlightLine(int line);
+    static void signalHighlightReconfigured();
+    static void matchView(int line);
 
 private:
     // constructor can only be invoked via the static interface
-    DlgHistory();
-    ~DlgHistory();
+    DlgBookmarks();
+    ~DlgBookmarks();
 
     virtual void closeEvent(QCloseEvent *) override;
     void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected);
     void refreshContents();
+    void matchViewInt(int line);
     void showContextMenu(const QPoint& pos);
     void cmdClose(bool);
     void cmdButton(QAbstractButton * button);
@@ -67,16 +74,19 @@ private:
     void cmdSearchList(int direction);
 
 private:
-    static MainSearch  * s_search;
-    static MainWin     * s_mainWin;
-    static MainText    * s_mainText;
+    static MainWin    * s_mainWin;
+    static MainText   * s_mainText;
+    static MainSearch * s_search;
+    static Highlighter* s_higl;
+    static Bookmarks  * s_bookmarks;
 
-    static DlgHistory * s_instance;
+    static DlgBookmarks * s_instance;
     static QByteArray   s_winGeometry;
     static QByteArray   s_winState;
 
-    DlgHistoryView    * m_table = nullptr;
-    DlgHistoryModel   * m_model = nullptr;
+    DlgBookmarkView   * m_table = nullptr;
+    DlgBookmarkModel  * m_model = nullptr;
+    HighlightViewDelegate * m_draw = nullptr;
 
     QDialogButtonBox  * m_cmdButs = nullptr;
     QPushButton       * m_f2_bn = nullptr;
@@ -85,7 +95,8 @@ private:
     QPushButton       * m_f2_ballb = nullptr;
     QPushButton       * m_f2_balla = nullptr;
 
-    QSet<QString>       m_selPats;
+    int                 m_ignoreSelCb = -1;
+    QSet<int>           m_selPats;
 };
 
-#endif /* _DLG_HIST_H */
+#endif /* _DLG_BOOKMARKS_H */

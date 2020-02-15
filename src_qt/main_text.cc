@@ -30,14 +30,16 @@
 #include "main_win.h"
 #include "main_text.h"
 #include "main_search.h"
+#include "bookmarks.h"
 #include "search_list.h"
 
 // ----------------------------------------------------------------------------
 
-MainText::MainText(MainWin * mainWin, MainSearch * search, QWidget * parent)
+MainText::MainText(MainWin * mainWin, MainSearch * search, Bookmarks * bookmarks, QWidget * parent)
     : QPlainTextEdit(parent)
     , m_mainWin(mainWin)
     , m_search(search)
+    , m_bookmarks(bookmarks)
 {
     // commands for scrolling vertically
     m_keyCmdCtrl.emplace(Qt::Key_Up, [=](){ YviewScrollLine(-1); });
@@ -120,7 +122,7 @@ MainText::MainText(MainWin * mainWin, MainSearch * search, QWidget * parent)
     m_keyCmdCtrl.emplace(Qt::Key_R, [=](){ SearchList::extRedo(); });
     m_keyCmdCtrl.emplace(Qt::Key_G, [=](){ m_mainWin->menuCmdDisplayLineNo(); });
     //bind .f1.t <Double-Button-1> {if {%s == 0} {Mark_ToggleAtInsert; KeyClr; break}};
-    //TODO m_keyCmdText.emplace('m', [=](){ Mark_ToggleAtInsert(); });
+    m_keyCmdText.emplace('m', [=](){ toggleBookmark(); });
     m_keyCmdCtrl.emplace(Qt::Key_Plus, [=](){ m_mainWin->keyCmdZoomFontSize(true); });
     m_keyCmdCtrl.emplace(Qt::Key_Minus, [=](){ m_mainWin->keyCmdZoomFontSize(false); });
     //bind .f1.t <Control-Alt-Delete> DebugDumpAllState
@@ -224,10 +226,10 @@ bool MainText::keyCmdText(wchar_t chr)
             cursorGotoBottom(0);
         }
         else if (chr == '+') {
-            //TODO Mark_JumpNext 1
+            jumpToNextBookmark(true);
         }
         else if (chr == '-') {
-            //TODO Mark_JumpNext 0
+            jumpToNextBookmark(false);
         }
         else {
             QString msg = QString("Undefined key sequence: ") + last_key_char + chr;
@@ -390,7 +392,7 @@ void MainText::YviewScrollVisibleCursor(int dir)
  * This function moves the cursor to the start of the line at the top of the
  * current view.
  */
-void MainText::cursorSetLineTop(int /*TODO off*/)
+void MainText::cursorSetLineTop(int /*off*/)
 {
     cursorJumpPushPos();
 
@@ -441,7 +443,7 @@ void MainText::cursorSetLineCenter()
  * This function moves the cursor to the start of the line at the bottom of the
  * current view.
  */
-void MainText::cursorSetLineBottom(int /*TODO off*/)
+void MainText::cursorSetLineBottom(int /*off*/)
 {
     cursorJumpPushPos();
 
@@ -549,9 +551,9 @@ void MainText::cursorGotoBottom(int off)
  * When the cursor is scrolled out of the window, it's placed in the last visible
  * column in scrolling direction.
  */
-void MainText::XviewScroll(int /*TODO delta*/, int /*TODO dir*/)
+void MainText::XviewScroll(int /*delta*/, int /*dir*/)
 {
-#if 0
+#if 0  //TODO
   set pos_old [$wid bbox insert]
 
   if (delta != 0) {
@@ -581,7 +583,7 @@ void MainText::XviewScroll(int /*TODO delta*/, int /*TODO dir*/)
  */
 void MainText::XviewScrollHalf(int dir)
 {
-#if 0
+#if 0  //TODO
   set xpos [$wid xview]
   set w [winfo width $wid]
   if {$w != 0} {
@@ -600,9 +602,9 @@ void MainText::XviewScrollHalf(int dir)
  * This function adjusts the view so that the column holding the cursor is
  * placed at the left or right of the viewable area, if possible.
  */
-void MainText::XviewSet(xviewSetWhere /*TODO where*/)
+void MainText::XviewSet(xviewSetWhere /*where*/)
 {
-#if 0
+#if 0  //TODO
   set xpos [$wid xview]
   set coo [$wid bbox insert]
   set w [winfo width $wid]
@@ -816,10 +818,10 @@ void MainText::cursorJumpToggle()
             SearchList::matchView(c.block().blockNumber());
         }
         else
-            m_mainWin->showWarning(this, "Already on the mark."); // warn
+            m_mainWin->showWarning(this, "Already on the mark.");
     }
     else
-        m_mainWin->showError(this, "Jump stack is empty."); // error
+        m_mainWin->showError(this, "Jump stack is empty.");
 }
 
 
@@ -850,11 +852,11 @@ void MainText::cursorJumpHistory(int rel)
             cur_jump_idx += rel;
 
             if (cur_jump_idx < 0) {
-                m_mainWin->showWarning(this, "Jump stack wrapped from oldest to newest."); // warn
+                m_mainWin->showWarning(this, "Jump stack wrapped from oldest to newest.");
                 cur_jump_idx = cur_jump_stack.size() - 1;
             }
             else if (cur_jump_idx >= (long)cur_jump_stack.size()) {
-                m_mainWin->showWarning(this, "Jump stack wrapped from newest to oldest."); // warn
+                m_mainWin->showWarning(this, "Jump stack wrapped from newest to oldest.");
                 cur_jump_idx = 0;
             }
         }
@@ -866,7 +868,7 @@ void MainText::cursorJumpHistory(int rel)
         SearchList::matchView(c.block().blockNumber());
     }
     else
-        m_mainWin->showError(this, "Jump stack is empty."); //error
+        m_mainWin->showError(this, "Jump stack is empty.");
 }
 
 void MainText::cursorJumpStackReset()
@@ -875,34 +877,50 @@ void MainText::cursorJumpStackReset()
     cur_jump_idx = -1;
 }
 
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-bool MainText::toggleBookmark(int line)
+void MainText::toggleBookmark()
 {
-    bool result;
+    auto c = this->textCursor();
+    int line = c.block().blockNumber();
+    m_bookmarks->toggleBookmark(line);
+}
 
-    auto it = m_bookmarks.find(line);
-    if (it != m_bookmarks.end())
+/**
+ * This function moves the cursor onto the next bookmark in the given
+ * direction.
+ */
+void MainText::jumpToNextBookmark(bool is_fwd)
+{
+    auto c = this->textCursor();
+    int line = c.block().blockNumber();
+    line = m_bookmarks->getNextLine(line, is_fwd);
+    if (line != -1)
     {
-        m_bookmarks.erase(it);
-        result = false;
+        jumpToLine(line);
     }
     else
     {
-        QTextBlock block = this->document()->findBlockByNumber(line);
-        m_bookmarks[line] = block.text();
-        result = true;
+        if (m_bookmarks->getCount() == 0)
+            m_mainWin->showError(this, "No bookmarks have been defined yet");
+        else if (is_fwd)
+            m_mainWin->showWarning(this, "No more bookmarks until end of file");
+        else
+            m_mainWin->showWarning(this, "No more bookmarks until start of file");
     }
-
-    SearchList::signalBookmarkLine(line);
-    return result;
 }
 
-bool MainText::isBookmarked(int line)
+void MainText::jumpToLine(int line)
 {
-    auto it = m_bookmarks.find(line);
-    return (it != m_bookmarks.end());
+    QTextBlock blk = this->document()->findBlockByNumber(line);
+    if (blk.isValid())
+    {
+        cursorJumpPushPos();
+
+        auto c = this->textCursor();
+        c.setPosition(blk.position());
+        this->setTextCursor(c);
+
+        SearchList::matchView(c.block().blockNumber());
+    }
 }
 
 

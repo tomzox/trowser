@@ -32,13 +32,14 @@ class QTextCursor;
 class QProgressBar;
 class QJsonObject;
 
-class Highlighter;
-class MainSearch;
-class MainText;
 class MainWin;
+class MainText;
+class MainSearch;
+class Highlighter;
+class Bookmarks;
 class SearchListView;
 class SearchListModel;
-class SearchListDraw;
+class HighlightViewDelegate;
 class SearchListDrawBok;
 class SearchListUndo;
 class ATimer;
@@ -48,7 +49,8 @@ class SearchList : public QMainWindow
     Q_OBJECT
 
 public:
-    static void connectWidgets(Highlighter * higl, MainSearch * search, MainWin * mainWin, MainText * mainText);
+    static void connectWidgets(MainWin * mainWin, MainSearch * search, MainText * mainText,
+                               Highlighter * higl, Bookmarks * bookmarks);
     static QJsonObject getRcValues();
     static void setRcValues(const QJsonValue& val);
     static SearchList* getInstance(bool raiseWin = true);
@@ -57,9 +59,10 @@ public:
     static void matchView(int line);
     static void extUndo();
     static void extRedo();
-    static void signalBookmarkLine(int line);
+    static void signalBookmarkLine(int line = -1);
     static void signalHighlightLine(int line);
     static void signalHighlightReconfigured();
+    static void adjustLineNums(int top_l, int bottom_l);
 
     // external interfaces
     void copyCurrentLine(bool doAdd);
@@ -99,6 +102,7 @@ private:
     ListViewAnchor&& getViewAnchor();
     void seeViewAnchor(ListViewAnchor& anchor);
     void matchViewInt(int line, int idx = -1);
+    void adjustLineNumsInt(int top_l, int bottom_l);
     void saveFile(const QString& fileName, bool lnum_only);
     void cmdSaveFileAs(bool lnum_only);
     void cmdLoadFrom(bool);
@@ -110,6 +114,7 @@ private:
     static MainSearch  * s_search;
     static MainWin     * s_mainWin;
     static MainText    * s_mainText;
+    static Bookmarks   * s_bookmarks;
 
     static SearchList * s_instance;
     static QByteArray   s_winGeometry;
@@ -118,7 +123,7 @@ private:
 
     SearchListView    * m_table = nullptr;
     SearchListModel   * m_model = nullptr;
-    SearchListDraw    * m_draw = nullptr;
+    HighlightViewDelegate * m_draw = nullptr;
     SearchListDrawBok * m_drawBok = nullptr;
     SearchListUndo    * m_undo = nullptr;
     QProgressBar      * m_hipro = nullptr;

@@ -32,6 +32,7 @@ class QTextBlock;
 class MainWin;
 class MainSearch;
 class SearchPar;
+class Bookmarks;
 
 // ----------------------------------------------------------------------------
 
@@ -59,12 +60,13 @@ class MainText : public QPlainTextEdit
     Q_OBJECT
 
 public:
-    MainText(MainWin * mainWin, MainSearch * search, QWidget * parent);
+    MainText(MainWin * mainWin, MainSearch * search, Bookmarks * bookmarks, QWidget * parent);
     void cursorJumpPushPos();
     void cursorJumpStackReset();
     void keyCmdClear();
-    bool toggleBookmark(int line);
-    bool isBookmarked(int line);
+    void toggleBookmark();
+    void jumpToNextBookmark(bool);
+    void jumpToLine(int line);
 
     QTextCursor findInDoc(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, int start_pos);
     bool findInBlocks(const SearchPar& par, int from, bool is_fwd,
@@ -103,6 +105,7 @@ private:
 private:
     MainWin     * const m_mainWin;
     MainSearch  * const m_search;
+    Bookmarks   * const m_bookmarks;
     wchar_t       last_inline_char = 0;
     int           last_inline_dir = 0;
     wchar_t       last_key_char = 0;
@@ -110,7 +113,6 @@ private:
     std::unordered_map<int,const std::function<void()>> m_keyCmdCtrl;
     std::vector<JumpPos> cur_jump_stack;
     int           cur_jump_idx = -1;
-    std::map<int,QString> m_bookmarks;
 };
 
 #endif /* _MAIN_TEXT_H */

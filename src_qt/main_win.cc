@@ -30,7 +30,6 @@
 #include <QVBoxLayout>
 #include <QPlainTextEdit>
 #include <QTextBlock>
-#include <QLineEdit>
 #include <QLabel>
 #include <QPushButton>
 #include <QCheckBox>
@@ -38,7 +37,6 @@
 #include <QFontDialog>
 #include <QRegularExpression>
 #include <QTimer>
-#include <QScrollBar>
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QFileDialog>
@@ -56,18 +54,17 @@
 #include "main_text.h"
 #include "main_search.h"
 #include "highlighter.h"
+#include "bookmarks.h"
 #include "search_list.h"
 #include "dlg_higl.h"
 #include "dlg_hist.h"
+#include "dlg_bookmarks.h"
 
 static int load_file_mode = 0;
 static int load_buf_size = 0x100000;
 static const char * myrcfile = ".trowserc.qt";
 static const char * const DEFAULT_FONT_FAM = "DejaVu Sans Mono";
 static const int DEFAULT_FONT_SZ = 9;
-
-static constexpr QRgb s_colStError(0xffff6b6b);
-static constexpr QRgb s_colStWarning(0xffffcc5d);
 
 // ----------------------------------------------------------------------------
 
@@ -175,8 +172,9 @@ MainWin::MainWin(QApplication * app)
     auto layout_top = new QVBoxLayout(central_wid);
 
     m_search = new MainSearch(this);
+    m_bookmarks = new Bookmarks(this);
 
-    m_f1_t = new MainText(this, m_search, central_wid);
+    m_f1_t = new MainText(this, m_search, m_bookmarks, central_wid);
         m_f1_t->setFont(m_fontContent);
         m_f1_t->setLineWrapMode(QPlainTextEdit::NoWrap);
         m_f1_t->setCursorWidth(2);
@@ -215,8 +213,10 @@ MainWin::MainWin(QApplication * app)
     m_stline = new StatusMsg(m_f1_t);
     m_higl = new Highlighter(m_f1_t);
     m_search->connectWidgets(m_f1_t, m_higl, f2_e, f2_hall, f2_mcase, f2_regexp);
-    SearchList::connectWidgets(m_higl, m_search, this, m_f1_t);
-    DlgHistory::connectWidgets(m_search, this, m_f1_t);
+    m_bookmarks->connectWidgets(m_f1_t);
+    SearchList::connectWidgets(this, m_search, m_f1_t, m_higl, m_bookmarks);
+    DlgBookmarks::connectWidgets(this, m_search, m_f1_t, m_higl, m_bookmarks);
+    DlgHistory::connectWidgets(this, m_search, m_f1_t);
 
     layout_top->setContentsMargins(0, 0, 0, 0);
     setCentralWidget(central_wid);
@@ -254,6 +254,7 @@ MainWin::MainWin(QApplication * app)
 MainWin::~MainWin()
 {
     delete m_search;
+    delete m_bookmarks;
     delete m_stline;
 }
 
@@ -265,6 +266,7 @@ void MainWin::populateMenus()
     act = m_menubar_ctrl->addAction("Open file...");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdFileOpen);
     act = m_menubar_ctrl->addAction("Reload current file");
+        //TODO "Continue loading STDIN..." when loading through pipe
         connect(act, &QAction::triggered, this, &MainWin::menuCmdReload);
     m_menubar_ctrl->addSeparator();
     act = m_menubar_ctrl->addAction("Discard above cursor...");
@@ -274,7 +276,7 @@ void MainWin::populateMenus()
     m_menubar_ctrl->addSeparator();
     act = m_menubar_ctrl->addAction("Toggle line wrap");
         act->setCheckable(true);
-        connect(act, &QAction::toggled, this, &MainWin::toggleLineWrap);
+        connect(act, &QAction::toggled, this, &MainWin::menuCmdToggleLineWrap);
     act = m_menubar_ctrl->addAction("Font selection...");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdSelectFont);
     m_menubar_ctrl->addSeparator();
@@ -302,14 +304,21 @@ void MainWin::populateMenus()
 
     m_menubar_mark = menuBar()->addMenu("&Bookmarks");
     act = m_menubar_mark->addAction("Toggle bookmark");
+        connect(act, &QAction::triggered, [=](){ m_f1_t->toggleBookmark(); });
     act = m_menubar_mark->addAction("List bookmarks");
+        connect(act, &QAction::triggered, [=](){ DlgBookmarks::openDialog(); });
     act = m_menubar_mark->addAction("Delete all bookmarks");
+        connect(act, &QAction::triggered, this, &MainWin::menuCmdBookmarkDeleteAll);
     m_menubar_mark->addSeparator();
     act = m_menubar_mark->addAction("Jump to prev. bookmark");
+        connect(act, &QAction::triggered, [=](){ m_f1_t->jumpToNextBookmark(false); });
     act = m_menubar_mark->addAction("Jump to next bookmark");
+        connect(act, &QAction::triggered, [=](){ m_f1_t->jumpToNextBookmark(true); });
     m_menubar_mark->addSeparator();
     act = m_menubar_mark->addAction("Read bookmarks from file...");
+        connect(act, &QAction::triggered, [=](){ m_bookmarks->readFileFrom(this); });
     act = m_menubar_mark->addAction("Save bookmarks to file...");
+        connect(act, &QAction::triggered, [=](){ m_bookmarks->saveFileAs(this); });
 
     m_menubar_help = menuBar()->addMenu("Help");
     act = m_menubar_help->addAction("About trowser...");
@@ -405,22 +414,41 @@ void MainWin::menuCmdDisplayLineNo()
  */
 void MainWin::menuCmdGotoLine(bool)
 {
-    auto doc = m_f1_t->document();
-    int max = doc->blockCount();
+    int lineCount = m_f1_t->document()->blockCount();
     bool ok = false;
 
     int line = QInputDialog::getInt(this, "Goto line number...",
                                     QString("Enter line number: (max. ")
-                                        + QString::number(max) + ")",
-                                    1, 1, doc->blockCount(), 1, &ok);
-    if (ok && (line > 0) && (line <= max))
+                                        + QString::number(lineCount) + ")",
+                                    1, 1, lineCount, 1, &ok);
+    if (ok && (line > 0) && (line <= lineCount))
     {
-        auto blk = doc->findBlockByNumber(line - 1);
-
-        auto c = m_f1_t->textCursor();
-        c.setPosition(blk.position());
-        m_f1_t->setTextCursor(c);
+        m_f1_t->jumpToLine(line - 1);
     }
+}
+
+/**
+ * This function deletes all bookmarks. It's called via the main menu.
+ * The function is intended esp. if a large number of bookmarks was imported
+ * previously from a file.
+ */
+void MainWin::menuCmdBookmarkDeleteAll(bool)
+{
+    int count = m_bookmarks->getCount();
+    if (count > 0)
+    {
+        QString msg = QString("Really delete ") + QString::number(count)
+                         + " bookmark" + ((count != 1) ? "s" : "") + "?";
+        auto answer = QMessageBox::question(this, "trowser", msg,
+                                            QMessageBox::Ok | QMessageBox::Cancel);
+        if (answer == QMessageBox::Ok)
+        {
+            m_bookmarks->removeAll();
+        }
+    }
+    else
+        QMessageBox::warning(this, "trowser",
+                             "Your bookmark list is already empty.", QMessageBox::Ok);
 }
 
 void MainWin::menuCmdSelectFont(bool)
@@ -444,7 +472,7 @@ void MainWin::keyCmdZoomFontSize(bool zoomIn)
     m_fontContent = m_f1_t->font();
 }
 
-void MainWin::toggleLineWrap(bool checked)
+void MainWin::menuCmdToggleLineWrap(bool checked)
 {
     m_f1_t->setLineWrapMode(checked ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
 }
@@ -456,17 +484,16 @@ void MainWin::toggleLineWrap(bool checked)
  */
 void MainWin::discardContent()
 {
-  // discard the current trace content
-  m_f1_t->clear();
+    // discard the complete document contents
+    m_f1_t->clear();
+    m_f1_t->setCurrentCharFormat(QTextCharFormat());
+    m_f1_t->cursorJumpStackReset();
 
-  m_search->searchReset();
+    m_search->searchReset();
 
-  //TODO array unset mark_list
-  //TODO set mark_list_modified 0
-  //TODO MarkList_Fill();
-
-  //TODO SearchList_Clear();
-  //TODO SearchList_Init();
+    m_bookmarks->removeAll();
+    m_higl->adjustLineNums(0, 0);
+    SearchList::adjustLineNums(0, 0);
 }
 
 
@@ -476,30 +503,29 @@ void MainWin::discardContent()
  */
 void MainWin::menuCmdDiscard(bool is_fwd)
 {
-    //PreemptBgTasks()
-
     auto c = m_f1_t->textCursor();
     int curLine = c.block().blockNumber();
-    int maxLine = m_f1_t->document()->blockCount();
-    int count = 0;
+    int lineCount = m_f1_t->document()->blockCount();
+    int delCount = 0;
 
     if (is_fwd)
     {
         // delete everything below the line holding the cursor
-        count = maxLine - curLine - 2;
-        if (count <= 0)
+        delCount = lineCount - curLine - 1;
+        if (delCount <= 0)
         {
             QMessageBox::information(this, "trowser", "Already at the bottom");
             return;
         }
         c.movePosition(QTextCursor::NextBlock, QTextCursor::MoveAnchor);
+        curLine = c.block().blockNumber();
         c.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
     }
     else
     {
         // delete everything above the line holding the cursor
-        count = curLine;
-        if (count <= 0)
+        delCount = curLine;
+        if (delCount <= 0)
         {
             QMessageBox::information(this, "trowser", "Already at the top");
             return;
@@ -507,13 +533,12 @@ void MainWin::menuCmdDiscard(bool is_fwd)
         c.movePosition(QTextCursor::StartOfBlock, QTextCursor::MoveAnchor);
         c.movePosition(QTextCursor::Start, QTextCursor::KeepAnchor);
     }
-    int perc = ((maxLine != 0) ? int(100.0 * count / maxLine) : 0);
-    //ResumeBgTasks()
+    int perc = ((lineCount != 0) ? int(100.0 * delCount / lineCount) : 0);
 
     // ask for confirmation, as this cannot be undone
     QString msg;
-    QTextStream(&msg) << "Please confirm removing " << count
-                      << ((count == 1) ? " line" : " lines")
+    QTextStream(&msg) << "Please confirm removing " << delCount
+                      << ((delCount == 1) ? " line" : " lines")
                       << " (" << perc << "%), as this cannot be undone.";
     if (!m_curFileName.isEmpty())
         msg += " (The file will not be modified.)";
@@ -530,17 +555,15 @@ void MainWin::menuCmdDiscard(bool is_fwd)
         // perform the removal
         c.removeSelectedText();
 
-        // re-start initial highlighting, if not complete yet
-        //TODO if tid_high_init is not None:
-        //    tk.after_cancel(tid_high_init)
-        //    tid_high_init = None
-        //    HighlightInit()
-
         m_search->searchReset();
         m_f1_t->cursorJumpStackReset();
 
-        //TODO MarkList_AdjustLineNums(1 if is_fwd else last_l, first_l if is_fwd else 0)
-        //TODO SearchList_AdjustLineNums(1 if is_fwd else last_l, first_l if is_fwd else 0)
+        int top_l = (is_fwd ? 0 : curLine);
+        int bottom_l = (is_fwd ? curLine : -1);
+
+        m_bookmarks->adjustLineNums(top_l, bottom_l);
+        m_higl->adjustLineNums(top_l, bottom_l);
+        SearchList::adjustLineNums(top_l, bottom_l);
     }
 }
 
@@ -559,28 +582,33 @@ void MainWin::menuCmdReload(bool)
     else
 #endif
     {
-        discardContent();
-        LoadFile(m_curFileName);
+        if (m_bookmarks->offerSave(this))
+        {
+            discardContent();
+            LoadFile(m_curFileName);
+        }
     }
 }
 
 
 /**
- * This function is bound to the "Load file" menu command.  The function
- * allows to specify a file from which a new trace is read. The current browser
- * contents are discarded and all bookmarks are cleared.
+ * This function is bound to the "Load file" menu command. The function asks
+ * the user to select a file which to read. The current browser contents are
+ * discarded and all bookmarks, search results etc. are cleared. Then the
+ * new content is loaded.
  */
 void MainWin::menuCmdFileOpen(bool)
 {
     // offer to save old bookmarks before discarding them below
-    //TODO Mark_OfferSave();
-
-    QString fileName = QFileDialog::getOpenFileName(this,
-                         "Open File", ".", "Trace Files (out.*);;Any (*)");
-    if (fileName != "")
+    if (m_bookmarks->offerSave(this))
     {
-        discardContent();
-        LoadFile(fileName);
+        QString fileName = QFileDialog::getOpenFileName(this,
+                             "Open File", ".", "Trace Files (out.*);;Any (*)");
+        if (fileName.isEmpty() == false)
+        {
+            discardContent();
+            LoadFile(fileName);
+        }
     }
 }
 
@@ -590,18 +618,24 @@ void MainWin::menuCmdFileOpen(bool)
  */
 void MainWin::menuCmdFileQuit(bool)
 {
-    updateRcFile();
-    //TODO Mark_OfferSave();
-
-    // FIXME connect(quitButton, clicked(), m_mainApp, &QApplication:quit, Qt::QueuedConnection);
-    m_mainApp->quit();
+    closeEvent(nullptr);
 }
 
 
 // user closed main window via "X" button
-void MainWin::closeEvent(QCloseEvent *)
+void MainWin::closeEvent(QCloseEvent * event)
 {
-    menuCmdFileQuit(true);
+    updateRcFile();
+
+    if (m_bookmarks->offerSave(this))
+    {
+        // FIXME connect(quitButton, clicked(), m_mainApp, &QApplication:quit, Qt::QueuedConnection);
+        m_mainApp->quit();
+    }
+    else if (event)
+    {
+        event->ignore();
+    }
 }
 
 
@@ -622,6 +656,10 @@ void MainWin::LoadFile(const QString& fileName)
         m_curFileName = fileName;
 
         // TODO InitContent
+        // - propagate window title change to search list & bookmark list
+
+        m_bookmarks->readFileAuto(this);
+
         // start color highlighting in the background
         m_higl->highlightInit();
     }
@@ -688,6 +726,7 @@ void MainWin::loadRcFile()
                     else if (var == "search_list")          SearchList::setRcValues(val);
                     else if (var == "dlg_highlight")        DlgHigl::setRcValues(val);
                     else if (var == "dlg_history")          DlgHistory::setRcValues(val);
+                    else if (var == "dlg_bookmarks")        DlgBookmarks::setRcValues(val);
                     else
                         fprintf(stderr, "trowser: ignoring unknown keyword in rcfile: %s\n", var.toLatin1().data());
                 }
@@ -738,14 +777,12 @@ void MainWin::updateRcFile()
     // dump highlighting patterns
     obj.insert("highlight", m_higl->getRcValues());
 
-    // dump highlight dialog options: color palette, window geometry
+    // dialog window geometry and other options
     obj.insert("dlg_highlight", DlgHigl::getRcValues());
     obj.insert("dlg_history", DlgHistory::getRcValues());
+    obj.insert("dlg_bookmarks", DlgBookmarks::getRcValues());
     obj.insert("search_list", SearchList::getRcValues());
 
-    // dialog sizes
-    //puts $rcfile [list set dlg_mark_geom $dlg_mark_geom]
-    //puts $rcfile [list set dlg_srch_geom $dlg_srch_geom]
     obj.insert("main_win_geom", QJsonValue(QString(this->saveGeometry().toHex())));
     obj.insert("main_win_state", QJsonValue(QString(this->saveState().toHex())));
 

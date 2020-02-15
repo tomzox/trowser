@@ -434,6 +434,34 @@ void Highlighter::setList(std::vector<HiglPatExport>& patList)
 #endif
 }
 
+/**
+ * This function must be called when portions of the text in the main window
+ * have been deleted to update references to text lines. Parameter meaning:
+ *
+ * @param top_l     First line which is NOT deleted, or 0 to delete nothing at top
+ * @param bottom_l  This line and all below are removed, or -1 if none
+ */
+void Highlighter::adjustLineNums(int top_l, int bottom_l)
+{
+    std::multimap<int,HiglId> newMap;
+
+    for (auto it = m_tags.begin(); it != m_tags.end(); ++it)
+    {
+        if ( (it->first >= top_l) && ((it->first < bottom_l) || (bottom_l < 0)) )
+        {
+            newMap.emplace(std::make_pair(it->first - top_l, it->second));
+        }
+    }
+    m_tags = std::move(newMap);
+
+    // re-start initial highlighting, if not complete yet
+    if (tid_high_init->isActive())
+    {
+        highlightInit();
+    }
+}
+
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 /**

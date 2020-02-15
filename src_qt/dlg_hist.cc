@@ -276,6 +276,10 @@ DlgHistory::DlgHistory()
         connect(act, &QAction::triggered, this, &DlgHistory::cmdRemove);
         central_wid->addAction(act);
     act = new QAction(central_wid);
+        act->setShortcut(QKeySequence(Qt::Key_Escape));
+        connect(act, &QAction::triggered, this, &DlgHistory::cmdClose);
+        central_wid->addAction(act);
+    act = new QAction(central_wid);
         act->setShortcut(QKeySequence(Qt::Key_Ampersand));
         connect(act, &QAction::triggered, [=](){ s_search->searchHighlightClear(); });
         central_wid->addAction(act);
@@ -596,10 +600,10 @@ void DlgHistory::openDialog() /*static*/
     }
 }
 
-void DlgHistory::connectWidgets(MainSearch * search, MainWin * mainWin, MainText * mainText) /*static*/
+void DlgHistory::connectWidgets(MainWin * mainWin, MainSearch * search, MainText * mainText) /*static*/
 {
-    s_search = search;
     s_mainWin = mainWin;
+    s_search = search;
     s_mainText = mainText;
 }
 
