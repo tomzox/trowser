@@ -26,12 +26,14 @@ class QTableView;
 class QPushButton;
 class QDialogButtonBox;
 class QAbstractButton;
-class Highlighter;
-class MainSearch;
+class QJsonObject;
+
 class MainWin;
+class MainSearch;
+class Highlighter;
+class StatusLine;
 class DlgHiglModel;
 class DlgHidlFmtDraw;
-class QJsonObject;
 
 class DlgHigl : public QMainWindow
 {
@@ -84,6 +86,7 @@ private:
     DlgHiglModel      * m_model = nullptr;
     DlgHidlFmtDraw    * m_fmtDelegate = nullptr;
 
+    StatusLine        * m_stline = nullptr;
     QDialogButtonBox  * m_cmdButs = nullptr;
     QPushButton       * m_f1_del = nullptr;
     QPushButton       * m_f1_up = nullptr;

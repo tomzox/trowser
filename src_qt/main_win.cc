@@ -55,6 +55,7 @@
 #include "main_search.h"
 #include "highlighter.h"
 #include "bookmarks.h"
+#include "status_line.h"
 #include "search_list.h"
 #include "dlg_higl.h"
 #include "dlg_hist.h"
@@ -89,77 +90,6 @@ void ATimer::reschedule(int delay)
     this->stop();
     this->setInterval(delay);
     this->start();
-}
-
-// ----------------------------------------------------------------------------
-
-StatusMsg::StatusMsg(QWidget * parent)
-{
-    m_parent = parent;
-
-    m_lab = new QLabel(parent);
-        m_lab->setFrameShape(QFrame::StyledPanel);
-        m_lab->setLineWidth(2);
-        m_lab->setAutoFillBackground(true);
-        m_lab->setMargin(5);
-        m_lab->setFocusPolicy(Qt::NoFocus);
-        m_lab->setVisible(false);
-
-    m_timStLine = new QTimer(this);
-        m_timStLine->setSingleShot(true);
-        m_timStLine->setInterval(DISPLAY_DURATION);
-        connect(m_timStLine, &QTimer::timeout, this, &StatusMsg::expireStatusMsg);
-};
-
-void StatusMsg::showStatusMsg(const QString& msg, QRgb col)
-{
-    // withdraw to force recalculation of geometry
-    m_lab->setVisible(false);
-
-    QPalette stline_pal(m_lab->palette());
-    stline_pal.setColor(QPalette::Window, col);
-
-    m_lab->setPalette(stline_pal);
-    m_lab->setText(msg);
-    m_lab->move(10, m_parent->height() - m_lab->height() - 20);
-    m_lab->setVisible(true);
-
-    m_timStLine->start();
-}
-
-void StatusMsg::showPlain(QWidget * widget, const QString& msg)
-{
-    auto pal = QApplication::palette(m_lab);
-
-    showStatusMsg(msg, pal.color(QPalette::Window).rgba());
-    m_owner = widget;
-}
-
-void StatusMsg::showWarning(QWidget * widget, const QString& msg)
-{
-    showStatusMsg(msg, s_colStWarning);
-    m_owner = widget;
-}
-
-void StatusMsg::showError(QWidget * widget, const QString& msg)
-{
-    showStatusMsg(msg, s_colStError);
-    m_owner = widget;
-}
-
-void StatusMsg::clearMessage(QWidget * widget)
-{
-    if (widget == m_owner)
-    {
-        m_lab->setVisible(false);
-        m_lab->setText("");
-    }
-}
-
-void StatusMsg::expireStatusMsg()
-{
-    m_lab->setVisible(false);
-    m_lab->setText("");
 }
 
 // ----------------------------------------------------------------------------
@@ -210,7 +140,7 @@ MainWin::MainWin(QApplication * app)
         connect(f2_regexp, &QPushButton::clicked, [=](){ m_search->searchHighlightSettingChange(); });
         f2->addWidget(f2_regexp);
 
-    m_stline = new StatusMsg(m_f1_t);
+    m_stline = new StatusLine(m_f1_t);
     m_higl = new Highlighter(m_f1_t);
     m_search->connectWidgets(m_f1_t, m_higl, f2_e, f2_hall, f2_mcase, f2_regexp);
     m_bookmarks->connectWidgets(m_f1_t);
@@ -318,7 +248,7 @@ void MainWin::populateMenus()
     act = m_menubar_mark->addAction("Read bookmarks from file...");
         connect(act, &QAction::triggered, [=](){ m_bookmarks->readFileFrom(this); });
     act = m_menubar_mark->addAction("Save bookmarks to file...");
-        connect(act, &QAction::triggered, [=](){ m_bookmarks->saveFileAs(this); });
+        connect(act, &QAction::triggered, [=](){ m_bookmarks->saveFileAs(this, false); });
 
     m_menubar_help = menuBar()->addMenu("Help");
     act = m_menubar_help->addAction("About trowser...");
@@ -403,7 +333,7 @@ void MainWin::menuCmdDisplayLineNo()
     if (max > 1)
         msg += " (" + QString::number(int(100.0 * line / max + 0.5)) + "%)";
 
-    m_stline->showPlain(this, msg);
+    m_stline->showPlain("line_query", msg);
 }
 
 /**

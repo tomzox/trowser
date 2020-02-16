@@ -40,6 +40,7 @@
 #include "main_text.h"
 #include "main_search.h"
 #include "highlighter.h"
+#include "status_line.h"
 #include "search_list.h"
 #include "dlg_hist.h"
 
@@ -444,7 +445,7 @@ void MainSearch::searchHandleNoMatch(const QString& pat, bool is_fwd)
                     + " of file"
                     + (pat.isEmpty() ? "" : ": ")
                     + pat;
-    m_mainWin->showWarning(this, msg);
+    m_mainWin->mainStatusLine()->showWarning("search", msg);
 }
 
 
@@ -506,9 +507,9 @@ void MainSearch::searchIncrement(bool is_fwd, bool is_changed)
         searchReset();
 
         if (tlb_find != "")
-            m_mainWin->showError(this, "Incomplete or invalid reg.exp.");
+            m_mainWin->mainStatusLine()->showError("search", "Incomplete or invalid reg.exp.");
         else
-            m_mainWin->clearMessage(this);
+            m_mainWin->mainStatusLine()->clearMessage("search");
     }
 }
 
@@ -533,12 +534,12 @@ void MainSearch::searchIncMatch(QTextCursor& match, const QString& pat, bool is_
         }
 
         if (is_fwd)
-            m_mainWin->showWarning(this, "No match until end of file");
+            m_mainWin->mainStatusLine()->showWarning("search", "No match until end of file");
         else
-            m_mainWin->showWarning(this, "No match until start of file");
+            m_mainWin->mainStatusLine()->showWarning("search", "No match until start of file");
     }
     else
-        m_mainWin->clearMessage(this);
+        m_mainWin->mainStatusLine()->clearMessage("search");
 
     if (tlb_hist_pos > 0)
     {
@@ -565,7 +566,7 @@ bool MainSearch::searchExprCheck(const QString& pat, bool is_re, bool display)
             {
                 QString msg = QString("Syntax error in search expression: ")
                                 + re.errorString();
-                m_mainWin->showError(this, msg);
+                m_mainWin->mainStatusLine()->showError("search", msg);
             }
             return false;
         }
@@ -611,7 +612,7 @@ int MainSearch::searchGetBase(bool is_fwd, bool is_init)
         m_mainText->centerCursor();
     }
 
-#if 0 //TODO
+#if 0 //TODO?
     // move start position for forward search after the end of the previous match
     if (is_fwd) {
         // search for tag which marks the previous match (would have been cleared if the pattern changed)
@@ -634,7 +635,17 @@ int MainSearch::searchGetBase(bool is_fwd, bool is_init)
 SearchPar MainSearch::getCurSearchParams()
 {
     searchGetParams(); // update tlb_find et.al. from widget state
-    return SearchPar(tlb_find, tlb_regexp, tlb_case);
+
+    if (!tlb_find.isEmpty())
+    {
+        return SearchPar(tlb_find, tlb_regexp, tlb_case);
+    }
+    else if (tlb_history.size() > 0)
+    {
+        return tlb_history.front();
+    }
+    else
+        return SearchPar();
 }
 
 void MainSearch::searchGetParams()
@@ -679,7 +690,7 @@ void MainSearch::searchFirst(bool is_fwd, const std::vector<SearchPar>& patList)
 
     if (matchPar != nullptr)
     {
-        m_mainWin->clearMessage(this);
+        m_mainWin->mainStatusLine()->clearMessage("search");
         searchHandleMatch(match, matchPar->m_pat, matchPar->m_opt_regexp, matchPar->m_opt_case, true);
     }
     else
@@ -716,7 +727,7 @@ bool MainSearch::searchNext(bool is_fwd)
 {
     bool found = false;
 
-    m_mainWin->clearMessage(this);
+    m_mainWin->mainStatusLine()->clearMessage("search");
     searchGetParams(); // update tlb_find et.al. from widget state
 
     if (!tlb_find.isEmpty())
@@ -736,7 +747,7 @@ bool MainSearch::searchNext(bool is_fwd)
     }
     else
     {
-        m_mainWin->showError(this, "No pattern defined for search repeat");
+        m_mainWin->mainStatusLine()->showError("search", "No pattern defined for search repeat");
     }
     return found;
 }
@@ -797,7 +808,7 @@ void MainSearch::searchReset()
         //m_mainText->centerCursor();
         tlb_inc_base = -1;
     }
-    m_mainWin->clearMessage(this);
+    m_mainWin->mainStatusLine()->clearMessage("search");
 }
 
 
@@ -813,7 +824,7 @@ void MainSearch::searchInit()
         tlb_hist_pos = -1;
         tlb_hist_prefix.clear();
 
-        m_mainWin->clearMessage(this);
+        m_mainWin->mainStatusLine()->clearMessage("search");
     }
 }
 
@@ -925,7 +936,7 @@ void MainSearch::searchReturn()
         }
         else
         {
-            m_mainWin->showError(this, "No pattern defined for search repeat");
+            m_mainWin->mainStatusLine()->showError("search", "No pattern defined for search repeat");
         }
     }
 
@@ -1217,7 +1228,7 @@ void MainSearch::searchWord(bool is_fwd)
         m_f2_e->setCursorPosition(0);
 
         searchAddHistory(tlb_find, tlb_regexp, tlb_case);
-        m_mainWin->clearMessage(this);
+        m_mainWin->mainStatusLine()->clearMessage("search");
 
         bool found = searchAtomic(tlb_find, tlb_regexp, tlb_case, is_fwd, true);
         if (!found)

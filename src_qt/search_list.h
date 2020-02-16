@@ -37,6 +37,7 @@ class MainText;
 class MainSearch;
 class Highlighter;
 class Bookmarks;
+class StatusLine;
 class SearchListView;
 class SearchListModel;
 class HighlightViewDelegate;
@@ -91,6 +92,9 @@ private:
     void cmdToggleBookmark(bool);
     void cmdUndo();
     void cmdRedo();
+    int  searchAtomicInList(const SearchPar& pat, int textPos, bool is_fwd);
+    void cmdSearchNext(bool is_fwd);
+    void cmdNewSearch(bool is_fwd);
     void bgUndoRedoLoop(bool isRedo, int origCount);
     void addMatches(int direction);
     void removeMatches(int direction);
@@ -127,6 +131,7 @@ private:
     SearchListDrawBok * m_drawBok = nullptr;
     SearchListUndo    * m_undo = nullptr;
     QProgressBar      * m_hipro = nullptr;
+    StatusLine        * m_stline = nullptr;
     QAction           * m_menActUndo = nullptr;
     QAction           * m_menActRedo = nullptr;
     QAction           * m_actShowLineDelta = nullptr;

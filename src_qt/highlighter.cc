@@ -706,7 +706,7 @@ void Highlighter::highlightYviewRedirect()
     if (m_yViewRedirected == false)
     {
         // TODO/FIXME does not work when scrolling via keyboard control
-        //  ?? reimplement virtual function scrollContentsBy of QAbstractScrollArea
+        //  possible solution: override MainText::paintEvent()
         connect(m_mainText->verticalScrollBar(), &QAbstractSlider::valueChanged, this, &Highlighter::highlightYviewCallback);
         m_yViewRedirected = true;
     }

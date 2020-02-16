@@ -30,6 +30,7 @@
 #include "main_win.h"
 #include "main_text.h"
 #include "main_search.h"
+#include "status_line.h"
 #include "bookmarks.h"
 #include "search_list.h"
 
@@ -214,7 +215,7 @@ bool MainText::keyCmdText(wchar_t chr)
 
     if (last_key_char == '\'') {
         // single quote char: jump to marker or bookmark
-        m_mainWin->clearMessage(this);
+        m_mainWin->mainStatusLine()->clearMessage("keycmd");
         if (chr == '\'') {
             cursorJumpToggle();
         }
@@ -233,13 +234,13 @@ bool MainText::keyCmdText(wchar_t chr)
         }
         else {
             QString msg = QString("Undefined key sequence: ") + last_key_char + chr;
-            m_mainWin->showError(this, msg);
+            m_mainWin->mainStatusLine()->showError("keycmd", msg);
         }
         last_key_char = 0;
         result = true;
     }
     else if ((last_key_char == 'z') || (last_key_char == 'g')) {
-        m_mainWin->clearMessage(this);
+        m_mainWin->mainStatusLine()->clearMessage("keycmd");
 
         auto it = m_keyCmdText.find(KeySet(last_key_char, chr));
         if (it != m_keyCmdText.end()) {
@@ -247,7 +248,7 @@ bool MainText::keyCmdText(wchar_t chr)
         }
         else {
             QString msg = QString("Undefined key sequence: ") + last_key_char + chr;
-            m_mainWin->showError(this, msg);
+            m_mainWin->mainStatusLine()->showError("keycmd", msg);
         }
         last_key_char = 0;
         result = true;
@@ -715,7 +716,7 @@ void MainText::cursorMoveWord(bool is_fwd, bool spc_only, bool to_end)
  */
 void MainText::searchCharInLine(wchar_t chr, int dir)
 {
-    m_mainWin->clearMessage(this);
+    m_mainWin->mainStatusLine()->clearMessage("search_inline");
 
     if (chr != 0) {
         last_inline_char = chr;
@@ -727,7 +728,7 @@ void MainText::searchCharInLine(wchar_t chr, int dir)
             dir *= last_inline_dir;
         }
         else {
-            m_mainWin->showError(this, "No previous in-line character search");
+            m_mainWin->mainStatusLine()->showError("search_inline", "No previous in-line character search");
             return;
         }
     }
@@ -744,7 +745,7 @@ void MainText::searchCharInLine(wchar_t chr, int dir)
         }
         else {
             QString msg = QString("Character \"") + QString(chr) + "\" not found until line end";
-            m_mainWin->showWarning(this, msg);
+            m_mainWin->mainStatusLine()->showWarning("search_inline", msg);
         }
     }
     else if (off > 0) {
@@ -756,7 +757,7 @@ void MainText::searchCharInLine(wchar_t chr, int dir)
         }
         else {
             QString msg = QString("Character ") + chr + " not found until line start";
-            m_mainWin->showWarning(this, msg);
+            m_mainWin->mainStatusLine()->showWarning("search_inline", msg);
         }
     }
 }
@@ -801,7 +802,7 @@ void MainText::cursorJumpToggle()
 {
     if (cur_jump_stack.size() > 0)
     {
-        m_mainWin->clearMessage(this);
+        m_mainWin->mainStatusLine()->clearMessage("keycmd");
 
         // push current position to the stack
         cursorJumpPushPos();
@@ -818,10 +819,10 @@ void MainText::cursorJumpToggle()
             SearchList::matchView(c.block().blockNumber());
         }
         else
-            m_mainWin->showWarning(this, "Already on the mark.");
+            m_mainWin->mainStatusLine()->showWarning("keycmd", "Already on the mark.");
     }
     else
-        m_mainWin->showError(this, "Jump stack is empty.");
+        m_mainWin->mainStatusLine()->showError("keycmd", "Jump stack is empty.");
 }
 
 
@@ -833,7 +834,7 @@ void MainText::cursorJumpToggle()
  */
 void MainText::cursorJumpHistory(int rel)
 {
-    m_mainWin->clearMessage(this);
+    m_mainWin->mainStatusLine()->clearMessage("keycmd");
 
     if (cur_jump_stack.size() > 0)
     {
@@ -852,11 +853,11 @@ void MainText::cursorJumpHistory(int rel)
             cur_jump_idx += rel;
 
             if (cur_jump_idx < 0) {
-                m_mainWin->showWarning(this, "Jump stack wrapped from oldest to newest.");
+                m_mainWin->mainStatusLine()->showWarning("keycmd", "Jump stack wrapped from oldest to newest.");
                 cur_jump_idx = cur_jump_stack.size() - 1;
             }
             else if (cur_jump_idx >= (long)cur_jump_stack.size()) {
-                m_mainWin->showWarning(this, "Jump stack wrapped from newest to oldest.");
+                m_mainWin->mainStatusLine()->showWarning("keycmd", "Jump stack wrapped from newest to oldest.");
                 cur_jump_idx = 0;
             }
         }
@@ -868,7 +869,7 @@ void MainText::cursorJumpHistory(int rel)
         SearchList::matchView(c.block().blockNumber());
     }
     else
-        m_mainWin->showError(this, "Jump stack is empty.");
+        m_mainWin->mainStatusLine()->showError("keycmd", "Jump stack is empty.");
 }
 
 void MainText::cursorJumpStackReset()
@@ -900,11 +901,11 @@ void MainText::jumpToNextBookmark(bool is_fwd)
     else
     {
         if (m_bookmarks->getCount() == 0)
-            m_mainWin->showError(this, "No bookmarks have been defined yet");
+            m_mainWin->mainStatusLine()->showError("keycmd", "No bookmarks have been defined yet");
         else if (is_fwd)
-            m_mainWin->showWarning(this, "No more bookmarks until end of file");
+            m_mainWin->mainStatusLine()->showWarning("keycmd", "No more bookmarks until end of file");
         else
-            m_mainWin->showWarning(this, "No more bookmarks until start of file");
+            m_mainWin->mainStatusLine()->showWarning("keycmd", "No more bookmarks until start of file");
     }
 }
 

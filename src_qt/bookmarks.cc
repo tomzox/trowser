@@ -32,6 +32,7 @@
 #include "main_win.h"
 #include "main_text.h"
 #include "main_search.h"
+#include "status_line.h"
 #include "search_list.h"
 #include "dlg_bookmarks.h"
 #include "bookmarks.h"
@@ -97,6 +98,7 @@ void Bookmarks::removeAll()
     SearchList::signalBookmarkLine();
     DlgBookmarks::signalBookmarkListChanged();
     m_isModified = false;
+    m_loadedFileName.clear();
 }
 
 /**
@@ -358,7 +360,7 @@ void Bookmarks::readFileAuto(QWidget * parent)
             readFile(parent, defaultName);
         }
         else
-            m_mainWin->showWarning(parent, "Bookmark file " + defaultName +
+            m_mainWin->mainStatusLine()->showWarning("bookmarks", "Bookmark file " + defaultName +
                                    " is older than content - not loaded");
     }
 }
@@ -416,24 +418,30 @@ QString Bookmarks::getDefaultFileName(const QString& trace_name, bool *isOlder)
  * This function is called by menu entry "Save bookmarks to file". The user is
  * asked to select a file; when done, the bookmarks are written into it.
  */
-void Bookmarks::saveFileAs(QWidget * parent)
+void Bookmarks::saveFileAs(QWidget * parent, bool usePrevious)
 {
     if (m_bookmarks.size() > 0)
     {
-        const QString& mainFileName = m_mainWin->getFilename();
-        QString defaultName(".");
+        QString fileName(m_loadedFileName);
 
-        if (mainFileName.isEmpty() == false)
-            defaultName = mainFileName + ".bok";
+        if (!usePrevious || m_loadedFileName.isEmpty())
+        {
+            const QString& mainFileName = m_mainWin->getFilename();
+            QString defaultName(".");
 
-        QString fileName = QFileDialog::getSaveFileName(parent,
-                               "Save bookmarks list to file",
-                               defaultName,
-                               "Bookmarks (*.bok);;Any (*)");
+            if (mainFileName.isEmpty() == false)
+                defaultName = mainFileName + ".bok";
+
+            fileName = QFileDialog::getSaveFileName(parent,
+                                        "Save bookmarks list to file",
+                                        defaultName,
+                                        "Bookmarks (*.bok);;Any (*)");
+        }
         if (fileName.isEmpty() == false)
         {
             if (saveFile(parent, fileName))
             {
+                m_loadedFileName = fileName;
                 m_isModified = false;
             }
         }
@@ -457,10 +465,10 @@ bool Bookmarks::offerSave(QWidget * parent)
                                             QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
         if (answer == QMessageBox::Yes)
         {
-            saveFileAs(parent);
+            saveFileAs(parent, true);
 
             if (m_isModified == false)
-                m_mainWin->showPlain(parent, "Bookmarks have been saved");
+                m_mainWin->mainStatusLine()->showPlain("bookmarks", "Bookmarks have been saved");
             else
                 result = false;
         }

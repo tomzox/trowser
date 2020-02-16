@@ -43,6 +43,7 @@ public:
     const QString& getText(int line) const;
     int getNextLine(int line, bool is_fwd) const;
     void getLineList(std::vector<int>& lineList);
+    bool validFileName() const { return !m_loadedFileName.isEmpty(); }
 
     void setText(int line, const QString& text);
     bool toggleBookmark(int line);
@@ -50,7 +51,7 @@ public:
     void removeAll();
 
     void readFileFrom(QWidget * parent);
-    void saveFileAs(QWidget * parent);
+    void saveFileAs(QWidget * parent, bool usePrevious);
     bool offerSave(QWidget * parent);
     void readFileAuto(QWidget * parent);
     void adjustLineNums(int top_l, int bottom_l);
@@ -65,6 +66,8 @@ private:
     MainText * m_mainText = nullptr;
 
     std::map<int,QString> m_bookmarks;
+
+    QString m_loadedFileName;
     bool m_isModified = false;
 };
 

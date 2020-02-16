@@ -19,13 +19,9 @@
 #define _MAIN_WIN_H
 
 #include <QMainWindow>
-#include <QPlainTextEdit>
-#include <QRegularExpression>
-#include <QTextCursor>
 #include <QTimer>
-#include <QRgb>
 
-#include <vector>
+#include <functional>
 
 class QApplication;
 class QStyle;
@@ -35,6 +31,7 @@ class QJsonObject;
 
 class MainText;
 class MainSearch;
+class StatusLine;
 class Highlighter;
 class Bookmarks;
 
@@ -58,33 +55,6 @@ public:
 
 // ----------------------------------------------------------------------------
 
-class StatusMsg : public QWidget
-{
-    Q_OBJECT
-
-public:
-    StatusMsg(QWidget * parent);
-    void showWarning(QWidget * widget, const QString& msg);
-    void showError(QWidget * widget, const QString& msg);
-    void showPlain(QWidget * widget, const QString& msg);
-    void clearMessage(QWidget * widget);
-private:
-    void showStatusMsg(const QString& msg, QRgb col);
-    void expireStatusMsg();
-
-private:
-    static const int DISPLAY_DURATION = 4000;
-    static constexpr QRgb s_colStError{0xffff6b6b};
-    static constexpr QRgb s_colStWarning{0xffffcc5d};
-
-    QWidget     * m_parent;
-    QLabel      * m_lab;
-    QTimer      * m_timStLine;
-    QWidget     * m_owner = nullptr;
-};
-
-// ----------------------------------------------------------------------------
-
 class MainWin : public QMainWindow
 {
     Q_OBJECT
@@ -99,11 +69,8 @@ public:
     const QFont& getFontContent() const { return m_fontContent; }
     const QColor& getFgColDefault() const;
     const QColor& getBgColDefault() const;
+    StatusLine * mainStatusLine() const { return m_stline; }
 
-    void showError(QWidget * widget, const QString& msg) { m_stline->showError(widget, msg); }
-    void showWarning(QWidget * widget, const QString& msg) { m_stline->showWarning(widget, msg); }
-    void showPlain(QWidget * widget, const QString& msg) { m_stline->showPlain(widget, msg); }
-    void clearMessage(QWidget * widget) { m_stline->clearMessage(widget); }
     void loadRcFile();
     void updateRcFile();
     void updateRcAfterIdle();
@@ -135,7 +102,7 @@ private:
     QMenu       * m_menubar_help = nullptr;
 
     MainText    * m_f1_t = nullptr;
-    StatusMsg   * m_stline = nullptr;
+    StatusLine  * m_stline = nullptr;
     MainSearch  * m_search = nullptr;
     Highlighter * m_higl = nullptr;
     Bookmarks   * m_bookmarks = nullptr;

@@ -16,17 +16,6 @@
  * ----------------------------------------------------------------------------
  */
 
-/*
- *  TODO:
- *  - searchNext
- *  - bg task abort dialog
- *  - performance optimization line list used by SearchListModel
- *  - frame number pattern parsing
- *  - resize rows with larger font sizes
- *  - reconfigure upon font size change via main window
- *  - adjust lists upon text discard via main window
- */
-
 #include <QWidget>
 #include <QTableView>
 #include <QAbstractItemModel>
@@ -60,6 +49,7 @@
 #include "main_win.h"
 #include "main_text.h"
 #include "main_search.h"
+#include "status_line.h"
 #include "bookmarks.h"
 #include "highlighter.h"
 #include "highl_view_dlg.h"
@@ -942,6 +932,7 @@ SearchList::SearchList()
         m_hipro->setMinimum(0);
         m_hipro->setMaximum(100);
         m_hipro->setVisible(false);
+    m_stline = new StatusLine(m_table);
 
     if (!s_winGeometry.isEmpty())
         this->restoreGeometry(s_winGeometry);
@@ -950,7 +941,7 @@ SearchList::SearchList()
 
     populateMenus();
     auto act = new QAction(central_wid);
-        act->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_G));
+        act->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_G));
         connect(act, &QAction::triggered, this, &SearchList::cmdDisplayStats);
         central_wid->addAction(act);
     act = new QAction(central_wid);
@@ -958,7 +949,7 @@ SearchList::SearchList()
         connect(act, &QAction::triggered, [=](){ searchAbort(false); });
         central_wid->addAction(act);
     act = new QAction(central_wid);
-        act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_0));
+        act->setShortcut(QKeySequence(Qt::ALT | Qt::Key_0));
         connect(act, &QAction::triggered, this, &SearchList::cmdSetDeltaColRoot);
         central_wid->addAction(act);
     act = new QAction(central_wid);
@@ -966,21 +957,33 @@ SearchList::SearchList()
         connect(act, &QAction::triggered, this, &SearchList::cmdToggleBookmark);
         central_wid->addAction(act);
 
+    act = new QAction(central_wid);
+        act->setShortcuts( QList<QKeySequence>() << QKeySequence(Qt::ALT | Qt::Key_N)
+                                                 << QKeySequence(Qt::Key_N) );
+        connect(act, &QAction::triggered, [=](){ this->cmdSearchNext(true); });
+        central_wid->addAction(act);
+    act = new QAction(central_wid);
+        act->setShortcuts( QList<QKeySequence>() << QKeySequence(Qt::ALT | Qt::Key_P)
+                                                 << QKeySequence(Qt::SHIFT | Qt::Key_N) );
+        connect(act, &QAction::triggered, [=](){ this->cmdSearchNext(false); });
+        central_wid->addAction(act);
+    act = new QAction(central_wid);
+        act->setShortcut(QKeySequence(Qt::Key_Slash));
+        connect(act, &QAction::triggered, [=](){ this->cmdNewSearch(true); });
+        central_wid->addAction(act);
+    act = new QAction(central_wid);
+        act->setShortcut(QKeySequence(Qt::Key_Question));
+        connect(act, &QAction::triggered, [=](){ this->cmdNewSearch(false); });
+        central_wid->addAction(act);
+
 #if 0
-    wt.dlg_srch_f1_l.bind("<ButtonRelease-3>", lambda e:BindCallAndBreak(lambda:SearchList_ContextMenu(e.x, e.y)))
     wt.dlg_srch_f1_l.bind("<Control-plus>", lambda e:BindCallKeyClrBreak(lambda:ChangeFontSize(1)))
     wt.dlg_srch_f1_l.bind("<Control-minus>", lambda e:BindCallKeyClrBreak(lambda:ChangeFontSize(-1)))
-    KeyCmdBind(wt.dlg_srch_f1_l, "/", lambda:SearchEnter(1, wt.dlg_srch_f1_l))
-    KeyCmdBind(wt.dlg_srch_f1_l, "?", lambda:SearchEnter(0, wt.dlg_srch_f1_l))
-    KeyCmdBind(wt.dlg_srch_f1_l, "n", lambda:SearchList_SearchNext(1))
-    KeyCmdBind(wt.dlg_srch_f1_l, "N", lambda:SearchList_SearchNext(0))
     wt.dlg_srch_f1_l.bind("<space>", lambda e:SearchList_SelectionChange(dlg_srch_sel.TextSel_GetSelection()))
     wt.dlg_srch_f1_l.bind("<Alt-Key-h>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("highlight")))
     wt.dlg_srch_f1_l.bind("<Alt-Key-f>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("show_fn")))
     wt.dlg_srch_f1_l.bind("<Alt-Key-t>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("show_tick")))
     wt.dlg_srch_f1_l.bind("<Alt-Key-d>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("tick_delta")))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-n>", lambda e:BindCallAndBreak(lambda:SearchNext(1)))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-p>", lambda e:BindCallAndBreak(lambda:SearchNext(0)))
     //TODO navigation key controls equivalent legacy "TextSel" class
 #endif
 
@@ -1273,12 +1276,12 @@ void SearchList::cmdSetDeltaColRoot(bool)
                 dlg_srch_tick_root = fn.split(" ")[0]
             }
             else
-                s_mainWin->showError(this, "Parsing did not yield a number for this line");
+                m_stline->showError("search", "Parsing did not yield a number for this line");
         }
 #endif
     }
     else
-        s_mainWin->showError(this, "Select a text line as origin for delta display");
+        m_stline->showError("search", "Select a text line as origin for delta display");
 }
 
 
@@ -1348,10 +1351,103 @@ void SearchList::cmdToggleBookmark(bool)
     else
     {
         if (sel.size() == 0)
-            s_mainWin->showError(this, "No line is selected - cannot place bookmark");
+            m_stline->showError("search", "No line is selected - cannot place bookmark");
         else
-            s_mainWin->showError(this, "More than one line is selected - no bookmark set");
+            m_stline->showError("search", "More than one line is selected - no bookmark set");
     }
+}
+
+
+/**
+ * This helper function searches for the given pattern in the document, but
+ * only within blocks that are also included in the search list. The search
+ * start at the line following the given one in the given direction.
+ */
+int SearchList::searchAtomicInList(const SearchPar& pat, int line, bool is_fwd)
+{
+    QTextBlock block = s_mainText->document()->findBlockByNumber(line);
+    int textPos = is_fwd ? (block.position() + block.length())
+                         : (block.position() - 1);
+    if (textPos >= 0)
+    {
+        while (true)
+        {
+            QTextBlock block;
+            int matchPos, matchLen;
+
+            // FIXME optimize to search only within blocks of lines that are actually in the list
+            if (s_mainText->findInBlocks(pat, textPos, is_fwd, matchPos, matchLen, &block))
+            {
+                int line = block.blockNumber();
+                int idx;
+                if (m_model->getLineIdx(line, idx))
+                    return idx;
+
+                if (is_fwd)
+                    textPos = block.position() + block.length();
+                else if (block.position() > 0)
+                    textPos = block.position() - 1;
+                else
+                    break;
+            }
+            else if (matchPos >= 0)
+                textPos = matchPos;
+            else
+                break;
+        }
+    }
+    return -1;
+}
+
+/**
+ * This function is bound to "n", "N" in the search filter dialog. The function
+ * starts a search for the last-used search pattern, but only considers matches
+ * on lines in the search list.
+ */
+void SearchList::cmdSearchNext(bool is_fwd)
+{
+    m_stline->clearMessage("search");
+
+    SearchPar par = s_search->getCurSearchParams();
+    if (!par.m_pat.isEmpty() && s_search->searchExprCheck(par.m_pat, par.m_opt_regexp, false))
+    {
+        auto midx = m_table->currentIndex();
+        if (midx.isValid())
+        {
+            int line = m_model->getLineOfIdx(midx.row());
+            int idx = searchAtomicInList(par, line, is_fwd);
+            printf("XXX idx:%d line:%d -> %d\n", midx.row(), line, idx);
+            if (idx >= 0)
+            {
+                s_mainText->cursorJumpPushPos();
+
+                m_table->selectionModel()->select(QModelIndex(), QItemSelectionModel::Clear);
+                QModelIndex midx = m_model->index(idx, 0);
+                m_table->setCurrentIndex(midx);
+            }
+            else if (is_fwd)
+                m_stline->showWarning("search", "No match until end of search result list");
+            else
+                m_stline->showWarning("search", "No match until start of search result list");
+        }
+        else
+            m_stline->showWarning("search", "Select a line in the list where to start searching");
+    }
+    else
+        m_stline->showError("search", "No (valid) pattern defined for search repeat");
+}
+
+
+/**
+ * This function is bound to "/", "?" in the search filter dialog. The function
+ * changes focus to the pattern entry field in the main window. After entering
+ * a pattern, search is started in the main window (i.e. not the search list!)
+ * and focus returns to the search list dialog.
+ */
+void SearchList::cmdNewSearch(bool is_fwd)
+{
+    s_search->searchEnter(is_fwd, this);
+    s_mainWin->activateWindow();
 }
 
 
@@ -1362,7 +1458,7 @@ void SearchList::cmdToggleBookmark(bool)
  */
 void SearchList::cmdUndo()
 {
-    s_mainWin->clearMessage(this);
+    m_stline->clearMessage("search");
 
     int origCount;
     if (m_undo->hasUndo(&origCount))
@@ -1376,7 +1472,7 @@ void SearchList::cmdUndo()
     }
     else
     {
-        s_mainWin->showError(this, "Already at oldest change in search list");
+        m_stline->showError("search", "Already at oldest change in search list");
     }
 }
 
@@ -1394,7 +1490,7 @@ void SearchList::extUndo()  /*static*/
  */
 void SearchList::cmdRedo()
 {
-    s_mainWin->clearMessage(this);
+    m_stline->clearMessage("search");
     int origCount;
     if (m_undo->hasRedo(&origCount))
     {
@@ -1407,7 +1503,7 @@ void SearchList::cmdRedo()
     }
     else
     {
-        s_mainWin->showError(this, "Already at newest change in search list");
+        m_stline->showError("search", "Already at newest change in search list");
     }
 }
 
@@ -1706,7 +1802,6 @@ void SearchList::searchProgress(int percent)
     }
 }
 
-
 /**
  * This helper function is called before modifications of the search result
  * list by the various background tasks to determine a line which can serve
@@ -1908,7 +2003,13 @@ void SearchList::matchViewInt(int line, int idx)
 
         // move selection onto the line; clear selection if line is not in the list
         if (m_model->isIdxValid(line, idx))
-            m_table->selectionModel()->select(midx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        {
+            m_table->selectionModel()->select(QModelIndex(), QItemSelectionModel::Clear);
+            m_ignoreSelCb = idx; // repeat due to callback caused by clearing selection
+
+            QModelIndex midx = m_model->index(idx, 0);
+            m_table->setCurrentIndex(midx);
+        }
         else
             m_table->selectionModel()->select(midx, QItemSelectionModel::Clear);
     }
@@ -2199,7 +2300,7 @@ void SearchList::cmdLoadFrom(bool)
                     seeViewAnchor(anchor);
 
                     QString msg = QString("Inserted ") + QString::number(line_list.size()) + " lines.";
-                    s_mainWin->showPlain(this, msg);
+                    m_stline->showPlain("file", msg);
                 }
                 else
                 {
@@ -2229,7 +2330,7 @@ void SearchList::cmdDisplayStats(bool)
     {
         msg = QString::number(m_model->lineCount()) + " lines in the search list";
     }
-    s_mainWin->showPlain(this, msg);
+    m_stline->showPlain("file", msg);
 }
 
 // ----------------------------------------------------------------------------

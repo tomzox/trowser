@@ -44,6 +44,7 @@
 #include "main_win.h"
 #include "main_text.h"
 #include "main_search.h"
+#include "status_line.h"
 #include "highlighter.h"
 #include "search_list.h"
 #include "dlg_higl.h"
@@ -453,6 +454,8 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
         connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &DlgHigl::selectionChanged);
         layout_top->addWidget(m_table);
 
+    m_stline = new StatusLine(m_table);
+
     m_cmdButs = new QDialogButtonBox(QDialogButtonBox::Cancel |
                                      QDialogButtonBox::Apply |
                                      QDialogButtonBox::Ok,
@@ -741,7 +744,7 @@ void DlgHigl::cmdRemove(bool)
         m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(true);
     }
     else  // should never occur as button (incl. shortcut) gets disabled
-        m_mainWin->showError(this, "No pattern is selected in the list");
+        m_stline->showError("search", "No pattern is selected in the list");
 }
 
 
@@ -810,7 +813,7 @@ void DlgHigl::cmdSearch(bool is_fwd)
 
     if (sel->hasSelection())
     {
-        m_mainWin->clearMessage(this);
+        m_stline->clearMessage("search");
 
         std::vector<SearchPar> patList;
         for (auto& row : sel->selectedRows())
@@ -820,7 +823,7 @@ void DlgHigl::cmdSearch(bool is_fwd)
         m_search->searchFirst(is_fwd, patList);
     }
     else  // should never occur as button (incl. shortcut) gets disabled
-        m_mainWin->showError(this, "No pattern is selected in the list");
+        m_stline->showError("search", "No pattern is selected in the list");
 }
 
 /**
@@ -834,7 +837,7 @@ void DlgHigl::cmdSearchList(int direction)
 
     if (sel->hasSelection())
     {
-        m_mainWin->clearMessage(this);
+        m_stline->clearMessage("search");
 
         std::vector<SearchPar> patList;
         for (auto& row : sel->selectedRows())
@@ -844,7 +847,7 @@ void DlgHigl::cmdSearchList(int direction)
         SearchList::getInstance(false)->searchMatches(true, direction, patList);
     }
     else  // should never occur as button (incl. shortcut) gets disabled
-        m_mainWin->showError(this, "No pattern is selected in the list");
+        m_stline->showError("search", "No pattern is selected in the list");
 }
 
 /**

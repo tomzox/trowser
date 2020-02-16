@@ -31,17 +31,6 @@
  * Also the list can be save to or read from a file.
  */
 
-/*
- *  TODO:
- *  - mark bookmarked lines in main window via some char format
- *
- *  Optional enhancements:
- *  - undo/redo for line list
- *    (would require cleaning up model wrt. "refresh";
- *    or implement undo within bookmarks class itself)
- *  - adding/removing bookmarks via text search
- */
-
 #include <QWidget>
 #include <QApplication>
 #include <QTableView>
@@ -65,6 +54,7 @@
 #include "main_win.h"
 #include "main_text.h"
 #include "main_search.h"
+#include "status_line.h"
 #include "search_list.h"
 #include "bookmarks.h"
 #include "highlighter.h"
@@ -339,15 +329,23 @@ DlgBookmarks::DlgBookmarks()
         connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &DlgBookmarks::selectionChanged);
         layout_top->addWidget(m_table);
 
+    m_stline = new StatusLine(m_table);
+
     m_cmdButs = new QDialogButtonBox(QDialogButtonBox::Close, Qt::Horizontal, central_wid);
         connect(m_cmdButs, &QDialogButtonBox::clicked, this, &DlgBookmarks::cmdButton);
-    auto m_cmdButLoad = m_cmdButs->addButton("Load...", QDialogButtonBox::ActionRole);
-        connect(m_cmdButLoad, &QPushButton::clicked, [=](){ s_bookmarks->readFileFrom(this); });
-    auto m_cmdButSave = m_cmdButs->addButton("Save...", QDialogButtonBox::ActionRole);
-        connect(m_cmdButSave, &QPushButton::clicked, [=](){ s_bookmarks->saveFileAs(this); });
+    auto fileMenu = new QMenu("File actions", this);
+        connect(fileMenu, &QMenu::aboutToShow, [=](){ m_saveMenuAct->setEnabled(s_bookmarks->validFileName()); });
+    m_saveMenuAct = fileMenu->addAction("Save");
+        connect(m_saveMenuAct, &QAction::triggered, [=](){ s_bookmarks->saveFileAs(this, true); });
+    auto act = fileMenu->addAction("Save as...");
+        connect(act, &QAction::triggered, [=](){ s_bookmarks->saveFileAs(this, false); });
+    act = fileMenu->addAction("Load...");
+        connect(act, &QAction::triggered, [=](){ s_bookmarks->readFileFrom(this); });
+    auto m_cmdButFile = m_cmdButs->addButton("File...", QDialogButtonBox::ActionRole);
+        m_cmdButFile->setMenu(fileMenu);
     layout_top->addWidget(m_cmdButs);
 
-    auto act = new QAction(central_wid);
+    act = new QAction(central_wid);
         act->setShortcut(QKeySequence(Qt::Key_Delete));
         connect(act, &QAction::triggered, this, &DlgBookmarks::cmdRemove);
         central_wid->addAction(act);
@@ -583,6 +581,8 @@ void DlgBookmarks::cmdRemove(bool)
     auto sel = m_table->selectionModel()->selectedRows();
     if (sel.size() != 0)
     {
+        m_stline->clearMessage("bookmarks");
+
         std::vector<int> lineList;
         lineList.reserve(sel.size());
 
@@ -593,7 +593,7 @@ void DlgBookmarks::cmdRemove(bool)
         s_bookmarks->removeLines(lineList);
     }
     else  // should never occur as button (incl. shortcut) gets disabled
-        s_mainWin->showError(this, "No bookmarks selected for removal");
+        m_stline->showError("bookmarks", "No bookmarks selected for removal");
 }
 
 // ----------------------------------------------------------------------------

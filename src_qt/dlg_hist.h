@@ -34,6 +34,7 @@ class QJsonObject;
 class MainSearch;
 class MainText;
 class MainWin;
+class StatusLine;
 class DlgHistoryView;
 class DlgHistoryModel;
 
@@ -78,6 +79,7 @@ private:
     DlgHistoryView    * m_table = nullptr;
     DlgHistoryModel   * m_model = nullptr;
 
+    StatusLine        * m_stline = nullptr;
     QDialogButtonBox  * m_cmdButs = nullptr;
     QPushButton       * m_f2_bn = nullptr;
     QPushButton       * m_f2_bp = nullptr;

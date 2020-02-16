@@ -28,6 +28,7 @@ class QTextCursor;
 class QDialogButtonBox;
 class QPushButton;
 class QAbstractButton;
+class QAction;
 class QModelIndex;
 class QJsonObject;
 
@@ -36,6 +37,7 @@ class MainSearch;
 class MainWin;
 class Bookmarks;
 class Highlighter;
+class StatusLine;
 class DlgBookmarkView;
 class DlgBookmarkModel;
 class HighlightViewDelegate;
@@ -88,7 +90,9 @@ private:
     DlgBookmarkModel  * m_model = nullptr;
     HighlightViewDelegate * m_draw = nullptr;
 
+    StatusLine        * m_stline = nullptr;
     QDialogButtonBox  * m_cmdButs = nullptr;
+    QAction           * m_saveMenuAct = nullptr;
     QPushButton       * m_f2_bn = nullptr;
     QPushButton       * m_f2_bp = nullptr;
     QPushButton       * m_f2_ball = nullptr;
