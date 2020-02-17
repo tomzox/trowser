@@ -19,7 +19,6 @@
 #define _MAIN_WIN_H
 
 #include <QMainWindow>
-#include <QTimer>
 
 #include <functional>
 
@@ -27,6 +26,7 @@ class QApplication;
 class QStyle;
 class QMenu;
 class QLabel;
+class QTimer;
 class QJsonObject;
 
 class MainText;
@@ -42,16 +42,6 @@ class Bookmarks;
 #define condLikely(x)       (x)
 #define condUnlikely(x)     (x)
 #endif
-
-// ----------------------------------------------------------------------------
-
-class ATimer : public QTimer
-{
-public:
-    ATimer(QWidget * parent = nullptr);
-    void after(int delay, const std::function<void()>& callback);
-    void reschedule(int delay);
-};
 
 // ----------------------------------------------------------------------------
 

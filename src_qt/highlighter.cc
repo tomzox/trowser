@@ -32,6 +32,7 @@
 #include "main_win.h"
 #include "main_text.h"
 #include "main_search.h"
+#include "bg_task.h"
 #include "highlighter.h"
 #include "search_list.h"
 
@@ -57,8 +58,8 @@ Highlighter::Highlighter(MainText * textWid)
         m_hipro->setMaximum(100);
         m_hipro->setVisible(false);
 
-    tid_high_init = new ATimer(m_mainText);
-    tid_search_hall = new ATimer(m_mainText);
+    tid_high_init = new BgTask(m_mainText, BG_PRIO_HIGHLIGHT_INIT);
+    tid_search_hall = new BgTask(m_mainText, BG_PRIO_HIGHLIGHT_SEARCH);
 }
 
 // mark the matching portion of a line of text
@@ -415,8 +416,12 @@ void Highlighter::setList(std::vector<HiglPatExport>& patList)
     {
         w.m_id = addPattern(w.m_srch, w.m_fmtSpec, w.m_id);
     }
+
     tid_high_init->stop();
     highlightInit();
+    // FIXME changing only a single pattern (note: redo foreach where m_id > thresh)
+    //HighlightAll(w[0], w[4], opt)
+
 
     SearchList::signalHighlightReconfigured();
 #if 0 //TODO
@@ -426,9 +431,6 @@ void Highlighter::setList(std::vector<HiglPatExport>& patList)
     //TODO MarkList_CreateHighlightTags()
 
     //TODO UpdateRcAfterIdle()
-
-    // changing a single pattern
-    HighlightAll(w[0], w[4], opt)
 
     searchHighlightClear()
 #endif
@@ -484,7 +486,7 @@ void Highlighter::highlightInit()
         m_mainText->viewport()->setCursor(Qt::BusyCursor);
 
         // trigger highlighting for the 1st pattern in the background
-        tid_high_init->after(50, [=](){ highlightInitBg(0); });
+        tid_high_init->start([=](){ highlightInitBg(0, 0); });
 
         // apply highlighting on the text in the visible area (this is quick)
         // use the yview callback to redo highlighting in case the user scrolls
@@ -503,25 +505,10 @@ void Highlighter::highlightInit()
  * the respective highlighting. The loop is broken up by installing each
  * new iteration as an idle event (and limiting each step to 100ms)
  */
-void Highlighter::highlightInitBg(int pat_idx, int line, int loop_cnt)
+void Highlighter::highlightInitBg(int pat_idx, int line)
 {
-    if (   block_bg_tasks
-        //TODO || tid_search_inc.isActive()
-        || tid_search_hall->isActive())
-        //TODO || tid_search_list.isActive())
+    if ((size_t)pat_idx < m_patList.size())
     {
-        // background tasks are suspended - re-schedule with timer
-        tid_high_init->after(100, [=](){ highlightInitBg(pat_idx, line, 0); });
-    }
-    else if (loop_cnt > 10)
-    {
-        // insert a small timer delay to allow for idle-driven interactive tasks (e.g. selections)
-        tid_high_init->after(10, [=](){ highlightInitBg(pat_idx, line, 0); });
-    }
-    else if ((size_t)pat_idx < m_patList.size())
-    {
-        loop_cnt += 1;
-
         // here we do the actual work:
         // apply the tag to all matching lines of text
         line = highlightLines(m_patList[pat_idx], line);
@@ -529,13 +516,13 @@ void Highlighter::highlightInitBg(int pat_idx, int line, int loop_cnt)
         if (line >= 0)
         {
             // not done yet - reschedule
-            tid_high_init->after(0, [=](){ highlightInitBg(pat_idx, line, loop_cnt); });
+            tid_high_init->start([=](){ highlightInitBg(pat_idx, line); });
         }
         else
         {
             // trigger next tag
             pat_idx += 1;
-            tid_high_init->after(0, [=](){ highlightInitBg(pat_idx, 0, loop_cnt); });
+            tid_high_init->start([=](){ highlightInitBg(pat_idx, 0); });
 
             // update the progress bar
             m_hipro->setValue(100 * pat_idx / m_patList.size());
@@ -545,7 +532,6 @@ void Highlighter::highlightInitBg(int pat_idx, int line, int loop_cnt)
     {
         m_hipro->setVisible(false);
         m_mainText->viewport()->setCursor(Qt::ArrowCursor);
-        tid_high_init->stop();
     }
 }
 
@@ -602,31 +588,16 @@ int Highlighter::highlightLines(const HiglPat& pat, int line)
  * for single tags (e.g. modified highlight patterns or colors; currently not used
  * for search highlighting because a separate "cancel ID" is required.)
  */
-void Highlighter::highlightAll(const HiglPat& pat, int line, int loop_cnt)
+void Highlighter::highlightAll(const HiglPat& pat, int line)
 {
-    if (block_bg_tasks)
+    line = highlightLines(pat, line);
+    if (line >= 0)
     {
-        // background tasks are suspended - re-schedule with timer
-        tid_high_init->after(100, [=](){ highlightAll(pat, line, 0); });
-    }
-    else if (loop_cnt > 10)
-    {
-        // insert a small timer delay to allow for idle-driven interactive tasks (e.g. selections)
-        tid_high_init->after(10, [=](){ highlightAll(pat, line, 0); });
+        tid_high_init->start([=](){ highlightAll(pat, line); });
     }
     else
     {
-        line = highlightLines(pat, line);
-        if (line >= 0)
-        {
-            loop_cnt += 1;
-            tid_high_init->after(0, [=](){ highlightAll(pat, line, loop_cnt); });
-        }
-        else
-        {
-            m_mainText->viewport()->setCursor(Qt::ArrowCursor);
-            tid_high_init->stop();
-        }
+        m_mainText->viewport()->setCursor(Qt::ArrowCursor);
     }
 }
 
@@ -688,7 +659,7 @@ void Highlighter::highlightYviewCallback(int)
     //}
 
     // automatically remove the redirect if no longer needed
-    if (!tid_high_init->isActive() /*&& !tid_search_hall->isActive()*/)
+    if (!tid_high_init->isActive() && !tid_search_hall->isActive())
     {
         disconnect(m_mainText->verticalScrollBar(), &QAbstractSlider::valueChanged, this, &Highlighter::highlightYviewCallback);
         m_yViewRedirected = false;
@@ -760,7 +731,7 @@ void Highlighter::searchHighlightUpdate(const QString& pat, bool opt_regexp, boo
 
             // implicitly kill background highlight process for obsolete pattern
             // start highlighting in the background
-            tid_search_hall->after(100, [=](){ searchHighlightAll(m_hallPat); });
+            tid_search_hall->start([=](){ searchHighlightAll(m_hallPat, 0); });
         }
 
         // apply highlighting on the text in the visible area (this is quick)
@@ -777,7 +748,7 @@ void Highlighter::searchHighlightUpdate(const QString& pat, bool opt_regexp, boo
  * This helper function calls the global search highlight function until
  * highlighting is complete.
  */
-void Highlighter::searchHighlightAll(const HiglPat& pat, int line, int loop_cnt)
+void Highlighter::searchHighlightAll(const HiglPat& pat, int line)
 {
     // FIXME this is a work-around because highlightYviewRedirect does not work
     if (m_hallYview != m_mainText->verticalScrollBar()->value())
@@ -785,29 +756,16 @@ void Highlighter::searchHighlightAll(const HiglPat& pat, int line, int loop_cnt)
         m_hallYview = m_mainText->verticalScrollBar()->value();
         highlightVisible(pat);
     }
-    if (block_bg_tasks)
+
+    line = highlightLines(pat, line);
+    if (line >= 0)
     {
-        // background tasks are suspended - re-schedule with timer
-        tid_search_hall->after(100, [=](){ searchHighlightAll(pat, line, 0); });
-    }
-    else if (loop_cnt > 10)
-    {
-        // insert a small timer delay to allow for idle-driven interactive tasks (e.g. selections)
-        tid_search_hall->after(10, [=](){ searchHighlightAll(pat, line, 0); });
+        tid_search_hall->start([=](){ searchHighlightAll(pat, line); });
     }
     else
     {
-        line = highlightLines(pat, line);
-        if (line >= 0)
-        {
-            loop_cnt += 1;
-            tid_search_hall->after(0, [=](){ searchHighlightAll(pat, line, loop_cnt); });
-        }
-        else
-        {
-            m_mainText->viewport()->setCursor(Qt::ArrowCursor);
-            m_hallPatComplete = true;
-        }
+        m_mainText->viewport()->setCursor(Qt::ArrowCursor);
+        m_hallPatComplete = true;
     }
 }
 

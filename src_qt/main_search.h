@@ -26,7 +26,6 @@
 #include <vector>
 #include <set>
 
-
 class QCheckBox;
 class QProgressBar;
 class QJsonObject;
@@ -35,6 +34,7 @@ class MainWin;
 class MainText;
 class MainSearch;
 class Highlighter;
+class BgTask;
 
 // ----------------------------------------------------------------------------
 
@@ -145,7 +145,7 @@ private:
     QCheckBox   * m_f2_mcase;
     QCheckBox   * m_f2_regexp;
 
-    QTimer      * m_timSearchInc;
+    BgTask      * m_timSearchInc;
     QWidget     * tlb_last_wid = nullptr;
     bool          tlb_last_dir = true;
     QString       tlb_find;

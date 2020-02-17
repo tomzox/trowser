@@ -33,9 +33,9 @@ OBJECTS_DIR = build
 #MOC_DIR = build
 
 # Input
-HEADERS += main_win.h main_text.h main_search.h \
+HEADERS += main_win.h main_text.h main_search.h bg_task.h \
            highlighter.h bookmarks.h status_line.h search_list.h \
            highl_view_dlg.h dlg_higl.h dlg_hist.h dlg_bookmarks.h
-SOURCES += main_win.cc main_text.cc main_search.cc \
+SOURCES += main_win.cc main_text.cc main_search.cc bg_task.cc \
            highlighter.cc bookmarks.cc status_line.cc search_list.cc \
            highl_view_dlg.cc dlg_higl.cc dlg_hist.cc dlg_bookmarks.cc

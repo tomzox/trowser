@@ -42,6 +42,7 @@
 #include "highlighter.h"
 #include "status_line.h"
 #include "search_list.h"
+#include "bg_task.h"
 #include "dlg_hist.h"
 
 // ----------------------------------------------------------------------------
@@ -142,8 +143,7 @@ MainSearch::MainSearch(MainWin * mainWin)
     : QWidget(mainWin)
     , m_mainWin(mainWin)
 {
-    m_timSearchInc = new QTimer(this);
-    m_timSearchInc->setSingleShot(true);
+    m_timSearchInc = new BgTask(this, BG_PRIO_SEARCH_INC);
 
     tlb_history.reserve(TLB_HIST_MAXLEN + 1);
 }
@@ -347,10 +347,7 @@ void MainSearch::searchBackground(const SearchPar& par, bool is_fwd, int startPo
         else if (matchPos >= 0)
         {
             // no match found in this portion -> reschedule next iteration
-            m_timSearchInc->disconnect();
-            connect(m_timSearchInc, &QTimer::timeout, [=](){ MainSearch::searchBackground(par, is_fwd, matchPos, is_changed, callback); });
-            m_timSearchInc->setInterval(0);
-            m_timSearchInc->start();
+            m_timSearchInc->start([=](){ searchBackground(par, is_fwd, matchPos, is_changed, callback); });
         }
         else
             isDone = true;
@@ -458,12 +455,8 @@ void MainSearch::searchVarTrace(const QString &)
 {
     if (m_f2_e->hasFocus())
     {
-        m_timSearchInc->stop();
-
-        m_timSearchInc->disconnect();
-        connect(m_timSearchInc, &QTimer::timeout, [=, is_fwd=tlb_last_dir](){ MainSearch::searchIncrement(is_fwd, true); });
-        m_timSearchInc->setInterval(SEARCH_INC_DELAY);
-        m_timSearchInc->start();
+        //TODO m_timSearchInc->setInterval(SEARCH_INC_DELAY);
+        m_timSearchInc->start([=, is_fwd=tlb_last_dir](){ searchIncrement(is_fwd, true); });
     }
 }
 

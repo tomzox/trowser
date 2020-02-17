@@ -50,6 +50,7 @@
 #include "main_text.h"
 #include "main_search.h"
 #include "status_line.h"
+#include "bg_task.h"
 #include "bookmarks.h"
 #include "highlighter.h"
 #include "highl_view_dlg.h"
@@ -227,15 +228,29 @@ void SearchListModel::insertLinePreSorted(const std::vector<int>& line_list,
 
 void SearchListModel::insertLines(const std::vector<int>& line_list)
 {
-    for (auto it = line_list.begin(); it != line_list.end(); ++it)
+    int prev = -1;
+    for (size_t line_idx = 0; line_idx < line_list.size(); ++line_idx)
     {
-        // TODO optimize by removing consecutive indices in one call
-        int idx;
-        if (getLineIdx(*it, idx) == false)
+        // assert input list is sorted in ascending order
+        Q_ASSERT(line_list[line_idx] > prev); prev = line_list[line_idx];
+
+        int row;
+        if (getLineIdx(line_list[line_idx], row) == false)
         {
-            // insert line into display
-            this->beginInsertRows(QModelIndex(), idx, idx);
-            dlg_srch_lines.insert(dlg_srch_lines.begin() + idx, *it);
+            // detect line values mapped to consecutive index values
+            size_t count = 1;
+            if (size_t(row) < dlg_srch_lines.size())
+                while (   (line_idx + count < line_list.size())
+                       && (dlg_srch_lines[row] > line_list[line_idx + count]))
+                    ++count;
+            else
+                count = line_list.size() - line_idx;
+
+            // insert lines into display & list
+            this->beginInsertRows(QModelIndex(), row, row + count - 1);
+            dlg_srch_lines.insert(dlg_srch_lines.begin() + row,
+                                  line_list.begin() + line_idx,
+                                  line_list.begin() + line_idx + count);
             this->endInsertRows();
         }
     }
@@ -265,15 +280,25 @@ void SearchListModel::removeLinePreSorted(const std::vector<int>& idx_list)
 
 void SearchListModel::removeLines(const std::vector<int>& line_list)
 {
-    for (auto it = line_list.begin(); it != line_list.end(); ++it)
+    int prev = -1;
+    for (size_t line_idx = 0; line_idx < line_list.size(); ++line_idx)
     {
-        // TODO optimize by removing consecutive indices in one call
-        int idx;
-        if (getLineIdx(*it, idx))
+        // assert input list is sorted in ascending order
+        Q_ASSERT(line_list[line_idx] > prev); prev = line_list[line_idx];
+
+        int row;
+        if (getLineIdx(line_list[line_idx], row))
         {
-            // remove line from display
-            this->beginRemoveRows(QModelIndex(), idx, idx);
-            dlg_srch_lines.erase(dlg_srch_lines.begin() + idx);
+            // detect line values mapped to consecutive index values
+            size_t count = 1;
+            while (   (line_idx + count < line_list.size())
+                   && (dlg_srch_lines[row + count] == line_list[line_idx + count]))
+                ++count;
+
+            // remove lines from display & list
+            this->beginRemoveRows(QModelIndex(), row, row + count - 1);
+            dlg_srch_lines.erase(dlg_srch_lines.begin() + row,
+                                 dlg_srch_lines.begin() + row + count);
             this->endRemoveRows();
         }
     }
@@ -434,6 +459,7 @@ public:
                         std::vector<int>::const_iterator lines_begin,
                         std::vector<int>::const_iterator lines_end);
     void finalizeBgChange(bool forUndo, bool doAdd);
+    void abortBgChange();
 
     void prepareUndoRedo(bool isRedo);
     bool popUndoRedo(bool isRedo, bool *retDoAdd, std::vector<int>& retLines, size_t maxCount);
@@ -531,6 +557,15 @@ void SearchListUndo::finalizeBgChange(bool forUndo, bool doAdd)
     SEARCH_LIST_UNDO_INVARIANT();
 }
 
+void SearchListUndo::abortBgChange()
+{
+    Q_ASSERT(m_bgDstIdx >= 0);
+
+    m_bgDstIdx = -1;
+
+    SEARCH_LIST_UNDO_INVARIANT();
+}
+
 void SearchListUndo::prepareUndoRedo(bool isRedo)
 {
     std::vector<UndoRedoItem>& src_list = isRedo ? dlg_srch_redo : dlg_srch_undo;
@@ -571,12 +606,23 @@ bool SearchListUndo::popUndoRedo(bool isRedo, bool *retDoAdd, std::vector<int>& 
 
         if (src_op.lines.size() > maxCount)
         {
+#if 0
+            // NOTE could be more efficient by removing chunks from the end of the list
+            // however that would require sorting the destination list upon "finalizing"
+
+            dst_op.lines.insert(dst_op.lines.end(), src_op.lines.begin() + start,
+                                                    src_op.lines.end());
+            retLines.insert(retLines.end(), src_op.lines.begin() + start,
+                                            src_op.lines.end());
+            src_op.lines.erase(src_op.lines.begin() + start, src_op.lines.end());
+#else
             dst_op.lines.insert(dst_op.lines.end(), src_op.lines.begin(),
                                                     src_op.lines.begin() + maxCount);
             retLines.insert(retLines.end(), src_op.lines.begin(),
                                             src_op.lines.begin() + maxCount);
             src_op.lines.erase(src_op.lines.begin(),
                                src_op.lines.begin() + maxCount);
+#endif
         }
         else
         {
@@ -674,10 +720,12 @@ void SearchListUndo::invariant() const
 
     for (auto it = dlg_srch_undo.cbegin(); it != dlg_srch_undo.cend(); ++it)
     {
+        int prev = -1;
         if (it->isAdded)
         {
             for (int line : it->lines)
             {
+                Q_ASSERT(line > prev); prev = line;
                 Q_ASSERT(lines.find(line) == lines.end());
                 lines.insert(line);
             }
@@ -686,6 +734,7 @@ void SearchListUndo::invariant() const
         {
             for (int line : it->lines)
             {
+                Q_ASSERT(line > prev); prev = line;
                 auto xit = lines.find(line);
                 if (xit != lines.end())
                     lines.erase(xit);
@@ -708,10 +757,12 @@ void SearchListUndo::invariant() const
 
     for (auto it = dlg_srch_redo.crbegin(); it != dlg_srch_redo.crend(); ++it)
     {
+        int prev = -1;
         if (it->isAdded)
         {
             for (int line : it->lines)
             {
+                Q_ASSERT(line > prev); prev = line;
                 Q_ASSERT(lines.find(line) == lines.end());
                 lines.insert(line);
             }
@@ -720,6 +771,7 @@ void SearchListUndo::invariant() const
         {
             for (int line : it->lines)
             {
+                Q_ASSERT(line > prev); prev = line;
                 auto xit = lines.find(line);
                 if (xit != lines.end())
                     lines.erase(xit);
@@ -893,7 +945,7 @@ SearchList::SearchList()
     auto layout_top = new QVBoxLayout(central_wid);
         layout_top->setContentsMargins(0, 0, 0, 0);
 
-    tid_search_list = new ATimer(central_wid);
+    tid_search_list = new BgTask(central_wid, BG_PRIO_SEARCH_LIST);
 
     m_model = new SearchListModel(s_mainText);
     m_draw = new HighlightViewDelegate(m_model, s_higl,
@@ -945,10 +997,6 @@ SearchList::SearchList()
         connect(act, &QAction::triggered, this, &SearchList::cmdDisplayStats);
         central_wid->addAction(act);
     act = new QAction(central_wid);
-        act->setShortcut(QKeySequence(Qt::Key_Escape));
-        connect(act, &QAction::triggered, [=](){ searchAbort(false); });
-        central_wid->addAction(act);
-    act = new QAction(central_wid);
         act->setShortcut(QKeySequence(Qt::ALT | Qt::Key_0));
         connect(act, &QAction::triggered, this, &SearchList::cmdSetDeltaColRoot);
         central_wid->addAction(act);
@@ -993,7 +1041,7 @@ SearchList::SearchList()
 
 SearchList::~SearchList()
 {
-    //TODO searchAbort(false);
+    searchAbort(false);
     delete m_model;
     delete m_draw;
     delete m_drawBok;
@@ -1046,15 +1094,18 @@ void SearchList::populateMenus()
     m_menActRedo = men->addAction("Redo");
         m_menActRedo->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_R));
         connect(m_menActRedo, &QAction::triggered, this, &SearchList::cmdRedo);
+    m_menActAbort = men->addAction("Abort ongoing operation");
+        m_menActAbort->setShortcut(QKeySequence(Qt::Key_Escape));
+        connect(m_menActAbort, &QAction::triggered, [=](){ searchAbort(false); });
     men->addSeparator();
     act = men->addAction("Import lines selected in main window");
         connect(act, &QAction::triggered, [=](){ copyCurrentLine(true); });
     act = men->addAction("Remove lines selected in main window");
         connect(act, &QAction::triggered, [=](){ copyCurrentLine(false); });
     men->addSeparator();
-    act = men->addAction("Remove selected lines");
-        act->setShortcut(QKeySequence(Qt::Key_Delete));
-        connect(act, &QAction::triggered, this, &SearchList::cmdRemoveSelection);
+    m_menActRemove = men->addAction("Remove selected lines");
+        m_menActRemove->setShortcut(QKeySequence(Qt::Key_Delete));
+        connect(m_menActRemove, &QAction::triggered, this, &SearchList::cmdRemoveSelection);
     men->addSeparator();
     act = men->addAction("Add main window search matches");
         connect(act, &QAction::triggered, [=](){ addMatches(0); });
@@ -1140,7 +1191,7 @@ void SearchList::editMenuAboutToShow()
         m_menActUndo->setEnabled(false);
     }
 
-    // code is copy/paste from above except for "Redo" instead of "Undo"
+    // following is copy/paste from above except for "Redo" instead of "Undo"
     if (m_undo->hasRedo())
     {
         std::pair<bool,int> info = m_undo->describeFirstOp(false);
@@ -1155,6 +1206,9 @@ void SearchList::editMenuAboutToShow()
         m_menActRedo->setText("Redo");
         m_menActRedo->setEnabled(false);
     }
+
+    m_menActAbort->setEnabled(tid_search_list->isActive());
+    m_menActRemove->setEnabled(m_table->selectionModel()->hasSelection());
 }
 
 
@@ -1416,7 +1470,6 @@ void SearchList::cmdSearchNext(bool is_fwd)
         {
             int line = m_model->getLineOfIdx(midx.row());
             int idx = searchAtomicInList(par, line, is_fwd);
-            printf("XXX idx:%d line:%d -> %d\n", midx.row(), line, idx);
             if (idx >= 0)
             {
                 s_mainText->cursorJumpPushPos();
@@ -1467,7 +1520,7 @@ void SearchList::cmdUndo()
         {
             bool isRedo = false;
             m_undo->prepareUndoRedo(isRedo);
-            tid_search_list->after(10, [=](){ bgUndoRedoLoop(isRedo, origCount); });
+            tid_search_list->start([=](){ bgUndoRedoLoop(isRedo, origCount); });
         }
     }
     else
@@ -1477,6 +1530,11 @@ void SearchList::cmdUndo()
 }
 
 
+/**
+ * This external interface is intended for handling "undo" key binding in the
+ * main text window. The call is ignored when the dialog window is not
+ * currently open.
+ */
 void SearchList::extUndo()  /*static*/
 {
     if (s_instance != 0)
@@ -1498,7 +1556,7 @@ void SearchList::cmdRedo()
         {
             bool isRedo = true;
             m_undo->prepareUndoRedo(isRedo);
-            tid_search_list->after(10, [=](){ bgUndoRedoLoop(isRedo, origCount); });
+            tid_search_list->start([=](){ bgUndoRedoLoop(isRedo, origCount); });
         }
     }
     else
@@ -1508,6 +1566,11 @@ void SearchList::cmdRedo()
 }
 
 
+/**
+ * This external interface is intended for handling "redo" key binding in the
+ * main text window. The call is ignored when the dialog window is not
+ * currently open.
+ */
 void SearchList::extRedo()  /*static*/
 {
     if (s_instance != 0)
@@ -1521,58 +1584,48 @@ void SearchList::extRedo()  /*static*/
  */
 void SearchList::bgUndoRedoLoop(bool isRedo, int origCount)
 {
-#if 0
-    if (block_bg_tasks || (tid_search_inc != nullptr) || (tid_search_hall != nullptr))
+    auto anchor = getViewAnchor();
+
+    const size_t CHUNK_SIZE = 1000;
+    std::vector<int> lines;
+    bool doAdd;
+    bool done = m_undo->popUndoRedo(isRedo, &doAdd, lines, CHUNK_SIZE);
+
+    if (doAdd != isRedo)
     {
-        // background tasks are suspended - re-schedule with timer
-        tid_search_list->after(0, [=](){ bgUndoRedoLoop(isRedo, origCount); });
+        // undo insertion OR redo removal -> delete lines
+        m_model->removeLines(lines);
     }
     else
-#endif
     {
-        auto anchor = getViewAnchor();
+        // undo addition OR redo insertion -> add lines
+        m_model->insertLines(lines);
+    }
 
-        const size_t CHUNK_SIZE = 1000;
-        std::vector<int> lines;
-        bool doAdd;
-        bool done = m_undo->popUndoRedo(isRedo, &doAdd, lines, CHUNK_SIZE);
+    // select previously selected line again
+    seeViewAnchor(anchor);
 
-        if (doAdd != isRedo)
-        {
-            // undo insertion OR redo removal -> delete lines
-            m_model->removeLines(lines);
-        }
-        else
-        {
-            // undo addition OR redo insertion -> add lines
-            m_model->insertLines(lines);
-        }
+    if (!done)
+    {
+        // create or update the progress bar
+        int restCount;
+        isRedo ? m_undo->hasRedo(&restCount) : m_undo->hasUndo(&restCount);  //ternary result unused
+        searchProgress(100 * (origCount - restCount) / origCount);
 
-        // select previously selected line again
-        seeViewAnchor(anchor);
+        tid_search_list->start([=](){ bgUndoRedoLoop(isRedo, origCount); });
+    }
+    else
+    {
+        m_undo->finalizeUndoRedo(isRedo);
 
-        if (!done)
-        {
-            // create or update the progress bar
-            int restCount;
-            doAdd ? m_undo->hasRedo(&restCount) : m_undo->hasUndo(&restCount);  //ternary result unused
-            searchProgress(100 * (origCount - restCount) / origCount);
-
-            tid_search_list->after(0, [=](){ bgUndoRedoLoop(isRedo, origCount); });
-        }
-        else
-        {
-            m_undo->finalizeUndoRedo(isRedo);
-
-            //TODO SafeDestroy(wt.srch_abrt)
-            searchProgress(100);
-        }
+        closeAbortDialog();
+        searchProgress(100);
     }
 }
 
 
 /**
- * Wrapper functions to simplify external interfaces
+ * Wrapper functions for simplifying external interfaces
  */
 void SearchList::addMatches(int direction)
 {
@@ -1589,10 +1642,9 @@ void SearchList::removeMatches(int direction)
 
 
 /**
- * This function is the external interface to the search list for adding
- * or removing lines matching the given search pattern.  The search is
- * performed in a background task, i.e. it's not completed when this
- * function returns.
+ * This function is the external interface to the search list for adding or
+ * removing lines matching the given search pattern.  The search is performed
+ * in a background task, i.e. it's not completed when this function returns.
  */
 void SearchList::searchMatches(bool do_add, int direction, const SearchPar& par)
 {
@@ -1625,7 +1677,7 @@ void SearchList::startSearchAll(const std::vector<SearchPar>& pat_list, bool do_
         // reset redo list
         m_undo->prepareBgChange(true, do_add);
 
-        tid_search_list->after(10, [=](){ bgSearchLoop(pat_list, do_add, direction, textPos, 0, 0); });
+        tid_search_list->start([=](){ bgSearchLoop(pat_list, do_add, direction, textPos, 0); });
     }
 }
 
@@ -1635,144 +1687,127 @@ void SearchList::startSearchAll(const std::vector<SearchPar>& pat_list, bool do_
  * The search loop continues for at most 100ms, then the function re-schedules
  * itself as idle task.
  */
-void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add, int direction, int textPos, int pat_idx, int loop_cnt)
+void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add, int direction, int textPos, int pat_idx)
 {
-#if 0 //TODO
-    if (block_bg_tasks || (tid_search_inc != nullptr) || (tid_search_hall != nullptr))
-    {
-      // background tasks are suspended - re-schedule with timer
-      tid_search_list = tk.after(100, lambda line=line: SearchList_BgSearchLoop(pat_list, do_add, direction, textPos, pat_idx, 0))
-    }
-    else
-#endif
-    if (loop_cnt > 10)
-    {
-        tid_search_list->after(10, [=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx, 0); });
-    }
-    else
-    {
-        auto anchor = getViewAnchor();
-        qint64 start_t = QDateTime::currentMSecsSinceEpoch();
-        const SearchPar& pat = pat_list[pat_idx];
-        std::vector<int> line_list;
-        std::vector<int> idx_list;
+    auto anchor = getViewAnchor();
+    qint64 start_t = QDateTime::currentMSecsSinceEpoch();
+    const SearchPar& pat = pat_list[pat_idx];
+    std::vector<int> line_list;
+    std::vector<int> idx_list;
 
-        while (true)
+    while (true)
+    {
+        QTextBlock block;
+        int matchPos, matchLen;
+        if (s_mainText->findInBlocks(pat, textPos, direction>=0, matchPos, matchLen, &block))
         {
-            QTextBlock block;
-            int matchPos, matchLen;
-            if (s_mainText->findInBlocks(pat, textPos, direction>=0, matchPos, matchLen, &block))
+            int line = block.blockNumber();
+            int idx;
+            bool found = m_model->getLineIdx(line, idx);
+            if (do_add && !found)
             {
-                int line = block.blockNumber();
-                int idx;
-                bool found = m_model->getLineIdx(line, idx);
-                if (do_add && !found)
-                {
-                    line_list.push_back(line);
-                    idx_list.push_back(idx);
-                }
-                else if (!do_add && found)
-                {
-                    line_list.push_back(line);
-                    idx_list.push_back(idx);
-                }
+                line_list.push_back(line);
+                idx_list.push_back(idx);
+            }
+            else if (!do_add && found)
+            {
+                line_list.push_back(line);
+                idx_list.push_back(idx);
+            }
 
-                if (direction >= 0)
-                    textPos = block.position() + block.length();
-                else if (block.position() > 0)
-                    textPos = block.position() - 1;
-                else
-                {
-                    textPos = -1;
-                    break;
-                }
-            }
-            else if (matchPos >= 0)
-            {
-                textPos = matchPos;
-            }
+            if (direction >= 0)
+                textPos = block.position() + block.length();
+            else if (block.position() > 0)
+                textPos = block.position() - 1;
             else
             {
                 textPos = -1;
                 break;
             }
-
-            // limit the runtime of the loop - return start line number for the next invocation
-            qint64 now = QDateTime::currentMSecsSinceEpoch();
-            if (now - start_t > 100)
-                break;
+        }
+        else if (matchPos >= 0)
+        {
+            textPos = matchPos;
+        }
+        else
+        {
+            textPos = -1;
+            break;
         }
 
-        if (line_list.size() > 0)
-        {
-            if (do_add)
-            {
-                if (direction < 0)
-                {
-                    std::reverse(line_list.begin(), line_list.end());
-                    std::reverse(idx_list.begin(), idx_list.end());
-                }
-                m_model->insertLinePreSorted(line_list, idx_list);
-            }
-            else
-            {
-                if (direction >= 0)
-                {
-                    std::reverse(idx_list.begin(), idx_list.end());
-                }
-                m_model->removeLinePreSorted(idx_list);
-            }
+        // limit the runtime of the loop - return start line number for the next invocation
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (now - start_t > 100)
+            break;
+    }
 
-            m_undo->appendBgChange(true, do_add, line_list.begin(), line_list.end());
-            // select previously selected line again
-            seeViewAnchor(anchor);
+    if (line_list.size() > 0)
+    {
+        if (do_add)
+        {
+            if (direction < 0)
+            {
+                std::reverse(line_list.begin(), line_list.end());
+                std::reverse(idx_list.begin(), idx_list.end());
+            }
+            m_model->insertLinePreSorted(line_list, idx_list);
+        }
+        else
+        {
+            if (direction >= 0)
+            {
+                std::reverse(idx_list.begin(), idx_list.end());
+            }
+            m_model->removeLinePreSorted(idx_list);
         }
 
-        if (textPos >= 0)
-        {
-            // create or update the progress bar
-            QTextBlock lastBlock = s_mainText->document()->lastBlock();
-            int textLength = std::max(lastBlock.position() + lastBlock.length(), 1);
-            double ratio;
-            if (direction == 0)
-            {
-                ratio = double(textPos) / textLength;
-            }
-            else if (direction < 0)
-            {
-                int thresh = std::min(s_mainText->textCursor().position(), 1);
-                ratio = 1 - (double(textPos) / thresh);
-            }
-            else
-            {
-                int thresh = s_mainText->textCursor().position();
-                if (thresh < textLength)
-                    ratio = double(textPos) / (textLength - thresh);
-                else
-                    ratio = 1;
-            }
-            searchProgress(100 * (ratio + pat_idx) / pat_list.size());
+        m_undo->appendBgChange(true, do_add, line_list.begin(), line_list.end());
+        // select previously selected line again
+        seeViewAnchor(anchor);
+    }
 
-            loop_cnt += 1;
-            tid_search_list->after(0, [=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx, loop_cnt); });
+    if (textPos >= 0)
+    {
+        // create or update the progress bar
+        QTextBlock lastBlock = s_mainText->document()->lastBlock();
+        int textLength = std::max(lastBlock.position() + lastBlock.length(), 1);
+        double ratio;
+        if (direction == 0)
+        {
+            ratio = double(textPos) / textLength;
         }
-        else  // done
+        else if (direction < 0)
         {
-            m_undo->finalizeBgChange(true, do_add);
-            pat_idx += 1;
-            if (size_t(pat_idx) < pat_list.size())
-            {
-                m_undo->prepareBgChange(true, do_add);
-                loop_cnt += 1;
-                int textPos = ((direction == 0) ? 0 : s_mainText->textCursor().position());
-
-                tid_search_list->after(0, [=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx, loop_cnt); });
-            }
+            int thresh = std::min(s_mainText->textCursor().position(), 1);
+            ratio = 1 - (double(textPos) / thresh);
+        }
+        else
+        {
+            int thresh = s_mainText->textCursor().position();
+            if (thresh < textLength)
+                ratio = double(textPos) / (textLength - thresh);
             else
-            {
-                searchProgress(100);
-                //TODO SafeDestroy(wt.srch_abrt)
-            }
+                ratio = 1;
+        }
+        searchProgress(100 * (ratio + pat_idx) / pat_list.size());
+
+        tid_search_list->start([=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx); });
+    }
+    else  // done
+    {
+        m_undo->finalizeBgChange(true, do_add);
+        pat_idx += 1;
+        if (size_t(pat_idx) < pat_list.size())
+        {
+            m_undo->prepareBgChange(true, do_add);
+            int textPos = ((direction == 0) ? 0 : s_mainText->textCursor().position());
+
+            tid_search_list->start([=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx); });
+        }
+        else
+        {
+            searchProgress(100);
+            closeAbortDialog();
         }
     }
 }
@@ -1801,6 +1836,87 @@ void SearchList::searchProgress(int percent)
         m_table->setCursor(Qt::ArrowCursor);
     }
 }
+
+/**
+ * This function stops a possibly ongoing background search in the search
+ * list dialog. Optionally the user is asked it he really wants to abort.
+ * The function returns 0 and does not abort the background action if the
+ * user selects "Cancel", else it returns 1.  The caller MUST check the
+ * return value if parameter "do_warn" is TRUE.
+ */
+bool SearchList::searchAbort(bool do_warn)
+{
+    bool cancel_new = false;
+
+    if (tid_search_list->isActive())
+    {
+        if (do_warn)
+        {
+            // should never happen as dialog is modal (i.e. user cannot trigger another action)
+            Q_ASSERT(m_abortDialog == nullptr);
+
+            m_abortDialog = new
+                QMessageBox(QMessageBox::Question,
+                            "Confirm abort of search",
+                            "This command will abort the ongoing search operation.\n"
+                                "Please confirm, or wait until this message disappears.",
+                            QMessageBox::NoButton,
+                            this);
+            auto cancelBut = m_abortDialog->addButton(QMessageBox::Cancel);
+                cancelBut->setText("Cancel new");
+            auto abortBut = m_abortDialog->addButton(QMessageBox::Ok);
+                abortBut->setText("Abort ongoing");
+            m_abortDialog->setDefaultButton(QMessageBox::NoButton);
+            m_abortDialog->setEscapeButton(QMessageBox::Cancel);
+
+            QAbstractButton * m_abortButton = nullptr;
+            connect(m_abortDialog, &QMessageBox::buttonClicked,
+                    [=, &m_abortButton](QAbstractButton * b){ m_abortButton = b; });
+
+            m_abortDialog->exec();
+            // do not use exec result as it indicates cancel also after external deletion
+            cancel_new = (m_abortButton == cancelBut);
+
+            // ATTN m_abortDialog may be NULL here due to background activity
+            if (m_abortDialog != nullptr)
+            {
+                m_abortDialog->deleteLater();
+                m_abortDialog = nullptr;
+            }
+        }
+        else
+            closeAbortDialog();
+    }
+
+    if (!cancel_new && tid_search_list->isActive())
+    {
+        // reset undo/redo state of any kind of bg task (i.e. search or undo/redo)
+        // note partially done undo/redo may remain (i.e. former single entry is split in two)
+        m_undo->abortBgChange();
+
+        // stop the background process
+        tid_search_list->stop();
+
+        // remove the progress bar
+        searchProgress(100);
+
+        m_stline->showWarning("search", "Search list operation was aborted");
+    }
+
+    return !cancel_new;
+}
+
+
+void SearchList::closeAbortDialog()
+{
+    if (m_abortDialog != nullptr)
+    {
+        QCoreApplication::postEvent(m_abortDialog, new QCloseEvent());
+        m_abortDialog->deleteLater();
+        m_abortDialog = nullptr;
+    }
+}
+
 
 /**
  * This helper function is called before modifications of the search result

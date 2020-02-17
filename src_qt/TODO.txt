@@ -1,0 +1,31 @@
+
+- highlight bookmarks in main window
+- support different font sizes in search list view
+- reconfigure upon font size change via main window
+- dlg_hist: missing update in "add" when regexp/case options are changed
+
+clean-up:
+- dlg_higl: use HighlightViewDelegate
+- main_win: split RC file into separate class (?)
+- main_search: split search history into separate class (?)
+- undo/redo in separate class (?)
+- split off "find" toolbar into separate class
+
+- search_list: performance optimization line list used by SearchListModel
+- search_list: frame number pattern parsing
+  requires enhancement: configuration dialog 2 * patterns
+
+- ATimer: replace with central BgTask class
+  note: use QPointer<QWidget> for task parent widget (equiv. std::weak_ptr)
+- loading files in the background / at least after main window is open
+- loading from pipe
+- main text: xview scrolling; yoff position with offset et.al.
+- main text: number prefix on key commands
+- highlight mark-up editor dialog
+  also allow editing search match & bookmark highlight format
+- highlighter: m_yViewRedirected
+
+enhancements:
+- bookmark undo/redo for line list (implemented within Bookmarks class)
+- bookmark adding/removing via text search (all/all above/all below)
+

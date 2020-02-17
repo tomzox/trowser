@@ -23,7 +23,6 @@
 #include <QLineEdit>
 #include <QTimer>
 
-#include <main_win.h>     // for ATimer
 #include <main_search.h>  // for SearchPar
 
 #include <vector>
@@ -33,6 +32,7 @@ class QProgressBar;
 class QJsonObject;
 
 class MainText;
+class BgTask;
 
 // ----------------------------------------------------------------------------
 
@@ -94,12 +94,12 @@ public:
     void adjustLineNums(int top_l, int bottom_l);
 
     void highlightInit();
-    void highlightAll(const HiglPat& pat, int line = 0, int loop_cnt = 0);
+    void highlightAll(const HiglPat& pat, int line);
     void highlightVisible(const HiglPat& pat);
     void searchHighlightMatch(QTextCursor& match);
     void searchHighlightClear();
     void searchHighlightUpdate(const QString& pat, bool opt_regexp, bool opt_case, bool onlyVisible);
-    void searchHighlightAll(const HiglPat& pat, int line = 0, int loop_cnt = 0);
+    void searchHighlightAll(const HiglPat& pat, int line);
 
     static const int INVALID_HIGL_ID = 0;
 
@@ -113,7 +113,7 @@ private:
 
     void configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec);
     HiglId addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id = INVALID_HIGL_ID);
-    void highlightInitBg(int pat_idx, int line = 0, int loop_cnt = 0);
+    void highlightInitBg(int pat_idx, int line);
     int  highlightLines(const HiglPat& pat, int line);
     void highlightYviewRedirect();
     void highlightYviewCallback(int value);
@@ -133,8 +133,8 @@ private:
     bool          m_yViewRedirected = false;  // TODO obsolete
 
     static const bool block_bg_tasks = false;  //TODO
-    ATimer      * tid_high_init = nullptr;
-    ATimer      * tid_search_hall = nullptr;
+    BgTask      * tid_high_init = nullptr;
+    BgTask      * tid_search_hall = nullptr;
 };
 
 #endif /* _HIGHLIGHTER_H */

@@ -69,31 +69,6 @@ static const int DEFAULT_FONT_SZ = 9;
 
 // ----------------------------------------------------------------------------
 
-ATimer::ATimer(QWidget * parent)
-    : QTimer(parent)
-{
-    this->setSingleShot(true);
-}
-
-void ATimer::after(int delay, const std::function<void()>& callback)
-{
-    this->stop();
-    this->disconnect();
-
-    connect(this, &QTimer::timeout, callback);
-    this->setInterval(delay);
-    this->start();
-}
-
-void ATimer::reschedule(int delay)
-{
-    this->stop();
-    this->setInterval(delay);
-    this->start();
-}
-
-// ----------------------------------------------------------------------------
-
 MainWin::MainWin(QApplication * app)
     : m_mainApp(app)
     , m_fontContent(DEFAULT_FONT_FAM, DEFAULT_FONT_SZ, false, false)

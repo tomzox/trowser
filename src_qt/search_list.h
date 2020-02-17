@@ -21,6 +21,7 @@
 #include <QWidget>
 #include <QMainWindow>
 #include <QItemSelection>
+#include <QMessageBox>
 
 #include <utility>        // pair
 #include <set>
@@ -43,7 +44,7 @@ class SearchListModel;
 class HighlightViewDelegate;
 class SearchListDrawBok;
 class SearchListUndo;
-class ATimer;
+class BgTask;
 
 class SearchList : public QMainWindow
 {
@@ -57,6 +58,8 @@ public:
     static SearchList* getInstance(bool raiseWin = true);
     static bool isDialogOpen();
     static void openDialog(bool raiseWin);
+
+    // static interfaces (ignored when dialog window is not open)
     static void matchView(int line);
     static void extUndo();
     static void extRedo();
@@ -65,7 +68,7 @@ public:
     static void signalHighlightReconfigured();
     static void adjustLineNums(int top_l, int bottom_l);
 
-    // external interfaces
+    // external interfaces (invoked via getInstance() result)
     void copyCurrentLine(bool doAdd);
     void searchMatches(bool do_add, int direction, const SearchPar& par);
     void searchMatches(bool do_add, int direction, const std::vector<SearchPar>& pat_list);
@@ -99,9 +102,10 @@ private:
     void addMatches(int direction);
     void removeMatches(int direction);
     void startSearchAll(const std::vector<SearchPar>& pat_list, bool do_add, int direction);
-    void bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add, int direction, int line, int pat_idx, int loop_cnt);
+    void bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add, int direction, int line, int pat_idx);
     void searchProgress(int percent);
-    bool searchAbort(bool doWarn __attribute__((unused)) = true) { return true; } //dummy,TODO
+    bool searchAbort(bool doWarn = true);
+    void closeAbortDialog();
     using ListViewAnchor = std::pair<bool,int>;
     ListViewAnchor&& getViewAnchor();
     void seeViewAnchor(ListViewAnchor& anchor);
@@ -132,16 +136,17 @@ private:
     SearchListUndo    * m_undo = nullptr;
     QProgressBar      * m_hipro = nullptr;
     StatusLine        * m_stline = nullptr;
+    QMessageBox       * m_abortDialog = nullptr;
     QAction           * m_menActUndo = nullptr;
     QAction           * m_menActRedo = nullptr;
+    QAction           * m_menActAbort = nullptr;
+    QAction           * m_menActRemove = nullptr;
     QAction           * m_actShowLineDelta = nullptr;
-    ATimer            * tid_search_list = nullptr;
+    BgTask            * tid_search_list = nullptr;
     int                 m_ignoreSelCb = -1;
 
     bool                m_showLineIdx = false;
     bool                m_showLineDelta = false;
-    //bool                m_showFrameIdx;
-    //bool                m_tickFrameDelta;
 };
 
 #endif /* _SEARCH_LIST_H */

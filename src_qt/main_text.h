@@ -21,12 +21,10 @@
 #include <QMainWindow>
 #include <QTextCursor>
 #include <QPlainTextEdit>
-#include <QTimer>
 #include <QString>
 
 #include <vector>
 #include <unordered_map>
-#include <map>
 
 class QTextBlock;
 class MainWin;
