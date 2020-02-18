@@ -64,7 +64,6 @@ class MainFindEnt : public QLineEdit
 public:
     MainFindEnt(MainSearch * search, QWidget * parent);
 
-private slots:
 private:
     virtual void keyPressEvent(QKeyEvent *e) override;
     virtual void focusInEvent(QFocusEvent *e) override;
@@ -82,6 +81,7 @@ class MainSearch : public QWidget
 
 public:
     MainSearch(MainWin * mainWin);
+    ~MainSearch();
     void connectWidgets(MainText    * textWid,
                         Highlighter * higl,
                         MainFindEnt * f2_e,
@@ -120,7 +120,6 @@ public:
     const std::vector<SearchPar>& getHistory() const { return tlb_history; }
     void removeFromHistory(const std::set<int>& excluded);
 
-private slots:
 private:
     void searchBackground(const SearchPar& par, bool is_fwd, int start, bool is_changed,
                           const std::function<void(QTextCursor&)>& callback);

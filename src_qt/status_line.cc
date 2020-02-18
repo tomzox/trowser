@@ -50,6 +50,7 @@
 StatusLine * StatusLine::s_activeInstance = nullptr;
 
 StatusLine::StatusLine(QWidget * parent)
+    : QWidget(parent)
 {
     m_parent = parent;
 

@@ -51,8 +51,6 @@ public:
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-// FIXME needs a wrapper class to avoid granting public access to base class
-
 class MainText : public QPlainTextEdit
 {
     Q_OBJECT
@@ -69,8 +67,6 @@ public:
     QTextCursor findInDoc(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, int start_pos);
     bool findInBlocks(const SearchPar& par, int from, bool is_fwd,
                       int& matchPos, int& matchLen, QTextBlock *matchBlock = nullptr);
-
-private slots:
 
 private:
     using xviewSetWhere = enum { XVIEW_SET_LEFT, XVIEW_SET_RIGHT };

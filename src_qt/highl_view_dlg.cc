@@ -47,12 +47,14 @@ void HighlightViewDelegate::paint(QPainter *pt, const QStyleOptionViewItem& opti
             font.setWeight(QFont::Bold);
         if (fmtSpec->m_italic)
             font.setItalic(true);
-        if (fmtSpec->m_overstrike)
+        if (fmtSpec->m_strikeout)
             font.setStrikeOut(true);
     }
 
     int w = option.rect.width();
     int h = option.rect.height();
+    QFontMetricsF metrics(font);
+    auto data = m_model->higlModelData(index);
 
     pt->save();
     pt->translate(option.rect.topLeft());
@@ -76,6 +78,14 @@ void HighlightViewDelegate::paint(QPainter *pt, const QStyleOptionViewItem& opti
         else
             pt->fillRect(0, 0, w, h, m_bgColDefault);
 
+        if (fmtSpec->m_olCol != HiglFmtSpec::INVALID_COLOR)
+        {
+            QPainterPath txtPath;
+            txtPath.addText(TXT_MARGIN, metrics.ascent(), font, data.toString());
+            pt->setPen(QColor(fmtSpec->m_olCol));
+            pt->drawPath(txtPath);
+        }
+
         if (   (fmtSpec->m_fgCol != HiglFmtSpec::INVALID_COLOR)
             && (fmtSpec->m_fgStyle != Qt::NoBrush))
             pt->setBrush(QBrush(QColor(fmtSpec->m_fgCol), fmtSpec->m_fgStyle));
@@ -92,8 +102,6 @@ void HighlightViewDelegate::paint(QPainter *pt, const QStyleOptionViewItem& opti
         pt->setPen(m_fgColDefault);
     }
 
-    QFontMetricsF metrics(font);
-    auto data = m_model->higlModelData(index);
     pt->drawText(TXT_MARGIN, metrics.ascent(), data.toString());
 
     pt->restore();

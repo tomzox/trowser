@@ -328,7 +328,9 @@ void DlgHistory::cmdClose(bool)
 
 
 /**
- * This function pops up a context menu for the search list dialog.
+ * This slot is connected to context menu requests, as custom context menu is
+ * configured for the table view. The function creates and executes context
+ * menu.
  */
 void DlgHistory::showContextMenu(const QPoint& pos)
 {
@@ -348,7 +350,7 @@ void DlgHistory::showContextMenu(const QPoint& pos)
 }
 
 /**
- * This function is bound to changes of the selection in the color tags list.
+ * This slot is bound to changes of the selection in the color tags list.
  */
 void DlgHistory::selectionChanged(const QItemSelection& /*selected*/, const QItemSelection& /*deselected*/)
 {
@@ -370,8 +372,8 @@ void DlgHistory::selectionChanged(const QItemSelection& /*selected*/, const QIte
 }
 
 /**
- * This function is bound to the main command buttons: In this dialog
- * this is only the Ok button.
+ * This slot is bound to the main command buttons: In this dialog this is only
+ * the "Close" button.
  */
 void DlgHistory::cmdButton(QAbstractButton * button)
 {

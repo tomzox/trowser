@@ -34,6 +34,7 @@ class Highlighter;
 class StatusLine;
 class DlgHiglModel;
 class DlgHidlFmtDraw;
+class DlgMarkup;
 
 class DlgHigl : public QMainWindow
 {
@@ -52,6 +53,7 @@ private:
     ~DlgHigl();
 
     virtual void closeEvent(QCloseEvent *) override;
+    void mainFontChanged();
     void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected);
     void cbDataChanged(const QModelIndex &, const QModelIndex &);
     void showContextMenu(const QPoint& pos);
@@ -63,7 +65,9 @@ private:
     void cmdAdd(bool);
     void cmdCopyToMain(bool);
     void cmdCopyFromMain(bool);
+    void cmdDuplicate(bool);
     void cmdRemove(bool);
+    void cmdEditFormat(bool);
     void cmdChangeBgColor(bool);
     void cmdChangeFgColor(bool);
     void cmdToggleFontUnderline(const QModelIndex& index, bool checked);
@@ -72,6 +76,8 @@ private:
     void cmdToggleFontOverstrike(const QModelIndex& index, bool checked);
     void cmdResetFont(const QModelIndex& index);
     void cmdChangeFont(bool);
+    void signalMarkupCloseReq();
+    void signalMarkupApplyReq(bool immediate);
 
 private:
     static DlgHigl    * s_instance;
@@ -85,6 +91,8 @@ private:
     QTableView        * m_table = nullptr;
     DlgHiglModel      * m_model = nullptr;
     DlgHidlFmtDraw    * m_fmtDelegate = nullptr;
+    DlgMarkup         * m_dlgMarkup = nullptr;
+    int                 m_idxMarkup = -1;
 
     StatusLine        * m_stline = nullptr;
     QDialogButtonBox  * m_cmdButs = nullptr;

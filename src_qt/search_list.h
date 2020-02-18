@@ -84,6 +84,7 @@ private:
     void showContextMenu(const QPoint& pos);
 
     void cmdClose(bool);
+    void mainFontChanged();
     void editMenuAboutToShow();
     void configureColumnVisibility();
     void cmdToggleShowLineNumber(bool checked);

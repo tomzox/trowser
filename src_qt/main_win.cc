@@ -362,8 +362,13 @@ void MainWin::menuCmdSelectFont(bool)
     QFont font = QFontDialog::getFont(&ok, m_fontContent, this);
     if (ok)
     {
-        m_f1_t->setFont(font);
         m_fontContent = font;
+
+        // apply font directly in main text window
+        m_f1_t->setFont(m_fontContent);
+
+        // notify dialogs
+        emit textFontChanged();
     }
 }
 
@@ -375,6 +380,9 @@ void MainWin::keyCmdZoomFontSize(bool zoomIn)
         m_f1_t->zoomOut();
 
     m_fontContent = m_f1_t->font();
+
+    // notify dialogs
+    emit textFontChanged();
 }
 
 void MainWin::menuCmdToggleLineWrap(bool checked)

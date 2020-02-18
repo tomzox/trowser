@@ -148,6 +148,11 @@ MainSearch::MainSearch(MainWin * mainWin)
     tlb_history.reserve(TLB_HIST_MAXLEN + 1);
 }
 
+MainSearch::~MainSearch()
+{
+    delete m_timSearchInc;
+}
+
 void MainSearch::connectWidgets(MainText    * textWid,
                                 Highlighter * higl,
                                 MainFindEnt * f2_e,

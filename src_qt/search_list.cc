@@ -991,6 +991,8 @@ SearchList::SearchList()
     if (!s_winState.isEmpty())
         this->restoreState(s_winState);
 
+    connect(s_mainWin, &MainWin::textFontChanged, this, &SearchList::mainFontChanged);
+
     populateMenus();
     auto act = new QAction(central_wid);
         act->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_G));
@@ -1066,9 +1068,29 @@ void SearchList::closeEvent(QCloseEvent * event)
     s_instance = nullptr;
 }
 
+
+/**
+ * This slot is connected to the "Close" menu action. It closes the dialog in
+ * the same way as via the X button in the window title bar.
+ */
 void SearchList::cmdClose(bool)
 {
     QCoreApplication::postEvent(this, new QCloseEvent());
+}
+
+/**
+ * This slot is connected to notification of font changes in the main text
+ * window, as the same font is used for displaying text content in the dialog.
+ * The function resizes row height and then forces a redraw. Note the new font
+ * need not be passed to the view delegate as it gets passed a reference to the
+ * font so that it picks up the new font automatically.
+ */
+void SearchList::mainFontChanged()
+{
+    QFontMetricsF metrics(s_mainWin->getFontContent());
+    m_table->verticalHeader()->setDefaultSectionSize(metrics.height());
+
+    m_model->forceRedraw(SearchListModel::COL_IDX_TXT);
 }
 
 void SearchList::populateMenus()
@@ -1213,7 +1235,9 @@ void SearchList::editMenuAboutToShow()
 
 
 /**
- * This function pops up a context menu for the search list dialog.
+ * This slot is connected to context menu requests, as custom context menu is
+ * configured for the table view. The function creates and executes context
+ * menu.
  */
 void SearchList::showContextMenu(const QPoint& pos)
 {
@@ -2448,6 +2472,7 @@ void SearchList::cmdDisplayStats(bool)
     }
     m_stline->showPlain("file", msg);
 }
+
 
 // ----------------------------------------------------------------------------
 // Static state & interface

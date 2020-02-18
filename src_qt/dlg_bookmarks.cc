@@ -267,9 +267,6 @@ void DlgBookmarkView::keyPressEvent(QKeyEvent *e)
         case Qt::Key_Home:
             if (model()->rowCount() != 0)
             {
-                // following updates selection, anchor (for key up/down) and view at once
-                // whereas scrollTo() and selectionModel()->select() fail to update anchor
-                // NOTE: given column must not be hidden, else scrollTo() does nothing
                 QModelIndex midx = model()->index(0, 0);
                 this->setCurrentIndex(midx);
             }
@@ -345,6 +342,8 @@ DlgBookmarks::DlgBookmarks()
         m_cmdButFile->setMenu(fileMenu);
     layout_top->addWidget(m_cmdButs);
 
+    connect(s_mainWin, &MainWin::textFontChanged, this, &DlgBookmarks::mainFontChanged);
+
     act = new QAction(central_wid);
         act->setShortcut(QKeySequence(Qt::Key_Delete));
         connect(act, &QAction::triggered, this, &DlgBookmarks::cmdRemove);
@@ -388,6 +387,10 @@ void DlgBookmarks::closeEvent(QCloseEvent * event)
 }
 
 
+/**
+ * This slot is connected to the ESCAPE key shortcut. It closes the dialog in
+ * the same way as via the X button in the window title bar.
+ */
 void DlgBookmarks::cmdClose(bool)
 {
     QCoreApplication::postEvent(this, new QCloseEvent());
@@ -395,8 +398,24 @@ void DlgBookmarks::cmdClose(bool)
 
 
 /**
- * This function is bound to the main command buttons: In this dialog
- * this is only the "Close" button.
+ * This slot is connected to notification of font changes in the main text
+ * window, as the same font is used for displaying text content in the dialog.
+ * The function resizes row height and then forces a redraw. Note the new font
+ * need not be passed to the view delegate as it gets passed a reference to the
+ * font so that it picks up the new font automatically.
+ */
+void DlgBookmarks::mainFontChanged()
+{
+    QFontMetricsF metrics(s_mainWin->getFontContent());
+    m_table->verticalHeader()->setDefaultSectionSize(metrics.height());
+
+    m_model->forceRedraw(DlgBookmarkModel::COL_IDX_TEXT);
+}
+
+
+/**
+ * This slot is bound to the main command buttons: In this dialog this is only
+ * the "Close" button.
  */
 void DlgBookmarks::cmdButton(QAbstractButton * button)
 {

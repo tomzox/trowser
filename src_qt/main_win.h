@@ -68,7 +68,14 @@ public:
     void keyCmdZoomFontSize(bool zoomIn);
     void LoadFile(const QString& fileName);
 
-private slots:
+signals:
+    void textFontChanged();
+
+private:
+    void closeEvent(QCloseEvent *event);
+    void menuCmdDiscard(bool is_fwd);
+    void discardContent();
+    void populateMenus();
     void menuCmdReload(bool checked);
     void menuCmdFileOpen(bool checked);
     void menuCmdFileQuit(bool checked);
@@ -77,12 +84,6 @@ private slots:
     void menuCmdGotoLine(bool checked);
     void menuCmdBookmarkDeleteAll(bool checked);
     void menuCmdAbout(bool checked);
-
-private:
-    void closeEvent(QCloseEvent *event);
-    void menuCmdDiscard(bool is_fwd);
-    void discardContent();
-    void populateMenus();
 
 private:
     QApplication* const m_mainApp;

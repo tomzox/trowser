@@ -239,12 +239,15 @@ void HiglFmtSpec::merge(const HiglFmtSpec& other)
         m_fgCol = other.m_fgCol;
         m_fgStyle = other.m_fgStyle;
     }
+    if (other.m_olCol != HiglFmtSpec::INVALID_COLOR)
+    {
+        m_olCol = other.m_olCol;
+    }
 
     m_bold |= other.m_bold;
     m_italic |= other.m_italic;
     m_underline |= other.m_underline;
-    m_overstrike |= other.m_overstrike;
-    m_outline |= other.m_outline;
+    m_strikeout |= other.m_strikeout;
 
     if (!other.m_font.isEmpty())
         m_font = other.m_font;
@@ -275,6 +278,9 @@ void Highlighter::configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec)
     else if (fmtSpec.m_fgStyle != Qt::NoBrush)
         fmt.setForeground(fmtSpec.m_fgStyle);
 
+    if (fmtSpec.m_olCol != HiglFmtSpec::INVALID_COLOR)
+        fmt.setTextOutline(QColor(fmtSpec.m_olCol));
+
     if (!fmtSpec.m_font.isEmpty())
     {
         QFont tmp;
@@ -288,7 +294,7 @@ void Highlighter::configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec)
         fmt.setFontWeight(QFont::Bold);
     if (fmtSpec.m_italic)
         fmt.setFontItalic(true);
-    if (fmtSpec.m_overstrike)
+    if (fmtSpec.m_strikeout)
         fmt.setFontStrikeOut(true);
 }
 
@@ -331,6 +337,8 @@ QJsonArray Highlighter::getRcValues()
             obj.insert("bg_style", QJsonValue(pat.m_fmtSpec.m_bgStyle));
         if (pat.m_fmtSpec.m_fgStyle != Qt::NoBrush)
             obj.insert("fg_style", QJsonValue(pat.m_fmtSpec.m_fgStyle));
+        if (pat.m_fmtSpec.m_olCol != HiglFmtSpec::INVALID_COLOR)
+            obj.insert("outline_col", QJsonValue(int(pat.m_fmtSpec.m_olCol)));
 
         if (pat.m_fmtSpec.m_underline)
             obj.insert("font_underline", QJsonValue(true));
@@ -338,8 +346,8 @@ QJsonArray Highlighter::getRcValues()
             obj.insert("font_bold", QJsonValue(true));
         if (pat.m_fmtSpec.m_italic)
             obj.insert("font_italic", QJsonValue(true));
-        if (pat.m_fmtSpec.m_overstrike)
-            obj.insert("font_overstrike", QJsonValue(true));
+        if (pat.m_fmtSpec.m_strikeout)
+            obj.insert("font_strikeout", QJsonValue(true));
 
         if (!pat.m_fmtSpec.m_font.isEmpty())
             obj.insert("font", QJsonValue(pat.m_fmtSpec.m_font));
@@ -379,6 +387,8 @@ void Highlighter::setRcValues(const QJsonValue& val)
                 fmtSpec.m_bgStyle = Qt::BrushStyle(val.toInt());
             else if (var == "fg_style")
                 fmtSpec.m_fgStyle = Qt::BrushStyle(val.toInt());
+            else if (var == "outline_col")
+                fmtSpec.m_olCol = QRgb(val.toInt());
 
             else if (var == "font_underline")
                 fmtSpec.m_underline = true;
@@ -386,8 +396,8 @@ void Highlighter::setRcValues(const QJsonValue& val)
                 fmtSpec.m_bold = true;
             else if (var == "font_italic")
                 fmtSpec.m_italic = true;
-            else if (var == "font_overstrike")
-                fmtSpec.m_overstrike = true;
+            else if (var == "font_strikeout")
+                fmtSpec.m_strikeout = true;
 
             else if (var == "font")
                 fmtSpec.m_font = val.toString();

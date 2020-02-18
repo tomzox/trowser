@@ -45,13 +45,13 @@ public:
 
     QRgb                m_bgCol = INVALID_COLOR;
     QRgb                m_fgCol = INVALID_COLOR;
+    QRgb                m_olCol = INVALID_COLOR;
     Qt::BrushStyle      m_bgStyle = Qt::NoBrush;
     Qt::BrushStyle      m_fgStyle = Qt::NoBrush;
     bool                m_bold = false;
     bool                m_italic = false;
     bool                m_underline = false;
-    bool                m_overstrike = false;
-    bool                m_outline = false;
+    bool                m_strikeout = false;
     QString             m_font;
     // relief: "", raised, sunken, ridge, groove
     // relief borderwidth: 1,2,...,9
@@ -91,6 +91,7 @@ public:
     void getPatList(std::vector<HiglPatExport>&) const;
     void setList(std::vector<HiglPatExport>& patList);
     const HiglFmtSpec * getFmtSpecForLine(int line);
+    void configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec);
     void adjustLineNums(int top_l, int bottom_l);
 
     void highlightInit();
@@ -111,7 +112,6 @@ private:
     void clearAll(QTextDocument * doc);
     const HiglPat* getPatById(HiglId id);
 
-    void configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec);
     HiglId addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id = INVALID_HIGL_ID);
     void highlightInitBg(int pat_idx, int line);
     int  highlightLines(const HiglPat& pat, int line);
