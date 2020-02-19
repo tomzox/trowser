@@ -26,25 +26,28 @@ class QDialogButtonBox;
 class QPlainTextEdit;
 class QPushButton;
 class QAbstractButton;
+class QComboBox;
 
 class HiglFmtSpec;
 class Highlighter;
 class MainWin;
+class BrushStyleListModel;
 
 class DlgMarkup : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    // constructor can only be invoked via the static interface
-    DlgMarkup(const QString& name, const HiglFmtSpec * fmtSpec, Highlighter * higl, MainWin * mainWin);
+    DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec,
+              Highlighter * higl, MainWin * mainWin);
     ~DlgMarkup();
     const HiglFmtSpec& getFmtSpec() const { return m_fmtSpec; }
+    HiglId getFmtId() const { return m_id; }
     void resetModified();
 
 signals:
-    void applyReq(bool immediate);
-    void closeReq();
+    void applyReq(HiglId id, bool immediate);
+    void closeReq(HiglId id);
 
 private:
     virtual void closeEvent(QCloseEvent *) override;
@@ -56,31 +59,26 @@ private:
     void cmdResetColor(QRgb * col);
     void cmdSelectColor(QRgb * col, const QString& desc);
     void cmdSetFontOption(bool *option, bool value);
-    void cmdSelectFont(bool doReset);
+    void cmdResetFont();
+    void cmdSelectFont();
+    void cmdSelectStyle(Qt::BrushStyle * style, int idx);
     void cmdButton(QAbstractButton * button);
-#if 0
-    void cmdChangeBgColor(bool);
-    void cmdChangeFgColor(bool);
-    void cmdToggleFontUnderline(const QModelIndex& index, bool checked);
-    void cmdToggleFontBold(const QModelIndex& index, bool checked);
-    void cmdToggleFontItalic(const QModelIndex& index, bool checked);
-    void cmdToggleFontOverstrike(const QModelIndex& index, bool checked);
-    void cmdResetFont(const QModelIndex& index);
-    void cmdChangeFont(bool);
-#endif
 
 private:
+    const HiglId        m_id;
+    HiglFmtSpec         m_fmtSpecOrig;
     HiglFmtSpec         m_fmtSpec;
     Highlighter * const m_higl;
     MainWin * const     m_mainWin;
     bool                m_isModified = false;
 
-    QPlainTextEdit    * m_sampleWid = nullptr;
+    BrushStyleListModel * m_brushStyleModel = nullptr;
     QDialogButtonBox  * m_cmdButs = nullptr;
+    QPlainTextEdit    * m_sampleWid = nullptr;
     QPushButton       * m_bgColBut = nullptr;
-    QPushButton       * m_bgStyleBut = nullptr;
+    QComboBox         * m_bgStyleBut = nullptr;
     QPushButton       * m_fgColBut = nullptr;
-    QPushButton       * m_fgStyleBut = nullptr;
+    QComboBox         * m_fgStyleBut = nullptr;
     QPushButton       * m_olColBut = nullptr;
     QPushButton       * m_curFontBut = nullptr;
 };

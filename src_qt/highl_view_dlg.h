@@ -26,7 +26,7 @@ class QPainter;
 class QFont;
 class QColor;
 
-class Highlighter;
+class HiglFmtSpec;
 
 // ----------------------------------------------------------------------------
 
@@ -34,7 +34,7 @@ class HighlightViewModelIf  // : class QAbstractItemModel
 {
 public:
     HighlightViewModelIf() = default;
-    virtual int higlModelGetLineOfIdx(int idx) const = 0;
+    virtual const HiglFmtSpec * getFmtSpec(const QModelIndex& index) const = 0;
     virtual QVariant higlModelData(const QModelIndex& index, int role = Qt::DisplayRole) const = 0;
 };
 
@@ -43,10 +43,10 @@ public:
 class HighlightViewDelegate : public QAbstractItemDelegate
 {
 public:
-    HighlightViewDelegate(HighlightViewModelIf * model, Highlighter * higl,
-                   const QFont& fontDdefault, const QColor& fg, const QColor& bg)
+    HighlightViewDelegate(HighlightViewModelIf * model, bool centering,
+                          const QFont& fontDdefault, const QColor& fg, const QColor& bg)
         : m_model(model)
-        , m_higl(higl)
+        , m_centering(centering)
         , m_fontDefault(fontDdefault)
         , m_fgColDefault(fg)
         , m_bgColDefault(bg)
@@ -56,7 +56,7 @@ public:
 private:
     const int TXT_MARGIN = 3;
     HighlightViewModelIf * const m_model;
-    Highlighter * const m_higl;
+    bool m_centering;
     const QFont& m_fontDefault;
     const QColor& m_fgColDefault;
     const QColor& m_bgColDefault;

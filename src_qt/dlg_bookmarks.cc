@@ -68,8 +68,9 @@ class DlgBookmarkModel : public QAbstractItemModel, public HighlightViewModelIf
 public:
     enum TblColIdx { COL_IDX_LINE, COL_IDX_TEXT, COL_COUNT };
 
-    DlgBookmarkModel(MainText * mainText, Bookmarks * bookmarks)
+    DlgBookmarkModel(MainText * mainText, Highlighter * higl, Bookmarks * bookmarks)
         : m_mainText(mainText)
+        , m_higl(higl)
         , m_bookmarks(bookmarks)
     {
         m_bookmarks->getLineList(m_lines);
@@ -131,18 +132,23 @@ public:
     void forceRedraw(TblColIdx col, int line = -1);
 
     // implementation of HighlightViewModelIf interfaces
-    virtual int higlModelGetLineOfIdx(int idx) const
+    virtual const HiglFmtSpec * getFmtSpec(const QModelIndex& index) const override
     {
-        return getLineOfIdx(idx);
+        int line = getLineOfIdx(index.row());
+        if (line >= 0)
+            return m_higl->getFmtSpecForLine(line);
+        else
+            return nullptr;
     }
-    virtual QVariant higlModelData(const QModelIndex& index, int role = Qt::DisplayRole) const
+    virtual QVariant higlModelData(const QModelIndex& index, int role = Qt::DisplayRole) const override
     {
         return data(index, role);
     }
 
 private:
-    MainText  * const m_mainText;
-    Bookmarks * const m_bookmarks;
+    MainText    * const m_mainText;
+    Highlighter * const m_higl;
+    Bookmarks   * const m_bookmarks;
 
     std::vector<int> m_lines;
 };
@@ -305,8 +311,8 @@ DlgBookmarks::DlgBookmarks()
         setCentralWidget(central_wid);
     auto layout_top = new QVBoxLayout(central_wid);
 
-    m_model = new DlgBookmarkModel(s_mainText, s_bookmarks);
-    m_draw = new HighlightViewDelegate(m_model, s_higl,
+    m_model = new DlgBookmarkModel(s_mainText, s_higl, s_bookmarks);
+    m_draw = new HighlightViewDelegate(m_model, false,
                                        s_mainWin->getFontContent(),
                                        s_mainWin->getFgColDefault(),
                                        s_mainWin->getBgColDefault());

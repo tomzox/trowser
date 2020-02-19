@@ -22,6 +22,9 @@
 #include <QMainWindow>
 #include <QItemSelection>
 
+#include <memory>
+#include "highlighter.h"
+
 class QTableView;
 class QPushButton;
 class QDialogButtonBox;
@@ -33,7 +36,7 @@ class MainSearch;
 class Highlighter;
 class StatusLine;
 class DlgHiglModel;
-class DlgHidlFmtDraw;
+class HighlightViewDelegate;
 class DlgMarkup;
 
 class DlgHigl : public QMainWindow
@@ -68,16 +71,18 @@ private:
     void cmdDuplicate(bool);
     void cmdRemove(bool);
     void cmdEditFormat(bool);
-    void cmdChangeBgColor(bool);
-    void cmdChangeFgColor(bool);
+    void cmdChangeBgFgColor(bool isBg);
     void cmdToggleFontUnderline(const QModelIndex& index, bool checked);
     void cmdToggleFontBold(const QModelIndex& index, bool checked);
     void cmdToggleFontItalic(const QModelIndex& index, bool checked);
     void cmdToggleFontOverstrike(const QModelIndex& index, bool checked);
     void cmdResetFont(const QModelIndex& index);
     void cmdChangeFont(bool);
-    void signalMarkupCloseReq();
-    void signalMarkupApplyReq(bool immediate);
+    void signalMarkupCloseReq(HiglId id);
+    void signalMarkupApplyReq(HiglId id, bool immediate);
+
+    using DlgMarkupPtrList = std::vector<std::unique_ptr<DlgMarkup>>;
+    DlgMarkupPtrList::iterator findDlgMarkup(HiglId id, DlgHigl::DlgMarkupPtrList& v);
 
 private:
     static DlgHigl    * s_instance;
@@ -90,9 +95,8 @@ private:
     MainWin * const     m_mainWin;
     QTableView        * m_table = nullptr;
     DlgHiglModel      * m_model = nullptr;
-    DlgHidlFmtDraw    * m_fmtDelegate = nullptr;
-    DlgMarkup         * m_dlgMarkup = nullptr;
-    int                 m_idxMarkup = -1;
+    HighlightViewDelegate * m_fmtDelegate = nullptr;
+    DlgMarkupPtrList    m_dlgMarkup;
 
     StatusLine        * m_stline = nullptr;
     QDialogButtonBox  * m_cmdButs = nullptr;

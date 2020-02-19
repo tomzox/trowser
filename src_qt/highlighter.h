@@ -41,7 +41,8 @@ class HiglFmtSpec
 public:
     HiglFmtSpec() = default;
     void merge(const HiglFmtSpec& other);
-    static constexpr unsigned INVALID_COLOR = QRgb(0x00000000);
+    bool operator==(const HiglFmtSpec& other) const;
+    static constexpr QRgb INVALID_COLOR{0x00000000};
 
     QRgb                m_bgCol = INVALID_COLOR;
     QRgb                m_fgCol = INVALID_COLOR;
@@ -89,10 +90,11 @@ public:
     void setRcValues(const QJsonValue& val);
     void removeInc(QTextDocument * doc);
     void getPatList(std::vector<HiglPatExport>&) const;
-    void setList(std::vector<HiglPatExport>& patList);
+    void setList(const std::vector<HiglPatExport>& patList);
     const HiglFmtSpec * getFmtSpecForLine(int line);
     void configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec);
     void adjustLineNums(int top_l, int bottom_l);
+    HiglId allocateNewId();
 
     void highlightInit();
     void highlightAll(const HiglPat& pat, int line);
@@ -112,7 +114,7 @@ private:
     void clearAll(QTextDocument * doc);
     const HiglPat* getPatById(HiglId id);
 
-    HiglId addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id = INVALID_HIGL_ID);
+    void addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id = INVALID_HIGL_ID);
     void highlightInitBg(int pat_idx, int line);
     int  highlightLines(const HiglPat& pat, int line);
     void highlightYviewRedirect();

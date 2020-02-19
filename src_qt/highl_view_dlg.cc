@@ -31,8 +31,7 @@
 
 void HighlightViewDelegate::paint(QPainter *pt, const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
-    int line = m_model->higlModelGetLineOfIdx(index.row());
-    const HiglFmtSpec * fmtSpec = m_higl->getFmtSpecForLine(line);
+    const HiglFmtSpec * fmtSpec = m_model->getFmtSpec(index);
 
     QFont font(m_fontDefault);
     if (fmtSpec != nullptr)
@@ -51,17 +50,25 @@ void HighlightViewDelegate::paint(QPainter *pt, const QStyleOptionViewItem& opti
             font.setStrikeOut(true);
     }
 
+    auto data = m_model->higlModelData(index);
+    QFontMetricsF metrics(font);
     int w = option.rect.width();
     int h = option.rect.height();
-    QFontMetricsF metrics(font);
-    auto data = m_model->higlModelData(index);
+    int xoff = 0;
+    int yoff = 0;
+    if (m_centering)
+    {   
+        auto txtRect = metrics.boundingRect(data.toString());
+        xoff = (w - txtRect.width()) / 2 - txtRect.x();
+        yoff = (h - txtRect.height()) / 2 + TXT_MARGIN;
+    }
 
     pt->save();
     pt->translate(option.rect.topLeft());
     pt->setClipRect(QRectF(0, 0, w, h));
     pt->setFont(font);
 
-    if (option.state & QStyle::State_Selected)
+    if ((option.state & QStyle::State_Selected) && !m_centering)
     {
         pt->fillRect(0, 0, w, h, option.palette.color(QPalette::Highlight));
         pt->setPen(option.palette.color(QPalette::HighlightedText));
@@ -81,7 +88,8 @@ void HighlightViewDelegate::paint(QPainter *pt, const QStyleOptionViewItem& opti
         if (fmtSpec->m_olCol != HiglFmtSpec::INVALID_COLOR)
         {
             QPainterPath txtPath;
-            txtPath.addText(TXT_MARGIN, metrics.ascent(), font, data.toString());
+            txtPath.addText(TXT_MARGIN + xoff, metrics.ascent() + yoff,
+                            font, data.toString());
             pt->setPen(QColor(fmtSpec->m_olCol));
             pt->drawPath(txtPath);
         }
@@ -102,14 +110,38 @@ void HighlightViewDelegate::paint(QPainter *pt, const QStyleOptionViewItem& opti
         pt->setPen(m_fgColDefault);
     }
 
-    pt->drawText(TXT_MARGIN, metrics.ascent(), data.toString());
+    pt->drawText(TXT_MARGIN + xoff, metrics.ascent() + yoff, data.toString());
 
     pt->restore();
 }
 
-QSize HighlightViewDelegate::sizeHint(const QStyleOptionViewItem& /*option*/, const QModelIndex& /*index*/) const
+QSize HighlightViewDelegate::sizeHint(const QStyleOptionViewItem& /*option*/, const QModelIndex &index) const
 {
-    //TODO other fonts
-    QFontMetricsF metrics(m_fontDefault);
-    return QSize(1, metrics.height());
+    const HiglFmtSpec * fmtSpec = m_model->getFmtSpec(index);
+    if (fmtSpec != nullptr)
+    {
+        QFont font(m_fontDefault);
+        if (!fmtSpec->m_font.isEmpty())
+        {
+            font.fromString(fmtSpec->m_font);
+        }
+
+        if (m_centering)
+        {
+            // calculate size of pixmap as sample text dimensions plus margin
+            auto data = m_model->higlModelData(index);
+            QFontMetricsF metrics(font);
+            auto txtRect = metrics.boundingRect(data.toString());
+            int pixWidth = int(txtRect.width() + TXT_MARGIN*2);
+            int pixHeight = int(txtRect.height() + TXT_MARGIN*2);
+
+            return QSize(pixWidth, pixHeight);
+        }
+        else
+        {
+            QFontMetricsF metrics(font);
+            return QSize(1, metrics.height());
+        }
+    }
+    return QSize();
 }

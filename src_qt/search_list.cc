@@ -65,8 +65,9 @@ class SearchListModel : public QAbstractItemModel, public HighlightViewModelIf
 public:
     enum TblColIdx { COL_IDX_BOOK, COL_IDX_LINE, COL_IDX_LINE_D, COL_IDX_TXT, COL_COUNT };
 
-    SearchListModel(MainText * mainText)
+    SearchListModel(MainText * mainText, Highlighter * higl)
         : m_mainText(mainText)
+        , m_higl(higl)
     {
     }
     virtual ~SearchListModel()
@@ -138,17 +139,22 @@ public:
     void adjustLineNums(int top_l, int bottom_l);
 
     // implementation of HighlightViewModelIf interfaces
-    virtual int higlModelGetLineOfIdx(int idx) const
+    virtual const HiglFmtSpec * getFmtSpec(const QModelIndex& index) const override
     {
-        return getLineOfIdx(idx);
+        int line = getLineOfIdx(index.row());
+        if (line >= 0)
+            return m_higl->getFmtSpecForLine(line);
+        else
+            return nullptr;
     }
-    virtual QVariant higlModelData(const QModelIndex& index, int role = Qt::DisplayRole) const
+    virtual QVariant higlModelData(const QModelIndex& index, int role = Qt::DisplayRole) const override
     {
         return data(index, role);
     }
 
 private:
     MainText * const            m_mainText;
+    Highlighter * const         m_higl;
     int                         m_rootLineIdx = 0;
     // TODO? https://en.wikipedia.org/wiki/Skip_list#Indexable_skiplist
     // simple alternative: list of length-limited vectors (e.g. max 1000)
@@ -947,8 +953,8 @@ SearchList::SearchList()
 
     tid_search_list = new BgTask(central_wid, BG_PRIO_SEARCH_LIST);
 
-    m_model = new SearchListModel(s_mainText);
-    m_draw = new HighlightViewDelegate(m_model, s_higl,
+    m_model = new SearchListModel(s_mainText, s_higl);
+    m_draw = new HighlightViewDelegate(m_model, false,
                                        s_mainWin->getFontContent(),
                                        s_mainWin->getFgColDefault(),
                                        s_mainWin->getBgColDefault());

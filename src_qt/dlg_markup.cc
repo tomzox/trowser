@@ -21,7 +21,6 @@
 #include <QPixmap>
 #include <QIcon>
 #include <QApplication>
-#include <QStyle>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPlainTextEdit>
@@ -31,6 +30,8 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QMenu>
+#include <QComboBox>
+#include <QAbstractItemModel>
 #include <QDialogButtonBox>
 #include <QMessageBox>
 #include <QFontDialog>
@@ -43,11 +44,96 @@
 #include "highlighter.h"
 #include "dlg_markup.h"
 
-#define SAMPLE_STR_0 "\n"
-#define SAMPLE_STR_1 "Text line above\n"
-#define SAMPLE_STR_2 "Text sample ... sample text\n"
-#define SAMPLE_STR_3 "Line below\n"
-#define SAMPLE_STR_CNT 4
+// ----------------------------------------------------------------------------
+
+static const char * const
+    SAMPLE_STR_TXT = "Lorem ipsum dolor sit amet, consectetur adipisici elit, sed eiusmod tempor incidunt ut labore et dolore magna aliqua.\n"
+                     "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquid ex ea commodi consequat.\n"
+                     "Quis aute iure reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.\n"
+                     "Excepteur sint obcaecat cupiditat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
+static const unsigned SAMPLE_STR_MARKUP_BLK = 1;
+static const unsigned SAMPLE_STR_LINE_CNT = 4;
+
+static const Qt::BrushStyle s_brushStyles[] =
+{
+    Qt::NoBrush,               Qt::Dense1Pattern,          Qt::Dense2Pattern,
+    Qt::Dense3Pattern,         Qt::Dense4Pattern,          Qt::Dense5Pattern,
+    Qt::Dense6Pattern,         Qt::Dense7Pattern,          //Qt::SolidPattern,
+    Qt::HorPattern,            Qt::VerPattern,             Qt::CrossPattern,
+    Qt::BDiagPattern,          Qt::FDiagPattern,           Qt::DiagCrossPattern,
+};
+static const size_t s_brushStyleCnt = sizeof(s_brushStyles) / sizeof(s_brushStyles[0]);
+
+// ----------------------------------------------------------------------------
+
+class BrushStyleListModel : public QAbstractItemModel
+{
+public:
+    BrushStyleListModel()
+    {
+    }
+    virtual QModelIndex index(int row, int column, const QModelIndex& parent __attribute__((unused)) = QModelIndex()) const override
+    {
+        return createIndex(row, column);
+    }
+    virtual QModelIndex parent(const QModelIndex&) const override
+    {
+        return QModelIndex();
+    }
+    virtual int rowCount(const QModelIndex& parent __attribute__((unused)) = QModelIndex()) const override
+    {
+        return s_brushStyleCnt;
+    }
+    virtual int columnCount(const QModelIndex& parent __attribute__((unused)) = QModelIndex()) const override
+    {
+        return 1;
+    }
+    virtual QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override
+    {
+        if (size_t(index.row()) < s_brushStyleCnt)
+        {
+            if (role == Qt::DisplayRole)
+            {
+                switch (s_brushStyles[index.row()])
+                {
+                    case Qt::NoBrush:          return "None";
+                    case Qt::Dense1Pattern:    return "Dense (90%)";
+                    case Qt::Dense2Pattern:    return "Dense (75%)";
+                    case Qt::Dense3Pattern:    return "Medium (60%)";
+                    case Qt::Dense4Pattern:    return "Medium (50%)";
+                    case Qt::Dense5Pattern:    return "Medium (40%)";
+                    case Qt::Dense6Pattern:    return "Light (25%)";
+                    case Qt::Dense7Pattern:    return "Light (10%)";
+                    case Qt::HorPattern:       return "Horizontal";
+                    case Qt::VerPattern:       return "Vertical";
+                    case Qt::CrossPattern:     return "Cross";
+                    case Qt::BDiagPattern:     return "Diagonal";
+                    case Qt::FDiagPattern:     return "Diagonal";
+                    case Qt::DiagCrossPattern: return "Cross-diag.";
+                    default: break;
+                }
+            }
+            else if ((role == Qt::DecorationRole) && (index.row() != 0))
+            {
+                QPixmap pix(16, 16);
+                pix.fill(QColor(QRgb(0xffffffff)));
+                QPainter pt(&pix);
+                pt.fillRect(0, 0, 16, 16, QBrush(QColor(QRgb(0xff000000)),
+                                                 s_brushStyles[index.row()]));
+                return QVariant(pix);
+            }
+        }
+        return QVariant();
+    }
+
+    int getIndexOfStyle(Qt::BrushStyle style)
+    {
+        for (size_t idx = 0; idx < s_brushStyleCnt; ++idx)
+            if (s_brushStyles[idx] == style)
+                return idx;
+        return -1;
+    }
+};
 
 // ----------------------------------------------------------------------------
 
@@ -55,9 +141,11 @@
  * This function creates the color highlighting editor dialog.
  * This dialog shows all currently defined pattern definitions.
  */
-DlgMarkup::DlgMarkup(const QString& name, const HiglFmtSpec * fmtSpec,
+DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec,
                      Highlighter * higl, MainWin * mainWin)
-    : m_fmtSpec(*fmtSpec)
+    : m_id(id)
+    , m_fmtSpecOrig(*fmtSpec)
+    , m_fmtSpec(*fmtSpec)
     , m_higl(higl)
     , m_mainWin(mainWin)
 {
@@ -67,14 +155,16 @@ DlgMarkup::DlgMarkup(const QString& name, const HiglFmtSpec * fmtSpec,
 
     QFontMetricsF metrics(m_mainWin->getFontContent());
     m_sampleWid = new QPlainTextEdit(central_wid);
-        m_sampleWid->setPlainText(SAMPLE_STR_0 SAMPLE_STR_1 SAMPLE_STR_2 SAMPLE_STR_3);
+        m_sampleWid->setLineWrapMode(QPlainTextEdit::NoWrap);
         m_sampleWid->setFont(m_mainWin->getFontContent());
         m_sampleWid->setFocusPolicy(Qt::NoFocus);
+        m_sampleWid->setPlainText(SAMPLE_STR_TXT);
         m_sampleWid->setReadOnly(true);
-        m_sampleWid->setFixedHeight(metrics.height() * (SAMPLE_STR_CNT + 2));
-        //m_sampleWid->setFixedWidth(metrics.averageCharWidth() * (strlen(SAMPLE_STR_2) + 10));
+        m_sampleWid->setFixedHeight(metrics.height() * (SAMPLE_STR_LINE_CNT + 2));
         drawTextSample();
         layout_top->addWidget(m_sampleWid);
+
+    m_brushStyleModel = new BrushStyleListModel();
 
     //
     // Background color & style
@@ -89,16 +179,21 @@ DlgMarkup::DlgMarkup(const QString& name, const HiglFmtSpec * fmtSpec,
     m_bgColBut = new QPushButton("", central_wid);
         auto men = new QMenu("Color:", central_wid);
             auto act = men->addAction("Reset to no color");
-                connect(act, &QAction::triggered, [=](){ cmdResetColor(&m_fmtSpec.m_bgCol); });
+                connect(act, &QAction::triggered,
+                        [=](){ cmdResetColor(&m_fmtSpec.m_bgCol); });
             act = men->addAction("Select color...");
-                connect(act, &QAction::triggered, [=](){ cmdSelectColor(&m_fmtSpec.m_bgCol, "Background"); });
+                connect(act, &QAction::triggered,
+                        [=](){ cmdSelectColor(&m_fmtSpec.m_bgCol, "Background"); });
         m_bgColBut->setMenu(men);
         m_bgColBut->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
         layout_grid->addWidget(m_bgColBut, 0, 2);
     lab = new QLabel("Pattern:", central_wid);
         layout_grid->addWidget(lab, 0, 3, Qt::AlignLeft | Qt::AlignVCenter);
-    m_bgStyleBut = new QPushButton("", central_wid);
-        //TODO m_bgStyleBut->setMenu(men);
+    m_bgStyleBut = new QComboBox(central_wid);
+        m_bgStyleBut->setModel(m_brushStyleModel);
+        m_bgStyleBut->setCurrentIndex(m_brushStyleModel->getIndexOfStyle(m_fmtSpec.m_bgStyle));
+        connect(m_bgStyleBut, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                [=](int idx){ cmdSelectStyle(&m_fmtSpec.m_bgStyle, idx); });
         m_bgStyleBut->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
         layout_grid->addWidget(m_bgStyleBut, 0, 4);
 
@@ -112,16 +207,21 @@ DlgMarkup::DlgMarkup(const QString& name, const HiglFmtSpec * fmtSpec,
     m_fgColBut = new QPushButton("", central_wid);
         men = new QMenu("Color:", central_wid);
             act = men->addAction("Reset to no color");
-                connect(act, &QAction::triggered, [=](){ cmdResetColor(&m_fmtSpec.m_fgCol); });
+                connect(act, &QAction::triggered,
+                        [=](){ cmdResetColor(&m_fmtSpec.m_fgCol); });
             act = men->addAction("Select color...");
-                connect(act, &QAction::triggered, [=](){ cmdSelectColor(&m_fmtSpec.m_fgCol, "Foreground"); });
+                connect(act, &QAction::triggered,
+                        [=](){ cmdSelectColor(&m_fmtSpec.m_fgCol, "Foreground"); });
         m_fgColBut->setMenu(men);
         m_fgColBut->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
         layout_grid->addWidget(m_fgColBut, 1, 2);
     lab = new QLabel("Pattern:", central_wid);
         layout_grid->addWidget(lab, 1, 3, Qt::AlignLeft | Qt::AlignVCenter);
-    m_fgStyleBut = new QPushButton("", central_wid);
-        //TODO m_fgStyleBut->setMenu(men);
+    m_fgStyleBut = new QComboBox(central_wid);
+        m_fgStyleBut->setModel(m_brushStyleModel);
+        m_fgStyleBut->setCurrentIndex(m_brushStyleModel->getIndexOfStyle(m_fmtSpec.m_fgStyle));
+        connect(m_fgStyleBut, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                [=](int idx){ cmdSelectStyle(&m_fmtSpec.m_fgStyle, idx); });
         m_fgStyleBut->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
         layout_grid->addWidget(m_fgStyleBut, 1, 4);
 
@@ -135,24 +235,26 @@ DlgMarkup::DlgMarkup(const QString& name, const HiglFmtSpec * fmtSpec,
     m_olColBut = new QPushButton("", central_wid);
         men = new QMenu("Color:", central_wid);
             act = men->addAction("Reset to no color");
-                connect(act, &QAction::triggered, [=](){ cmdResetColor(&m_fmtSpec.m_olCol); });
+                connect(act, &QAction::triggered,
+                        [=](){ cmdResetColor(&m_fmtSpec.m_olCol); });
             act = men->addAction("Select color...");
-                connect(act, &QAction::triggered, [=](){ cmdSelectColor(&m_fmtSpec.m_olCol, "Text outline"); });
+                connect(act, &QAction::triggered,
+                        [=](){ cmdSelectColor(&m_fmtSpec.m_olCol, "Text outline"); });
         m_olColBut->setMenu(men);
         m_olColBut->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
         layout_grid->addWidget(m_olColBut, 2, 2);
 
     //
-    // Font selection
+    // Font family/size selection
     //
     lab = new QLabel("Font:", central_wid);
         layout_grid->addWidget(lab, 3, 0, Qt::AlignLeft | Qt::AlignVCenter);
     m_curFontBut = new QPushButton("", central_wid);
         men = new QMenu("Font:", central_wid);
             act = men->addAction("Reset to use default");
-                connect(act, &QAction::triggered, [=](){ cmdSelectFont(true); });
+                connect(act, &QAction::triggered, [=](){ cmdResetFont(); });
             act = men->addAction("Select font...");
-                connect(act, &QAction::triggered, [=](){ cmdSelectFont(false); });
+                connect(act, &QAction::triggered, [=](){ cmdSelectFont(); });
         m_curFontBut->setMenu(men);
         m_curFontBut->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
         layout_grid->addWidget(m_curFontBut, 3, 1, 1, 4);
@@ -163,16 +265,24 @@ DlgMarkup::DlgMarkup(const QString& name, const HiglFmtSpec * fmtSpec,
     auto frm = new QFrame(central_wid);
         auto layout_rb = new QHBoxLayout(frm);
         auto rb = new QCheckBox("Underline", central_wid);
-            connect(rb, &QCheckBox::stateChanged, [=](int state){ cmdSetFontOption(&m_fmtSpec.m_underline, (state == Qt::Checked)); });
+            rb->setChecked(m_fmtSpec.m_underline);
+            connect(rb, &QCheckBox::stateChanged,
+                    [=](int state){ cmdSetFontOption(&m_fmtSpec.m_underline, (state == Qt::Checked)); });
             layout_rb->addWidget(rb);
         rb = new QCheckBox("Bold", central_wid);
-            connect(rb, &QCheckBox::stateChanged, [=](int state){ cmdSetFontOption(&m_fmtSpec.m_bold, (state == Qt::Checked)); });
+            rb->setChecked(m_fmtSpec.m_bold);
+            connect(rb, &QCheckBox::stateChanged,
+                    [=](int state){ cmdSetFontOption(&m_fmtSpec.m_bold, (state == Qt::Checked)); });
             layout_rb->addWidget(rb);
         rb = new QCheckBox("Italic", central_wid);
-            connect(rb, &QCheckBox::stateChanged, [=](int state){ cmdSetFontOption(&m_fmtSpec.m_italic, (state == Qt::Checked)); });
+            rb->setChecked(m_fmtSpec.m_italic);
+            connect(rb, &QCheckBox::stateChanged,
+                    [=](int state){ cmdSetFontOption(&m_fmtSpec.m_italic, (state == Qt::Checked)); });
             layout_rb->addWidget(rb);
         rb = new QCheckBox("Strike out", central_wid);
-            connect(rb, &QCheckBox::stateChanged, [=](int state){ cmdSetFontOption(&m_fmtSpec.m_strikeout, (state == Qt::Checked)); });
+            rb->setChecked(m_fmtSpec.m_strikeout);
+            connect(rb, &QCheckBox::stateChanged,
+                    [=](int state){ cmdSetFontOption(&m_fmtSpec.m_strikeout, (state == Qt::Checked)); });
             layout_rb->addWidget(rb);
         layout_grid->addWidget(frm, 4, 1, 1, 4);
 
@@ -196,7 +306,7 @@ DlgMarkup::DlgMarkup(const QString& name, const HiglFmtSpec * fmtSpec,
 
 DlgMarkup::~DlgMarkup()
 {
-    // deletion all done by QWidget
+    delete m_brushStyleModel;
 }
 
 
@@ -208,7 +318,7 @@ DlgMarkup::~DlgMarkup()
 void DlgMarkup::mainFontChanged()
 {
     QFontMetricsF metrics(m_mainWin->getFontContent());
-    m_sampleWid->setFixedHeight(metrics.height() * (SAMPLE_STR_CNT + 2));
+    m_sampleWid->setFixedHeight(metrics.height() * (SAMPLE_STR_LINE_CNT + 2));
     m_sampleWid->setFont(m_mainWin->getFontContent());
 
     drawTextSample();
@@ -234,7 +344,7 @@ void DlgMarkup::closeEvent(QCloseEvent * event)
     }
     event->accept();
 
-    emit closeReq();
+    emit closeReq(m_id);
 }
 
 
@@ -251,73 +361,72 @@ void DlgMarkup::cmdButton(QAbstractButton * button)
     else if (button == m_cmdButs->button(QDialogButtonBox::Ok))
     {
         if (m_isModified)
-            emit applyReq(false);
+            emit applyReq(m_id, false);
         this->close();
     }
     else if (button == m_cmdButs->button(QDialogButtonBox::Apply))
     {
         if (m_isModified)
-            emit applyReq(true);
+            emit applyReq(m_id, true);
     }
 }
 
 void DlgMarkup::resetModified()
 {
-    m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(false);
+    m_fmtSpecOrig = m_fmtSpec;
     m_isModified = false;
+    m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(m_isModified);
 }
 
 void DlgMarkup::cmdSetFontOption(bool *option, bool value)
 {
-    if (*option != value)
-    {
-        *option = value;
+    *option = value;
 
-        m_isModified = true;
-        m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(true);
-    }
+    m_isModified = !(m_fmtSpec == m_fmtSpecOrig);
+    m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(m_isModified);
+
     drawTextSample();
 }
 
-void DlgMarkup::cmdSelectFont(bool doReset)
+void DlgMarkup::cmdResetFont()
 {
-    if (doReset)
-    {
-        m_fmtSpec.m_font.clear();
-    }
-    else
-    {
-        QFont font;
-        if (!m_fmtSpec.m_font.isEmpty())
-            font.fromString(m_fmtSpec.m_font);
-        else
-            font = m_mainWin->getFontContent();
+    m_fmtSpec.m_font.clear();
 
-        bool ok;
-        font = QFontDialog::getFont(&ok, font, this);
-        if (ok)
-        {
-            if (m_fmtSpec.m_font != font.toString())
-            {
-                m_fmtSpec.m_font = font.toString();
+    m_isModified = !(m_fmtSpec == m_fmtSpecOrig);
+    m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(m_isModified);
 
-                m_isModified = true;
-                m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(true);
-            }
-        }
-    }
     drawFontButtonText();
     drawTextSample();
 }
 
+void DlgMarkup::cmdSelectFont()
+{
+    QFont font;
+    if (!m_fmtSpec.m_font.isEmpty())
+        font.fromString(m_fmtSpec.m_font);
+    else
+        font = m_mainWin->getFontContent();
+
+    bool ok;
+    font = QFontDialog::getFont(&ok, font, this);
+    if (ok)
+    {
+        m_fmtSpec.m_font = font.toString();
+
+        m_isModified = !(m_fmtSpec == m_fmtSpecOrig);
+        m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(m_isModified);
+
+        drawFontButtonText();
+        drawTextSample();
+    }
+}
+
 void DlgMarkup::cmdResetColor(QRgb * col)
 {
-    if (*col != HiglFmtSpec::INVALID_COLOR)
-    {
-        *col = HiglFmtSpec::INVALID_COLOR;
-        m_isModified = true;
-        m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(true);
-    }
+    *col = HiglFmtSpec::INVALID_COLOR;
+
+    m_isModified = !(m_fmtSpec == m_fmtSpecOrig);
+    m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(m_isModified);
 
     drawTextSample();
     drawButtonPixmaps();
@@ -328,16 +437,26 @@ void DlgMarkup::cmdSelectColor(QRgb * col, const QString& desc)
     auto newCol = QColorDialog::getColor(QColor(*col), this, desc + " color selection");
     if (newCol.isValid())
     {
-        if (*col != newCol.rgba())
-        {
-            *col = newCol.rgba();
+        *col = newCol.rgba();
 
-            m_isModified = true;
-            m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(true);
-        }
+        m_isModified = !(m_fmtSpec == m_fmtSpecOrig);
+        m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(m_isModified);
 
         drawTextSample();
         drawButtonPixmaps();
+    }
+}
+
+void DlgMarkup::cmdSelectStyle(Qt::BrushStyle * style, int idx)
+{
+    if (size_t(idx) < s_brushStyleCnt)
+    {
+        *style = s_brushStyles[idx];
+
+        m_isModified = !(m_fmtSpec == m_fmtSpecOrig);
+        m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(m_isModified);
+
+        drawTextSample();
     }
 }
 
@@ -357,7 +476,7 @@ void DlgMarkup::drawTextSample()
     QTextCharFormat charFmt;
     m_higl->configFmt(charFmt, m_fmtSpec);
 
-    QTextBlock blk = m_sampleWid->document()->findBlockByNumber(2);
+    QTextBlock blk = m_sampleWid->document()->findBlockByNumber(SAMPLE_STR_MARKUP_BLK);
     QTextCursor c(blk);
     c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
     c.setCharFormat(charFmt);
@@ -370,8 +489,6 @@ void DlgMarkup::drawButtonPixmaps()
     drawButtonPixmap(m_bgColBut, m_fmtSpec.m_bgCol, Qt::NoBrush, pix);
     drawButtonPixmap(m_fgColBut, m_fmtSpec.m_fgCol, Qt::NoBrush, pix);
     drawButtonPixmap(m_olColBut, m_fmtSpec.m_olCol, Qt::NoBrush, pix);
-    drawButtonPixmap(m_bgStyleBut, HiglFmtSpec::INVALID_COLOR, m_fmtSpec.m_bgStyle, pix);
-    drawButtonPixmap(m_fgStyleBut, HiglFmtSpec::INVALID_COLOR, m_fmtSpec.m_fgStyle, pix);
 }
 
 void DlgMarkup::drawButtonPixmap(QPushButton *but, QRgb col, Qt::BrushStyle style, QPixmap& pix)

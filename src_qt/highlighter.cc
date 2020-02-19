@@ -253,6 +253,20 @@ void HiglFmtSpec::merge(const HiglFmtSpec& other)
         m_font = other.m_font;
 }
 
+bool HiglFmtSpec::operator==(const HiglFmtSpec& other) const
+{
+    return  (m_bgCol == other.m_bgCol) &&
+            (m_fgCol == other.m_fgCol) &&
+            (m_olCol == other.m_olCol) &&
+            (m_bgStyle == other.m_bgStyle) &&
+            (m_fgStyle == other.m_fgStyle) &&
+            (m_bold == other.m_bold) &&
+            (m_italic == other.m_italic) &&
+            (m_underline == other.m_underline) &&
+            (m_strikeout == other.m_strikeout) &&
+            (m_font == other.m_font);
+}
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 /**
@@ -298,22 +312,16 @@ void Highlighter::configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec)
         fmt.setFontStrikeOut(true);
 }
 
-HiglId Highlighter::addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id)
+void Highlighter::addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id)
 {
     HiglPat fmt;
 
     configFmt(fmt.m_fmt, fmtSpec);
     fmt.m_srch = srch;
     fmt.m_fmtSpec = fmtSpec;
-
-    if (id == INVALID_HIGL_ID)
-        fmt.m_id = ++m_lastId;
-    else
-        fmt.m_id = id;
+    fmt.m_id = ((id != INVALID_HIGL_ID) ? id : ++m_lastId);
 
     m_patList.push_back(fmt);
-
-    return fmt.m_id;
 }
 
 // TODO save search & inc highlight formats
@@ -414,7 +422,7 @@ void Highlighter::getPatList(std::vector<HiglPatExport>& exp) const
     }
 }
 
-void Highlighter::setList(std::vector<HiglPatExport>& patList)
+void Highlighter::setList(const std::vector<HiglPatExport>& patList)
 {
     for (auto& w : m_patList)
     {
@@ -424,7 +432,7 @@ void Highlighter::setList(std::vector<HiglPatExport>& patList)
 
     for (auto& w : patList)
     {
-        w.m_id = addPattern(w.m_srch, w.m_fmtSpec, w.m_id);
+        addPattern(w.m_srch, w.m_fmtSpec, w.m_id);
     }
 
     tid_high_init->stop();
@@ -444,6 +452,12 @@ void Highlighter::setList(std::vector<HiglPatExport>& patList)
 
     searchHighlightClear()
 #endif
+}
+
+
+HiglId Highlighter::allocateNewId()
+{
+    return ++m_lastId;
 }
 
 /**

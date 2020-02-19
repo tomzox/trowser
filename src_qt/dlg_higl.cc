@@ -47,12 +47,13 @@
 #include "status_line.h"
 #include "highlighter.h"
 #include "search_list.h"
+#include "highl_view_dlg.h"
 #include "dlg_markup.h"
 #include "dlg_higl.h"
 
 // ----------------------------------------------------------------------------
 
-class DlgHiglModel : public QAbstractItemModel
+class DlgHiglModel : public QAbstractItemModel, public HighlightViewModelIf
 {
 public:
     enum TblColIdx { COL_IDX_PAT, COL_IDX_REGEXP, COL_IDX_CASE, COL_IDX_FMT, COL_COUNT };
@@ -60,8 +61,9 @@ public:
     DlgHiglModel(Highlighter * higl);
     virtual ~DlgHiglModel() {}
     const SearchPar& getSearchPar(const QModelIndex& index) const;
-    const HiglFmtSpec * getFmtSpec(const QModelIndex& index) const;
+    virtual const HiglFmtSpec * getFmtSpec(const QModelIndex& index) const override;
     HiglId getFmtId(const QModelIndex& index) const;
+    int getIdxForId(HiglId id) const;
     bool isModified() const { return m_modified; }
     void saveData(Highlighter * higl);
 
@@ -77,9 +79,11 @@ public:
     virtual bool removeRows(int row, int count, const QModelIndex &parent = QModelIndex()) override;
     virtual bool moveRows(const QModelIndex &sourceParent, int sourceRow, int count,
                           const QModelIndex &destinationParent, int destinationChild) override;
-    virtual bool insertRowData(int row, const SearchPar& pat, const HiglFmtSpec& fmtSpec); /*non-override*/
+    virtual bool insertRowData(int row, const SearchPar& pat, const HiglFmtSpec& fmtSpec, HiglId id); /*non-override*/
     void setFmtData(int row, const HiglFmtSpec& fmtSpec);
     void forceRedraw(TblColIdx col);
+
+    virtual QVariant higlModelData(const QModelIndex& index, int role = Qt::DisplayRole) const override;
 
 private:
     std::vector<HiglPatExport>  m_patList;
@@ -114,6 +118,14 @@ const SearchPar& DlgHiglModel::getSearchPar(const QModelIndex& index) const
 HiglId DlgHiglModel::getFmtId(const QModelIndex& index) const
 {
     return m_patList.at(index.row()).m_id;
+}
+
+int DlgHiglModel::getIdxForId(HiglId id) const
+{
+    for (size_t idx = 0; idx < m_patList.size(); ++idx)
+        if (m_patList[idx].m_id == id)
+            return idx;
+    return -1;
 }
 
 QModelIndex DlgHiglModel::index(int row, int column, const QModelIndex& /*parent*/) const
@@ -296,7 +308,7 @@ bool DlgHiglModel::moveRows(const QModelIndex& srcParent, int srcRow, int count,
     return result;
 }
 
-bool DlgHiglModel::insertRowData(int row, const SearchPar& pat, const HiglFmtSpec& fmtSpec)
+bool DlgHiglModel::insertRowData(int row, const SearchPar& pat, const HiglFmtSpec& fmtSpec, HiglId id)
 {
     bool result = false;
     if (size_t(row) <= m_patList.size())  // == OK: insert at end
@@ -304,7 +316,7 @@ bool DlgHiglModel::insertRowData(int row, const SearchPar& pat, const HiglFmtSpe
         HiglPatExport w;
         w.m_srch = pat;
         w.m_fmtSpec = fmtSpec;
-        w.m_id = Highlighter::INVALID_HIGL_ID;
+        w.m_id = id;
 
         this->beginInsertRows(QModelIndex(), row, row);
         m_patList.insert(m_patList.begin() + row, w);
@@ -327,109 +339,12 @@ void DlgHiglModel::forceRedraw(TblColIdx col)  // ATTN row/col order reverse of 
     }
 }
 
-// ----------------------------------------------------------------------------
-
-class DlgHidlFmtDraw : public QAbstractItemDelegate
+// implementation of HighlightViewModelIf interfaces
+QVariant DlgHiglModel::higlModelData(const QModelIndex& /*index*/, int /*role*/) const
 {
-public:
-    DlgHidlFmtDraw(DlgHiglModel * model, const QFont& fontDdefault, const QColor& fg, const QColor& bg)
-        : m_model(model)
-        , m_fontDefault(fontDdefault)
-        , m_fgColDefault(fg)
-        , m_bgColDefault(bg)
-        {}
-    virtual void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override;
-    virtual QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override;
-private:
-    const char * const s_sampleText = "...Sample text...";
-    const int TXT_MARGIN = 3;
-    DlgHiglModel * const m_model;
-    const QFont& m_fontDefault;
-    const QColor& m_fgColDefault;
-    const QColor& m_bgColDefault;
-};
-
-// could also use QTextDocument::drawContents(QPainter *p, const QRectF &rect)
-void DlgHidlFmtDraw::paint(QPainter *pt, const QStyleOptionViewItem& option, const QModelIndex& index) const
-{
-    const HiglFmtSpec * fmtSpec = m_model->getFmtSpec(index);
-    if (fmtSpec != nullptr)
-    {
-        QFont font(m_fontDefault);
-        if (!fmtSpec->m_font.isEmpty())
-        {
-            font.fromString(fmtSpec->m_font);
-        }
-        if (fmtSpec->m_underline)
-            font.setUnderline(true);
-        if (fmtSpec->m_bold)
-            font.setWeight(QFont::Bold);
-        if (fmtSpec->m_italic)
-            font.setItalic(true);
-        if (fmtSpec->m_strikeout)
-            font.setStrikeOut(true);
-
-        // calculate size of pixmap as sample text dimensions plus margin
-        QFontMetricsF metrics(font);
-        auto txtRect = metrics.boundingRect(s_sampleText);
-        int w = option.rect.width();
-        int h = option.rect.height();
-        int xoff = (w - txtRect.width()) / 2;
-        int yoff = (h - txtRect.height()) / 2;
-
-        pt->save();
-        pt->translate(option.rect.topLeft());
-        pt->setClipRect(QRectF(0, 0, w, h));
-        pt->setFont(font);
-
-        if (   (fmtSpec->m_bgCol != HiglFmtSpec::INVALID_COLOR)
-            && (fmtSpec->m_bgStyle != Qt::NoBrush))
-            pt->fillRect(0, 0, w, h, QBrush(QColor(fmtSpec->m_bgCol), fmtSpec->m_bgStyle));
-        else if (fmtSpec->m_bgCol != HiglFmtSpec::INVALID_COLOR)
-            pt->fillRect(0, 0, w, h, QColor(fmtSpec->m_bgCol));
-        else if (fmtSpec->m_bgStyle != Qt::NoBrush)
-            pt->fillRect(0, 0, w, h, fmtSpec->m_bgStyle);
-        else
-            pt->fillRect(0, 0, w, h, m_bgColDefault);
-
-        if (   (fmtSpec->m_fgCol != HiglFmtSpec::INVALID_COLOR)
-            && (fmtSpec->m_fgStyle != Qt::NoBrush))
-            pt->setBrush(QBrush(QColor(fmtSpec->m_fgCol), fmtSpec->m_fgStyle));
-        else if (fmtSpec->m_fgCol != HiglFmtSpec::INVALID_COLOR)
-            pt->setPen(QColor(fmtSpec->m_fgCol));
-        else if (fmtSpec->m_fgStyle != Qt::NoBrush)
-            pt->setBrush(fmtSpec->m_fgStyle);
-        else
-            pt->setPen(m_fgColDefault);
-
-        pt->drawText(xoff - txtRect.x() + TXT_MARGIN,
-                     yoff + metrics.ascent() + TXT_MARGIN,
-                     s_sampleText);
-        pt->restore();
-    }
+    return QVariant("...Sample text...");
 }
 
-QSize DlgHidlFmtDraw::sizeHint(const QStyleOptionViewItem& /*option*/, const QModelIndex &index) const
-{
-    const HiglFmtSpec * fmtSpec = m_model->getFmtSpec(index);
-    if (fmtSpec != nullptr)
-    {
-        QFont font(m_fontDefault);
-        if (!fmtSpec->m_font.isEmpty())
-        {
-            font.fromString(fmtSpec->m_font);
-        }
-
-        // calculate size of pixmap as sample text dimensions plus margin
-        QFontMetricsF metrics(font);
-        auto txtRect = metrics.boundingRect(s_sampleText);
-        int pixWidth = int(txtRect.width() + TXT_MARGIN*2);
-        int pixHeight = int(txtRect.height() + TXT_MARGIN*2);
-
-        return QSize(pixWidth, pixHeight);
-    }
-    return QSize();
-}
 
 // ----------------------------------------------------------------------------
 
@@ -475,8 +390,7 @@ void DlgHiglView::keyPressEvent(QKeyEvent *e)
 // ----------------------------------------------------------------------------
 
 /**
- * This function creates the color highlighting editor dialog.
- * This dialog shows all currently defined pattern definitions.
+ * This function creates the highlight mark-up edit dialog.
  */
 DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
     : m_higl(higl)
@@ -489,23 +403,24 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
     auto layout_top = new QVBoxLayout(central_wid);
 
     m_model = new DlgHiglModel(higl);
-    m_fmtDelegate = new DlgHidlFmtDraw(m_model,
-                                       m_mainWin->getFontContent(),
-                                       m_mainWin->getFgColDefault(),
-                                       m_mainWin->getBgColDefault());
+    m_fmtDelegate = new HighlightViewDelegate(m_model, true,
+                                              m_mainWin->getFontContent(),
+                                              m_mainWin->getFgColDefault(),
+                                              m_mainWin->getBgColDefault());
 
-    QFontMetricsF metrics(m_mainWin->getFontContent());
     m_table = new DlgHiglView(central_wid);
         m_table->setModel(m_model);
         m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+        m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         m_table->horizontalHeader()->setSectionResizeMode(DlgHiglModel::COL_IDX_PAT, QHeaderView::Stretch);
         m_table->horizontalHeader()->setSectionResizeMode(DlgHiglModel::COL_IDX_FMT, QHeaderView::ResizeToContents);
-        m_table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-        m_table->verticalHeader()->setDefaultSectionSize(metrics.height() + 2*3);
+        m_table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);  // use delegate's sizeHint()
         m_table->setItemDelegateForColumn(DlgHiglModel::COL_IDX_FMT, m_fmtDelegate);
         m_table->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(m_table, &QAbstractItemView::customContextMenuRequested, this, &DlgHigl::showContextMenu);
-        connect(m_table, &QAbstractItemView::doubleClicked, [=](){ cmdEditFormat(true); });
+        connect(m_table, &QAbstractItemView::doubleClicked, [=](const QModelIndex & midx){
+            if (midx.column() == DlgHiglModel::COL_IDX_FMT) cmdEditFormat(true);  // else use "inline" editor
+        });
         connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &DlgHigl::selectionChanged);
         layout_top->addWidget(m_table);
 
@@ -522,7 +437,9 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
 
     connect(m_mainWin, &MainWin::textFontChanged, this, &DlgHigl::mainFontChanged);
 
-    // populate "Edit" toolbar: functionality for adding/removing/sorting the list
+    //
+    // "Edit" toolbar: functionality for adding/removing/sorting the list
+    //
     auto f1 = new QToolBar("Edit", this);
         f1->setObjectName("DlgHigl::Edit"); // for saveState
         addToolBar(Qt::TopToolBarArea, f1);
@@ -549,7 +466,9 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
         connect(m_f1_fmt, &QPushButton::clicked, this, &DlgHigl::cmdEditFormat);
         f1->addWidget(m_f1_fmt);
 
-    // populate "Find" toolbar: functionality for applying search patterns
+    //
+    // "Find" toolbar: functionality for applying search patterns
+    //
     auto f2 = new QToolBar("Find", this);
         f2->setObjectName("DlgHigl::Find"); // for saveState
         addToolBar(Qt::RightToolBarArea, f2);
@@ -597,7 +516,6 @@ DlgHigl::~DlgHigl()
 {
     delete m_model;
     delete m_fmtDelegate;
-    //TODO m_dlgMarkup
 }
 
 /**
@@ -635,6 +553,12 @@ void DlgHigl::selectionChanged(const QItemSelection& /*selected*/, const QItemSe
     m_f2_balla->setEnabled(enabled);
 }
 
+
+/**
+ * This slot is connected to a signal sent by the model whenever data is
+ * modified.  The function enables the "Apply" button, which allows saving
+ * the changes as well as visually indicates the status to the user.
+ */
 void DlgHigl::cbDataChanged(const QModelIndex &, const QModelIndex &)
 {
     m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(true);
@@ -656,10 +580,10 @@ void DlgHigl::showContextMenu(const QPoint& pos)
 
     auto act = menu->addAction("Change background color");
         act->setEnabled(state_sel_1);
-        connect(act, &QAction::triggered, this, &DlgHigl::cmdChangeBgColor);
+        connect(act, &QAction::triggered, [=](){ cmdChangeBgFgColor(true); });
     act = menu->addAction("Change foreground color");
         act->setEnabled(state_sel_1);
-        connect(act, &QAction::triggered, this, &DlgHigl::cmdChangeFgColor);
+        connect(act, &QAction::triggered, [=](){ cmdChangeBgFgColor(false); });
     QMenu *sub = menu->addMenu("Font options");
     if (state_sel_1)
     {
@@ -750,8 +674,9 @@ void DlgHigl::closeEvent(QCloseEvent * event)
 
 
 /**
- * This function is bound to each of the main command buttons: Ok, Apply,
- * Cancel.
+ * This function is bound to all of the grouped main command buttons: Ok,
+ * Apply, Cancel. As usual, Ok will save & close, Cancel will confirm &
+ * discard & close, and Apply will only save.
  */
 void DlgHigl::cmdButton(QAbstractButton * button)
 {
@@ -778,7 +703,9 @@ void DlgHigl::cmdButton(QAbstractButton * button)
 
 /**
  * This function is invoked by the "Add new item" entry in the highlight
- * list's toolbar and context menu.
+ * list's toolbar and context menu. The new entry is given the current or
+ * last used search parameters from the main menu and a default highlight
+ * format with a hard-coded background color.
  */
 void DlgHigl::cmdAdd(bool)
 {
@@ -790,9 +717,9 @@ void DlgHigl::cmdAdd(bool)
         pat.m_pat = "Enter pattern...";
 
     HiglFmtSpec fmtSpec;
-    fmtSpec.m_bgCol = 0xfffaee0a; //FIXME s_colFind
+    fmtSpec.m_bgCol = 0xfffaee0a; //TODO s_colFind
 
-    m_model->insertRowData(row, pat, fmtSpec);
+    m_model->insertRowData(row, pat, fmtSpec, m_higl->allocateNewId());
 
     // select item and make it visible
     QModelIndex midx = m_model->index(row, DlgHiglModel::COL_IDX_PAT);
@@ -806,7 +733,9 @@ void DlgHigl::cmdAdd(bool)
 
 /**
  * This function is invoked by the "Duplicate entry" command in the highlight
- * list's context menu. (The command is not available via toolbar.)
+ * list's context menu. (The command is not available via toolbar.) It creates
+ * a new entry with the same search pattern and highlighting format as the
+ * selected one.
  */
 void DlgHigl::cmdDuplicate(bool)
 {
@@ -815,7 +744,8 @@ void DlgHigl::cmdDuplicate(bool)
     {
         auto midx = sel.front();
         m_model->insertRowData(midx.row(), m_model->getSearchPar(midx),
-                                           *m_model->getFmtSpec(midx));
+                                           *m_model->getFmtSpec(midx),
+                                           m_higl->allocateNewId());
 
         // select item and make it visible
         m_table->selectionModel()->select(midx, QItemSelectionModel::Clear);
@@ -830,13 +760,22 @@ void DlgHigl::cmdDuplicate(bool)
 
 /**
  * This function is invoked by the "Remove entry" command in the highlight
- * list's toolbar and context menu.
+ * list's toolbar and context menu. It removes all selected entries without
+ * asking for confirmation (the user can still "Cancel" the dialog to undo
+ * the deletion.)
  */
 void DlgHigl::cmdRemove(bool)
 {
     auto sel = m_table->selectionModel()->selectedRows();
     if (sel.size() > 0)
     {
+        for (auto& midx : sel)
+        {
+            auto it = findDlgMarkup(m_model->getFmtId(midx), m_dlgMarkup);
+            if (it != m_dlgMarkup.end())
+                m_dlgMarkup.erase(it);
+        }
+
         // reverse-sort index list so that indices do not need adaption during removal
         std::sort(sel.begin(), sel.end(),
                   [](const QModelIndex& a, const QModelIndex&b)->bool {return a.row() > b.row();});
@@ -853,8 +792,9 @@ void DlgHigl::cmdRemove(bool)
 
 
 /**
- * This function is bound to the "up" button next to the color highlight list.
- * Each selected item (selection may be non-consecutive) is shifted up by one line.
+ * This function is bound to the "Move up" button.  Each selected item (where
+ * selection may be non-consecutive) is shifted up by one row. If the first
+ * selected item is already at top, the function does nothing.
  */
 void DlgHigl::cmdShiftUp(bool)
 {
@@ -872,8 +812,10 @@ void DlgHigl::cmdShiftUp(bool)
                 m_model->moveRows(QModelIndex(), midx.row(), 1,
                                   QModelIndex(), midx.row() - 1);
             }
+            m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(true);
         }
-        m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(true);
+        else
+            m_stline->showWarning("edit", "Item is already at the top - cannot move up");
     }
 }
 
@@ -899,11 +841,26 @@ void DlgHigl::cmdShiftDown(bool)
                 m_model->moveRows(QModelIndex(), midx.row(), 1,
                                   QModelIndex(), midx.row() + 1 + 1);
             }
+            m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(true);
         }
-        m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(true);
+        else
+            m_stline->showWarning("edit", "Item is already at the bottom - cannot move down");
     }
 }
 
+
+/**
+ * This helper function searches the list of pointers to mark-up editor dialogs
+ * for one working for the given highlight id. It returns a list iterator that
+ * has value end() as usual when no such item was found.
+ */
+DlgHigl::DlgMarkupPtrList::iterator DlgHigl::findDlgMarkup(HiglId id, DlgHigl::DlgMarkupPtrList& v)
+{
+    for (auto it = v.begin(); it != v.end(); ++it)
+        if ((*it)->getFmtId() == id)
+            return it;
+    return v.end();
+}
 
 /**
  * This function is invoked by the "Format..." command in the highlight list's
@@ -915,45 +872,55 @@ void DlgHigl::cmdEditFormat(bool)
     auto sel = m_table->selectionModel()->selectedRows();
     if (sel.size() > 0)
     {
-        // FIXME either close previous dialog first or manage multiple ones
-
         const HiglFmtSpec * fmtSpec = m_model->getFmtSpec(sel.front());
         const SearchPar& pat = m_model->getSearchPar(sel.front());
-        m_dlgMarkup = new DlgMarkup(pat.m_pat, fmtSpec, m_higl, m_mainWin);
-        // FIXME MAJOR TODO: row can change due to reordering while dialog open!
-        m_idxMarkup = sel.front().row();
+        HiglId id = m_model->getFmtId(sel.front());
 
-        connect(m_dlgMarkup, &DlgMarkup::closeReq, this, &DlgHigl::signalMarkupCloseReq);
-        connect(m_dlgMarkup, &DlgMarkup::applyReq, this, &DlgHigl::signalMarkupApplyReq);
+        auto it = findDlgMarkup(id, m_dlgMarkup);
+        if (it == m_dlgMarkup.end())
+        {
+            auto ptr = std::make_unique<DlgMarkup>(id, pat.m_pat, fmtSpec, m_higl, m_mainWin);
+
+            connect(ptr.get(), &DlgMarkup::closeReq, this, &DlgHigl::signalMarkupCloseReq);
+            connect(ptr.get(), &DlgMarkup::applyReq, this, &DlgHigl::signalMarkupApplyReq);
+
+            m_dlgMarkup.push_back(std::move(ptr));
+        }
+        else  // dialog for that pattern is already open
+        {
+            (*it)->activateWindow();
+            (*it)->raise();
+        }
     }
 }
 
 /**
- * This slot is connected to the signal sent when the mark-up editor dialog is
+ * This slot is connected to the signal sent when a mark-up editor dialog is
  * closed. The function releases the dialog resources.
  */
-void DlgHigl::signalMarkupCloseReq()
+void DlgHigl::signalMarkupCloseReq(HiglId id)
 {
-    if (m_dlgMarkup != nullptr)
+    auto it = findDlgMarkup(id, m_dlgMarkup);
+    if (it != m_dlgMarkup.end())
     {
-        delete m_dlgMarkup;
-        m_dlgMarkup = nullptr;
-        m_idxMarkup = -1;
+        m_dlgMarkup.erase(it);
     }
 }
 
 /**
- * This slot is connected to the signal sent by the mark-up upon "Apply" or
- * "Ok". In case of the former, parameter "immediate" indicates that the
- * highllght list shall be applied to the main window immediately. Else, the
+ * This slot is connected to the signal sent by the mark-up editor upon "Apply"
+ * or "Ok". In case of the former, parameter "immediate" indicates that the
+ * highlight list shall be applied to the main window immediately. Else, the
  * new format provided by the editor is only stored internally until its own
  * "Apply" or "Ok" buttons are clicked.
  */
-void DlgHigl::signalMarkupApplyReq(bool immediate)
+void DlgHigl::signalMarkupApplyReq(HiglId id, bool immediate)
 {
-    if ((m_dlgMarkup != nullptr) && (m_idxMarkup < m_model->rowCount()))
+    int idx = m_model->getIdxForId(id);
+    auto it = findDlgMarkup(id, m_dlgMarkup);
+    if ((it != m_dlgMarkup.end()) && (idx >= 0))
     {
-        m_model->setFmtData(m_idxMarkup, m_dlgMarkup->getFmtSpec());
+        m_model->setFmtData(idx, (*it)->getFmtSpec());
         if (immediate)
         {
             m_model->saveData(m_higl);
@@ -963,7 +930,7 @@ void DlgHigl::signalMarkupApplyReq(bool immediate)
         {
             m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(true);
         }
-        m_dlgMarkup->resetModified();
+        (*it)->resetModified();
     }
 }
 
@@ -1018,41 +985,25 @@ void DlgHigl::cmdSearchList(int direction)
 }
 
 /**
- * This function allows to edit a color assigned to a tags entry.
+ * This slot is connected to the "Change background/foreground color" entries
+ * in the context menu; the parameter indicates which color to modify.  The
+ * function opens the color selection dialog and when closed with Ok updates
+ * the respective color in the formst.
  */
-void DlgHigl::cmdChangeBgColor(bool)
+void DlgHigl::cmdChangeBgFgColor(bool isBg)
 {
     auto sel = m_table->selectionModel()->selectedRows();
     if (sel.size() == 1)
     {
         const HiglFmtSpec * pFmtSpec = m_model->getFmtSpec(sel.front());
-        QColor bgCol = QColor(pFmtSpec->m_bgCol);
-        bgCol = QColorDialog::getColor(bgCol, this, "Background color selection");
-        if (bgCol.isValid())
+        QColor col = QColor(isBg ? pFmtSpec->m_bgCol : pFmtSpec->m_fgCol);
+
+        col = QColorDialog::getColor(col, this, "Background color selection");
+        if (col.isValid())
         {
             HiglFmtSpec fmtSpec = *pFmtSpec;
-            fmtSpec.m_bgCol = bgCol.rgba();
-            m_model->setFmtData(sel.front().row(), fmtSpec);
-        }
-    }
-}
+            (isBg ? fmtSpec.m_bgCol : fmtSpec.m_fgCol) = col.rgba();
 
-
-/**
- * This function allows to edit a color assigned to a tags entry.
- */
-void DlgHigl::cmdChangeFgColor(bool)
-{
-    auto sel = m_table->selectionModel()->selectedRows();
-    if (sel.size() == 1)
-    {
-        const HiglFmtSpec * pFmtSpec = m_model->getFmtSpec(sel.front());
-        QColor fgCol = QColor(pFmtSpec->m_fgCol);
-        fgCol = QColorDialog::getColor(fgCol, this, "Foreground color selection");
-        if (fgCol.isValid())
-        {
-            HiglFmtSpec fmtSpec = *pFmtSpec;
-            fmtSpec.m_fgCol = fgCol.rgba();
             m_model->setFmtData(sel.front().row(), fmtSpec);
         }
     }
