@@ -21,6 +21,10 @@
 #include <map>
 #include <vector>
 
+class MainWin;
+class MainText;
+class Highlighter;
+
 class Bookmarks
 {
 public:
@@ -28,9 +32,10 @@ public:
         : m_mainWin(mainWin)
     {
     }
-    void connectWidgets(MainText * textWid)
+    void connectWidgets(MainText * textWid, Highlighter * higl)
     {
         m_mainText = textWid;
+        m_higl = higl;
     }
 
     bool isEmpty() const { return m_bookmarks.empty(); }
@@ -64,6 +69,7 @@ private:
 private:
     MainWin * const m_mainWin;
     MainText * m_mainText = nullptr;
+    Highlighter * m_higl = nullptr;
 
     std::map<int,QString> m_bookmarks;
 

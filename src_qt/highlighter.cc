@@ -47,9 +47,22 @@ Highlighter::Highlighter(MainText * textWid)
     : m_mainText(textWid)
 {
     // default format for search highlighting
-    m_hallPat.m_id = 0;
+    m_hallPat.m_id = HIGL_ID_SEARCH;
     m_hallPat.m_fmtSpec.m_bgCol = s_colFind;
     configFmt(m_hallPat.m_fmt, m_hallPat.m_fmtSpec);
+
+    // default format for search increment
+    m_searchIncPat.m_id = HIGL_ID_SEARCH_INC;
+    m_searchIncPat.m_fmtSpec.m_bgCol = s_colFindInc;
+    configFmt(m_searchIncPat.m_fmt, m_searchIncPat.m_fmtSpec);
+
+    // default format for search highlighting
+    m_bookPat.m_id = HIGL_ID_BOOKMARK;
+    m_bookPat.m_fmtSpec.m_fgCol = 0xffff55ff;
+    m_bookPat.m_fmtSpec.m_olCol = 0xff3d4291;
+    m_bookPat.m_fmtSpec.m_bold = true;
+    m_bookPat.m_fmtSpec.m_sizeOff = 4;
+    configFmt(m_bookPat.m_fmt, m_bookPat.m_fmtSpec);
 
     m_hipro = new QProgressBar(m_mainText);
         m_hipro->setOrientation(Qt::Horizontal);
@@ -66,9 +79,7 @@ Highlighter::Highlighter(MainText * textWid)
 // only one line can be marked this way
 void Highlighter::addSearchInc(QTextCursor& sel)
 {
-    QTextCharFormat fmt;
-    fmt.setBackground(QColor(s_colFindInc));
-    sel.mergeCharFormat(fmt);
+    sel.mergeCharFormat(m_searchIncPat.m_fmt);
 
     m_findIncPos = sel.blockNumber();
 }
@@ -101,7 +112,7 @@ void Highlighter::addSearchHall(QTextCursor& sel, const QTextCharFormat& fmt, Hi
         else
             c.mergeCharFormat(fmt);
 
-        m_tags.emplace(std::make_pair(c.blockNumber(), id));
+        m_tags.emplace_hint(pair.second, std::make_pair(c.blockNumber(), id));
     }
 }
 
@@ -131,6 +142,23 @@ void Highlighter::removeHall(QTextDocument * doc, HiglId id)
     }
 }
 
+void Highlighter::redrawHall(QTextDocument * doc, HiglId id)
+{
+    int prevBlk = -1;
+    for (auto it = m_tags.begin(); it != m_tags.end(); ++it)
+    {
+        if (it->second == id)
+        {
+            int blkNum = it->first;
+            if (prevBlk != blkNum)
+            {
+                redraw(doc, blkNum);
+                prevBlk = blkNum;
+            }
+        }
+    }
+}
+
 // re-calculate line format for the given line after removal of a specific highlight
 void Highlighter::redraw(QTextDocument * doc, int blkNum)
 {
@@ -148,17 +176,17 @@ void Highlighter::redraw(QTextDocument * doc, int blkNum)
 
         if (++it != pair.second)
         {
-            QTextCharFormat fmt(getPatById(firstId)->m_fmt);
+            QTextCharFormat fmt(findPatById(firstId)->m_fmt);
 
             for (/*nop*/; it != pair.second; ++it)
             {
-                fmt.merge(getPatById(it->second)->m_fmt);
+                fmt.merge(findPatById(it->second)->m_fmt);
             }
             c.setCharFormat(fmt);
         }
         else  // one highlight remaining in this line
         {
-            c.setCharFormat(getPatById(firstId)->m_fmt);
+            c.setCharFormat(findPatById(firstId)->m_fmt);
         }
     }
     else  // no highlight remaining in this line
@@ -168,10 +196,14 @@ void Highlighter::redraw(QTextDocument * doc, int blkNum)
     }
 }
 
-const HiglPat* Highlighter::getPatById(HiglId id)
+HiglPat* Highlighter::findPatById(HiglId id)
 {
-    if (id == 0)
+    if (id == HIGL_ID_SEARCH)
         return &m_hallPat;
+    else if (id == HIGL_ID_SEARCH_INC)
+        return &m_searchIncPat;
+    else if (id == HIGL_ID_BOOKMARK)
+        return &m_bookPat;
 
     for (auto& pat : m_patList)
         if (pat.m_id == id)
@@ -194,32 +226,43 @@ void Highlighter::clearAll(QTextDocument * doc)
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+const HiglFmtSpec * Highlighter::getFmtSpecForId(HiglId id)
+{
+    return &findPatById(id)->m_fmtSpec;
+}
+
 // non-reentrant due to internal static buffer
 const HiglFmtSpec * Highlighter::getFmtSpecForLine(int line)
 {
     const HiglFmtSpec * ptr = nullptr;
 
-    auto pair = m_tags.equal_range(line);
-    if (pair.first != pair.second)
+    auto range = m_tags.equal_range(line);
+    if (range.first != range.second)
     {
-        auto firstId = pair.first->second;
-        auto it = pair.first;
-
-        if (++it != pair.second)
+        auto it = range.first;
+        if (it->second == HIGL_ID_BOOKMARK)
+            ++it;
+        if (it != range.second)
         {
-            static HiglFmtSpec fmtSpecBuf;
+            auto firstId = it->second;
 
-            fmtSpecBuf = getPatById(firstId)->m_fmtSpec;
-
-            for (/*nop*/; it != pair.second; ++it)
+            if (++it != range.second)
             {
-                fmtSpecBuf.merge(getPatById(it->second)->m_fmtSpec);
+                static HiglFmtSpec fmtSpecBuf;
+
+                fmtSpecBuf = findPatById(firstId)->m_fmtSpec;
+
+                for (/*nop*/; it != range.second; ++it)
+                {
+                    if (it->second != HIGL_ID_BOOKMARK)
+                        fmtSpecBuf.merge(findPatById(it->second)->m_fmtSpec);
+                }
+                ptr = &fmtSpecBuf;
             }
-            ptr = &fmtSpecBuf;
-        }
-        else  // one highlight remaining in this line
-        {
-            ptr = &getPatById(firstId)->m_fmtSpec;
+            else  // one highlight remaining in this line
+            {
+                ptr = &findPatById(firstId)->m_fmtSpec;
+            }
         }
     }
     return ptr;
@@ -249,6 +292,8 @@ void HiglFmtSpec::merge(const HiglFmtSpec& other)
     m_underline |= other.m_underline;
     m_strikeout |= other.m_strikeout;
 
+    m_sizeOff += other.m_sizeOff;
+
     if (!other.m_font.isEmpty())
         m_font = other.m_font;
 }
@@ -264,6 +309,7 @@ bool HiglFmtSpec::operator==(const HiglFmtSpec& other) const
             (m_italic == other.m_italic) &&
             (m_underline == other.m_underline) &&
             (m_strikeout == other.m_strikeout) &&
+            (m_sizeOff == other.m_sizeOff) &&
             (m_font == other.m_font);
 }
 
@@ -310,6 +356,12 @@ void Highlighter::configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec)
         fmt.setFontItalic(true);
     if (fmtSpec.m_strikeout)
         fmt.setFontStrikeOut(true);
+
+    if (fmtSpec.m_sizeOff)
+    {
+        // NOTE fmt.fontPointSize() does not work here
+        fmt.setFontPointSize(fmt.font().pointSize() + fmtSpec.m_sizeOff);
+    }
 }
 
 void Highlighter::addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id)
@@ -324,10 +376,17 @@ void Highlighter::addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, 
     m_patList.push_back(fmt);
 }
 
-// TODO save search & inc highlight formats
 QJsonArray Highlighter::getRcValues()
 {
     QJsonArray arr;
+
+    for (auto pat : {&m_hallPat, &m_searchIncPat, &m_bookPat})
+    {
+        QJsonObject obj;
+        obj.insert("ID", QJsonValue(int(pat->m_id)));
+        insertFmtRcValues(obj, pat->m_fmtSpec);
+        arr.push_back(obj);
+    }
 
     for (const HiglPat& pat : m_patList)
     {
@@ -337,33 +396,41 @@ QJsonArray Highlighter::getRcValues()
         obj.insert("search_reg_exp", QJsonValue(pat.m_srch.m_opt_regexp));
         obj.insert("search_match_case", QJsonValue(pat.m_srch.m_opt_case));
 
-        if (pat.m_fmtSpec.m_bgCol != HiglFmtSpec::INVALID_COLOR)
-            obj.insert("bg_col", QJsonValue(int(pat.m_fmtSpec.m_bgCol)));
-        if (pat.m_fmtSpec.m_fgCol != HiglFmtSpec::INVALID_COLOR)
-            obj.insert("fg_col", QJsonValue(int(pat.m_fmtSpec.m_fgCol)));
-        if (pat.m_fmtSpec.m_bgStyle != Qt::NoBrush)
-            obj.insert("bg_style", QJsonValue(pat.m_fmtSpec.m_bgStyle));
-        if (pat.m_fmtSpec.m_fgStyle != Qt::NoBrush)
-            obj.insert("fg_style", QJsonValue(pat.m_fmtSpec.m_fgStyle));
-        if (pat.m_fmtSpec.m_olCol != HiglFmtSpec::INVALID_COLOR)
-            obj.insert("outline_col", QJsonValue(int(pat.m_fmtSpec.m_olCol)));
-
-        if (pat.m_fmtSpec.m_underline)
-            obj.insert("font_underline", QJsonValue(true));
-        if (pat.m_fmtSpec.m_bold)
-            obj.insert("font_bold", QJsonValue(true));
-        if (pat.m_fmtSpec.m_italic)
-            obj.insert("font_italic", QJsonValue(true));
-        if (pat.m_fmtSpec.m_strikeout)
-            obj.insert("font_strikeout", QJsonValue(true));
-
-        if (!pat.m_fmtSpec.m_font.isEmpty())
-            obj.insert("font", QJsonValue(pat.m_fmtSpec.m_font));
+        insertFmtRcValues(obj, pat.m_fmtSpec);
 
         arr.push_back(obj);
     }
 
     return arr;
+}
+
+void Highlighter::insertFmtRcValues(QJsonObject& obj, const HiglFmtSpec& fmtSpec)
+{
+    if (fmtSpec.m_bgCol != HiglFmtSpec::INVALID_COLOR)
+        obj.insert("bg_col", QJsonValue(int(fmtSpec.m_bgCol)));
+    if (fmtSpec.m_fgCol != HiglFmtSpec::INVALID_COLOR)
+        obj.insert("fg_col", QJsonValue(int(fmtSpec.m_fgCol)));
+    if (fmtSpec.m_bgStyle != Qt::NoBrush)
+        obj.insert("bg_style", QJsonValue(fmtSpec.m_bgStyle));
+    if (fmtSpec.m_fgStyle != Qt::NoBrush)
+        obj.insert("fg_style", QJsonValue(fmtSpec.m_fgStyle));
+    if (fmtSpec.m_olCol != HiglFmtSpec::INVALID_COLOR)
+        obj.insert("outline_col", QJsonValue(int(fmtSpec.m_olCol)));
+
+    if (fmtSpec.m_underline)
+        obj.insert("font_underline", QJsonValue(true));
+    if (fmtSpec.m_bold)
+        obj.insert("font_bold", QJsonValue(true));
+    if (fmtSpec.m_italic)
+        obj.insert("font_italic", QJsonValue(true));
+    if (fmtSpec.m_strikeout)
+        obj.insert("font_strikeout", QJsonValue(true));
+
+    if (fmtSpec.m_sizeOff)
+        obj.insert("font_size_offset", QJsonValue(fmtSpec.m_sizeOff));
+
+    if (!fmtSpec.m_font.isEmpty())
+        obj.insert("font", QJsonValue(fmtSpec.m_font));
 }
 
 void Highlighter::setRcValues(const QJsonValue& val)
@@ -373,6 +440,7 @@ void Highlighter::setRcValues(const QJsonValue& val)
     {
         SearchPar srch;
         HiglFmtSpec fmtSpec;
+        HiglId id = INVALID_HIGL_ID;
 
         const QJsonObject obj = it->toObject();
         for (auto it = obj.begin(); it != obj.end(); ++it)
@@ -380,7 +448,10 @@ void Highlighter::setRcValues(const QJsonValue& val)
             const QString& var = it.key();
             const QJsonValue& val = it.value();
 
-            if (var == "search_pattern")
+            if (var == "ID")  // pre-defined format
+                id = val.toInt();
+
+            else if (var == "search_pattern")
                 srch.m_pat = val.toString();
             else if (var == "search_reg_exp")
                 srch.m_opt_regexp = val.toBool();
@@ -407,10 +478,17 @@ void Highlighter::setRcValues(const QJsonValue& val)
             else if (var == "font_strikeout")
                 fmtSpec.m_strikeout = true;
 
+            else if (var == "font_size_offset")
+                fmtSpec.m_sizeOff = val.toInt();
+
             else if (var == "font")
                 fmtSpec.m_font = val.toString();
         }
-        addPattern(srch, fmtSpec);
+
+        if (id == INVALID_HIGL_ID)
+            addPattern(srch, fmtSpec);
+        else if (id < HIGL_ID_FIRST_FREE)
+            setFmtSpec(id, fmtSpec);
     }
 }
 
@@ -452,6 +530,16 @@ void Highlighter::setList(const std::vector<HiglPatExport>& patList)
 
     searchHighlightClear()
 #endif
+}
+
+void Highlighter::setFmtSpec(HiglId id, const HiglFmtSpec& fmtSpec)
+{
+    HiglPat* buf = findPatById(id);
+    buf->m_fmtSpec = fmtSpec;
+    buf->m_fmt = QTextCharFormat();
+    configFmt(buf->m_fmt, buf->m_fmtSpec);
+
+    redrawHall(m_mainText->document(), id);
 }
 
 
@@ -606,6 +694,7 @@ int Highlighter::highlightLines(const HiglPat& pat, int line)
 }
 
 
+#if 0  // currently unused
 /**
  * This helper function schedules the line highlight function until highlighting
  * is complete for the given pattern.  This function is used to add highlighting
@@ -624,6 +713,7 @@ void Highlighter::highlightAll(const HiglPat& pat, int line)
         m_mainText->viewport()->setCursor(Qt::ArrowCursor);
     }
 }
+#endif
 
 
 /**
@@ -806,3 +896,28 @@ void Highlighter::searchHighlightMatch(QTextCursor& match)
 }
 
 
+/**
+ * This function adds or removes highlighting for a bookmarked lines.
+ */
+void Highlighter::bookmarkHighlight(int line, bool enabled)
+{
+    auto pair = m_tags.equal_range(line);
+    for (auto it = pair.first; it != pair.second; ++it)
+    {
+        if (it->second == HIGL_ID_BOOKMARK)
+        {
+            if (!enabled)
+            {
+                m_tags.erase(it);
+                redraw(m_mainText->document(), line);
+            }
+            return;
+        }
+    }
+    if (enabled)
+    {
+        HiglId id = HIGL_ID_BOOKMARK;
+        m_tags.emplace_hint(pair.second, std::make_pair(line, id));
+        redraw(m_mainText->document(), line);
+    }
+}

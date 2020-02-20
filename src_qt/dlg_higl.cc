@@ -601,10 +601,10 @@ void DlgHigl::showContextMenu(const QPoint& pos)
             act->setCheckable(true);
             act->setChecked(pFmtSpec->m_italic);
             connect(act, &QAction::triggered, [=](){ cmdToggleFontItalic(sel.front(), act->isChecked()); });
-        act = sub->addAction("Overstrike");
+        act = sub->addAction("Strikeout");
             act->setCheckable(true);
             act->setChecked(pFmtSpec->m_strikeout);
-            connect(act, &QAction::triggered, [=](){ cmdToggleFontOverstrike(sel.front(), act->isChecked()); });
+            connect(act, &QAction::triggered, [=](){ cmdToggleFontStrikeout(sel.front(), act->isChecked()); });
         act = sub->addSeparator();
         act = sub->addAction("Reset font to default");
             act->setEnabled(!pFmtSpec->m_font.isEmpty());
@@ -616,7 +616,7 @@ void DlgHigl::showContextMenu(const QPoint& pos)
     {
         sub->setEnabled(false);
     }
-    act = menu->addAction("Edit highlight format...");
+    act = menu->addAction("More format options...");
         act->setEnabled(state_sel_1);
         connect(act, &QAction::triggered, this, &DlgHigl::cmdEditFormat);
     menu->addSeparator();
@@ -1031,7 +1031,7 @@ void DlgHigl::cmdToggleFontItalic(const QModelIndex& index, bool checked)
     m_model->setFmtData(index.row(), fmtSpec);
 }
 
-void DlgHigl::cmdToggleFontOverstrike(const QModelIndex& index, bool checked)
+void DlgHigl::cmdToggleFontStrikeout(const QModelIndex& index, bool checked)
 {
     HiglFmtSpec fmtSpec = *m_model->getFmtSpec(index);
     fmtSpec.m_strikeout = checked;
@@ -1130,15 +1130,15 @@ std::vector<QRgb> DlgHigl::s_defaultColPalette =
   QRgb(0xff'bee1be),
   QRgb(0xff'bfffb3),
 
+  QRgb(0xff'b7c1e3),
   QRgb(0xff'b3beff),
   QRgb(0xff'96d9ff),
-  QRgb(0xff'b7c1e3),
   QRgb(0xff'b3fff3),
   QRgb(0xff'ccffff),
   QRgb(0xff'dab3d9),
 
-  QRgb(0xff'dab3ff),
   QRgb(0xff'c180ff),
+  QRgb(0xff'dab3ff),
   QRgb(0xff'eba1ff),
   QRgb(0xff'e6b3ff),
   QRgb(0xff'e6ccff),
@@ -1149,14 +1149,14 @@ std::vector<QRgb> DlgHigl::s_defaultColPalette =
   QRgb(0xff'ff7342),
   QRgb(0xff'ffb439),
   QRgb(0xff'ffbf80),
-  QRgb(0xff'efbf80),
+  QRgb(0xff'ffcfa0),
 
   QRgb(0xff'ffd9b3),
   QRgb(0xff'f0b0a0),
   QRgb(0xff'ffb3be),
   QRgb(0xff'e9ff80),
-  QRgb(0xff'f2ffb3),
   QRgb(0xff'eeee8e),
+  QRgb(0xff'faee0a),
 
   QRgb(0xff'86589a),     // saturated colors (for foreground)
   QRgb(0xff'9a516d),
@@ -1165,8 +1165,8 @@ std::vector<QRgb> DlgHigl::s_defaultColPalette =
   QRgb(0xff'3d4291),
   QRgb(0xff'5e789a),
 
-  QRgb(0xff'61949a),
   QRgb(0xff'008800),
+  QRgb(0xff'61949a),
   QRgb(0xff'007c66),
   QRgb(0xff'717100),
   QRgb(0xff'b8b800),
@@ -1176,6 +1176,16 @@ std::vector<QRgb> DlgHigl::s_defaultColPalette =
 DlgHigl * DlgHigl::s_instance = nullptr;
 QByteArray DlgHigl::s_winGeometry;
 QByteArray DlgHigl::s_winState;
+
+
+void DlgHigl::initColorPalette()  /*static*/
+{
+    int idx = 0;
+    for (auto& col : s_defaultColPalette)
+    {
+        QColorDialog::setStandardColor(idx++, QColor(col));
+    }
+}
 
 /**
  * This function is called when writing the config file to retrieve persistent
@@ -1230,9 +1240,11 @@ void DlgHigl::setRcValues(const QJsonValue& val)  /*static*/
         {
             QJsonArray arr = val.toArray();
             s_defaultColPalette.clear();
+            int idx = 0;
             for (auto it = arr.begin(); it != arr.end(); ++it)
             {
                 s_defaultColPalette.push_back(it->toInt());
+                QColorDialog::setStandardColor(idx++, it->toInt());
             }
         }
         else if (var == "custom_col_palette")
@@ -1264,13 +1276,8 @@ void DlgHigl::openDialog(Highlighter * higl, MainSearch * search, MainWin * main
 {
     if (s_instance == nullptr)
     {
+        initColorPalette();
         s_instance = new DlgHigl(higl, search, mainWin);
-
-        int idx = 0;
-        for (auto& col : s_defaultColPalette)
-        {
-            QColorDialog::setStandardColor(idx++, QColor(col));
-        }
     }
     else
     {

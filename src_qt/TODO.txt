@@ -1,31 +1,41 @@
 
-- highlight bookmarks in main window
-- support different font sizes in search list view
-- reconfigure upon font size change via main window
+- bookmarks view delegate: filter search highlight
+- support different font sizes in search list view rows
+- search list/bookmark/highlght dialogs:
+  use max(default font height, MainText font height) for row height
 - dlg_hist: missing update in "add" when regexp/case options are changed
+- Highlighter::setList: restarts complete highlight init -> only newly added
+- MainText: key-down at end of document wraps to start
+- search list: "u" key sometimes stops working (falls back to default key binding)
+  use overridden key handler instead
+- investigate why highlight-all in main window is very slow (e.g. when highlighting all lines)
 
 clean-up:
-- dlg_higl: use HighlightViewDelegate
+- main_search: use SearchPar& in function params instead of 3 options
+- use signals instead of hard-wired callbacks to dialogs
 - main_win: split RC file into separate class (?)
 - main_search: split search history into separate class (?)
 - undo/redo in separate class (?)
-- split off "find" toolbar into separate class
+- split off duplicated "find" toolbar code into separate class
+- limit access to MainText QPlainText base class interface
 
-- search_list: performance optimization line list used by SearchListModel
 - search_list: frame number pattern parsing
   requires enhancement: configuration dialog 2 * patterns
+- search_list: performance optimization line list used by SearchListModel
 
-- ATimer: replace with central BgTask class
-  note: use QPointer<QWidget> for task parent widget (equiv. std::weak_ptr)
+- add tool-tips
+- add help (e.g. load HTML manual page into QTextEdit)
 - loading files in the background / at least after main window is open
 - loading from pipe
 - main text: xview scrolling; yoff position with offset et.al.
 - main text: number prefix on key commands
-- highlight mark-up editor dialog
-  also allow editing search match & bookmark highlight format
 - highlighter: m_yViewRedirected
 
-enhancements:
+optional enhancements:
+- highlight mark-up: relative font size change & overline & underline color/style
+- multiple instances of search list window
 - bookmark undo/redo for line list (implemented within Bookmarks class)
 - bookmark adding/removing via text search (all/all above/all below)
 
+// QT sources:
+// https://code.woboq.org/qt5/qtbase/src/gui/text/qtextdocument.cpp.html

@@ -60,6 +60,7 @@
 #include "dlg_higl.h"
 #include "dlg_history.h"
 #include "dlg_bookmarks.h"
+#include "dlg_markup_sa.h"
 
 static int load_file_mode = 0;
 static int load_buf_size = 0x100000;
@@ -118,7 +119,7 @@ MainWin::MainWin(QApplication * app)
     m_stline = new StatusLine(m_f1_t);
     m_higl = new Highlighter(m_f1_t);
     m_search->connectWidgets(m_f1_t, m_higl, f2_e, f2_hall, f2_mcase, f2_regexp);
-    m_bookmarks->connectWidgets(m_f1_t);
+    m_bookmarks->connectWidgets(m_f1_t, m_higl);
     SearchList::connectWidgets(this, m_search, m_f1_t, m_higl, m_bookmarks);
     DlgBookmarks::connectWidgets(this, m_search, m_f1_t, m_higl, m_bookmarks);
     DlgHistory::connectWidgets(this, m_search, m_f1_t);
@@ -184,6 +185,13 @@ void MainWin::populateMenus()
         connect(act, &QAction::toggled, this, &MainWin::menuCmdToggleLineWrap);
     act = m_menubar_ctrl->addAction("Font selection...");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdSelectFont);
+    QMenu *sub = m_menubar_ctrl->addMenu("Mark-up configuration");
+        act = sub->addAction("Search results...");
+            connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editSearchFmt(m_higl, this); });
+        act = sub->addAction("Search increment...");
+            connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editSearchIncFmt(m_higl, this); });
+        act = sub->addAction("Bookmarks...");
+            connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editBookmarkFmt(m_higl, this); });
     m_menubar_ctrl->addSeparator();
     act = m_menubar_ctrl->addAction("Quit");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdFileQuit);

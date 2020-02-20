@@ -45,6 +45,7 @@ class DlgHigl : public QMainWindow
 
 public:
     static void openDialog(Highlighter * higl, MainSearch * search, MainWin * mainWin);
+    static void initColorPalette();
     static QJsonObject getRcValues();
     static void setRcValues(const QJsonValue& val);
 
@@ -75,7 +76,7 @@ private:
     void cmdToggleFontUnderline(const QModelIndex& index, bool checked);
     void cmdToggleFontBold(const QModelIndex& index, bool checked);
     void cmdToggleFontItalic(const QModelIndex& index, bool checked);
-    void cmdToggleFontOverstrike(const QModelIndex& index, bool checked);
+    void cmdToggleFontStrikeout(const QModelIndex& index, bool checked);
     void cmdResetFont(const QModelIndex& index);
     void cmdChangeFont(bool);
     void signalMarkupCloseReq(HiglId id);

@@ -53,6 +53,7 @@ public:
     bool                m_italic = false;
     bool                m_underline = false;
     bool                m_strikeout = false;
+    int                 m_sizeOff = 0;
     QString             m_font;
     // relief: "", raised, sunken, ridge, groove
     // relief borderwidth: 1,2,...,9
@@ -91,34 +92,43 @@ public:
     void removeInc(QTextDocument * doc);
     void getPatList(std::vector<HiglPatExport>&) const;
     void setList(const std::vector<HiglPatExport>& patList);
+    void setFmtSpec(HiglId id, const HiglFmtSpec& fmtSpec);
     const HiglFmtSpec * getFmtSpecForLine(int line);
+    const HiglFmtSpec * getFmtSpecForId(HiglId id);
     void configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec);
     void adjustLineNums(int top_l, int bottom_l);
     HiglId allocateNewId();
 
     void highlightInit();
-    void highlightAll(const HiglPat& pat, int line);
-    void highlightVisible(const HiglPat& pat);
     void searchHighlightMatch(QTextCursor& match);
     void searchHighlightClear();
     void searchHighlightUpdate(const QString& pat, bool opt_regexp, bool opt_case, bool onlyVisible);
     void searchHighlightAll(const HiglPat& pat, int line);
+    void bookmarkHighlight(int line, bool enabled);
 
-    static const int INVALID_HIGL_ID = 0;
+    static constexpr int INVALID_HIGL_ID = 0;
+    static constexpr int HIGL_ID_SEARCH = 1;
+    static constexpr int HIGL_ID_SEARCH_INC = 2;
+    static constexpr int HIGL_ID_BOOKMARK = 3;
+    static constexpr int HIGL_ID_FIRST_FREE = 4;
 
 private:
     void addSearchInc(QTextCursor& sel);
     void addSearchHall(QTextCursor& sel, const QTextCharFormat& fmt, HiglId id);
     void removeHall(QTextDocument * doc, HiglId id);
+    void redrawHall(QTextDocument * doc, HiglId id);
     void redraw(QTextDocument * doc, int blkNum);
     void clearAll(QTextDocument * doc);
-    const HiglPat* getPatById(HiglId id);
+    HiglPat* findPatById(HiglId id);
+    void insertFmtRcValues(QJsonObject& obj, const HiglFmtSpec& fmtSpec);
 
     void addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id = INVALID_HIGL_ID);
     void highlightInitBg(int pat_idx, int line);
     int  highlightLines(const HiglPat& pat, int line);
+    void highlightVisible(const HiglPat& pat);
     void highlightYviewRedirect();
     void highlightYviewCallback(int value);
+    void highlightAll(const HiglPat& pat, int line);
 
 private:
     MainText * const m_mainText;
@@ -129,12 +139,13 @@ private:
 
     std::vector<HiglPat> m_patList;
     HiglPat       m_hallPat;
-    HiglId        m_lastId = INVALID_HIGL_ID;
+    HiglPat       m_searchIncPat;
+    HiglPat       m_bookPat;
+    HiglId        m_lastId = HIGL_ID_FIRST_FREE;
     bool          m_hallPatComplete = false;
     int           m_hallYview = 0;
-    bool          m_yViewRedirected = false;  // TODO obsolete
+    bool          m_yViewRedirected = false;
 
-    static const bool block_bg_tasks = false;  //TODO
     BgTask      * tid_high_init = nullptr;
     BgTask      * tid_search_hall = nullptr;
 };

@@ -33,6 +33,7 @@
 #include "main_text.h"
 #include "main_search.h"
 #include "status_line.h"
+#include "highlighter.h"
 #include "search_list.h"
 #include "dlg_bookmarks.h"
 #include "bookmarks.h"
@@ -61,6 +62,7 @@ bool Bookmarks::toggleBookmark(int line)
     }
     m_isModified = true;
 
+    m_higl->bookmarkHighlight(line, result);
     SearchList::signalBookmarkLine(line);
     DlgBookmarks::signalBookmarkListChanged();
 

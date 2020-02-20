@@ -39,6 +39,7 @@
 
 #include <cstdio>
 #include <string>
+#include <memory>
 
 #include "main_win.h"
 #include "highlighter.h"
