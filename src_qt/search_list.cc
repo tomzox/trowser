@@ -56,7 +56,7 @@
 #include "highl_view_dlg.h"
 #include "search_list.h"
 #include "dlg_higl.h"
-#include "dlg_hist.h"
+#include "dlg_history.h"
 
 // ----------------------------------------------------------------------------
 

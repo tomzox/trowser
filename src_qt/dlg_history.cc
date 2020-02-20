@@ -22,6 +22,8 @@
  * The main intention is allowing to quickly repeat one or more searches
  * from the list. For each entry the pattern and reg-exp/case options
  * are shown. The options can be edited in the table.
+ *
+ * ----------------------------------------------------------------------------
  */
 
 #include <QWidget>
@@ -50,7 +52,7 @@
 #include "main_search.h"
 #include "status_line.h"
 #include "search_list.h"
-#include "dlg_hist.h"
+#include "dlg_history.h"
 
 // ----------------------------------------------------------------------------
 

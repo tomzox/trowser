@@ -58,7 +58,7 @@
 #include "status_line.h"
 #include "search_list.h"
 #include "dlg_higl.h"
-#include "dlg_hist.h"
+#include "dlg_history.h"
 #include "dlg_bookmarks.h"
 
 static int load_file_mode = 0;

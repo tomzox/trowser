@@ -43,7 +43,7 @@
 #include "status_line.h"
 #include "search_list.h"
 #include "bg_task.h"
-#include "dlg_hist.h"
+#include "dlg_history.h"
 
 // ----------------------------------------------------------------------------
 

@@ -15,8 +15,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
  */
-#ifndef _DLG_HIST_H
-#define _DLG_HIST_H
+#ifndef _DLG_HISTORY_H
+#define _DLG_HISTORY_H
 
 #include <QWidget>
 #include <QMainWindow>
@@ -90,4 +90,4 @@ private:
     QSet<QString>       m_selPats;
 };
 
-#endif /* _DLG_HIST_H */
+#endif /* _DLG_HISTORY_H */
