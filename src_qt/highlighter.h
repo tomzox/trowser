@@ -102,8 +102,8 @@ public:
     void highlightInit();
     void searchHighlightMatch(QTextCursor& match);
     void searchHighlightClear();
-    void searchHighlightUpdate(const QString& pat, bool opt_regexp, bool opt_case, bool onlyVisible);
-    void searchHighlightAll(const HiglPat& pat, int line);
+    void searchHighlightUpdate(const SearchPar& par, bool onlyVisible);
+    void searchHighlightAll(const HiglPat& pat, int startPos);
     void bookmarkHighlight(int line, bool enabled);
 
     static constexpr int INVALID_HIGL_ID = 0;
@@ -114,7 +114,7 @@ public:
 
 private:
     void addSearchInc(QTextCursor& sel);
-    void addSearchHall(QTextCursor& sel, const QTextCharFormat& fmt, HiglId id);
+    void addSearchHall(const QTextBlock& blk, const QTextCharFormat& fmt, HiglId id);
     void removeHall(QTextDocument * doc, HiglId id);
     void redrawHall(QTextDocument * doc, HiglId id);
     void redraw(QTextDocument * doc, int blkNum);
@@ -123,12 +123,12 @@ private:
     void insertFmtRcValues(QJsonObject& obj, const HiglFmtSpec& fmtSpec);
 
     void addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id = INVALID_HIGL_ID);
-    void highlightInitBg(int pat_idx, int line);
-    int  highlightLines(const HiglPat& pat, int line);
+    void highlightInitBg(int pat_idx, int startPos);
+    int  highlightLines(const HiglPat& pat, int startPos);
     void highlightVisible(const HiglPat& pat);
     void highlightYviewRedirect();
     void highlightYviewCallback(int value);
-    void highlightAll(const HiglPat& pat, int line);
+    void highlightAll(const HiglPat& pat, int startPos);
 
 private:
     MainText * const m_mainText;

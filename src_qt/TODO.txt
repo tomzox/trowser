@@ -3,15 +3,12 @@
 - support different font sizes in search list view rows
 - search list/bookmark/highlght dialogs:
   use max(default font height, MainText font height) for row height
-- dlg_hist: missing update in "add" when regexp/case options are changed
 - Highlighter::setList: restarts complete highlight init -> only newly added
 - MainText: key-down at end of document wraps to start
 - search list: "u" key sometimes stops working (falls back to default key binding)
   use overridden key handler instead
-- investigate why highlight-all in main window is very slow (e.g. when highlighting all lines)
 
 clean-up:
-- main_search: use SearchPar& in function params instead of 3 options
 - use signals instead of hard-wired callbacks to dialogs
 - main_win: split RC file into separate class (?)
 - main_search: split search history into separate class (?)
@@ -29,7 +26,6 @@ clean-up:
 - loading from pipe
 - main text: xview scrolling; yoff position with offset et.al.
 - main text: number prefix on key commands
-- highlighter: m_yViewRedirected
 
 optional enhancements:
 - highlight mark-up: relative font size change & overline & underline color/style

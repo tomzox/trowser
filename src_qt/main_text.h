@@ -21,12 +21,10 @@
 #include <QMainWindow>
 #include <QTextCursor>
 #include <QPlainTextEdit>
-#include <QString>
 
 #include <vector>
 #include <unordered_map>
 
-class QTextBlock;
 class MainWin;
 class MainSearch;
 class SearchPar;
@@ -64,9 +62,7 @@ public:
     void jumpToNextBookmark(bool);
     void jumpToLine(int line);
 
-    QTextCursor findInDoc(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, int start_pos);
-    bool findInBlocks(const SearchPar& par, int from, bool is_fwd,
-                      int& matchPos, int& matchLen, QTextBlock *matchBlock = nullptr);
+    QTextCursor findInDoc(const SearchPar& par, bool is_fwd, int start_pos);
 
 private:
     using xviewSetWhere = enum { XVIEW_SET_LEFT, XVIEW_SET_RIGHT };

@@ -931,7 +931,7 @@ void MainText::jumpToLine(int line)
  * Helper function for calling the search function on the text document with
  * the given parameters.
  */
-QTextCursor MainText::findInDoc(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, int start_pos)
+QTextCursor MainText::findInDoc(const SearchPar& par, bool is_fwd, int start_pos)
 {
     QTextCursor c1 = this->textCursor();
     c1.setPosition(start_pos);
@@ -940,20 +940,20 @@ QTextCursor MainText::findInDoc(const QString& pat, bool opt_regexp, bool opt_ca
     while (true)
     {
         // invoke the actual search in the selected portion of the document
-        QTextDocument::FindFlags flags = QTextDocument::FindFlags(is_fwd ? 0 : QTextDocument::FindBackward);
-        if (opt_regexp)
+        auto flags = QTextDocument::FindFlags(is_fwd ? 0 : QTextDocument::FindBackward);
+        if (par.m_opt_regexp)
         {
             QRegularExpression::PatternOptions reflags =
-                    opt_case ? QRegularExpression::NoPatternOption
-                             : QRegularExpression::CaseInsensitiveOption;
-            QRegularExpression re(pat, reflags);
+                    par.m_opt_case ? QRegularExpression::NoPatternOption
+                                   : QRegularExpression::CaseInsensitiveOption;
+            QRegularExpression re(par.m_pat, reflags);
             c2 = this->document()->find(re, c1, flags);
         }
         else
         {
-            if (opt_case)
+            if (par.m_opt_case)
                 flags = QTextDocument::FindFlags(flags | QTextDocument::FindCaseSensitively);
-            c2 = this->document()->find(pat, c1, flags);
+            c2 = this->document()->find(par.m_pat, c1, flags);
         }
 
         // work-around for backwards search:
@@ -968,125 +968,4 @@ QTextCursor MainText::findInDoc(const QString& pat, bool opt_regexp, bool opt_ca
         break;
     }
     return c2;
-}
-
-
-bool MainText::findInBlocks(const SearchPar& par, int from, bool is_fwd,
-                            int& matchPos, int& matchLen, QTextBlock *matchBlock)
-{
-    if (par.m_pat.isEmpty())
-    {
-        matchPos = -1;
-        return false;
-    }
-
-    int pos = from;
-    // for backward search exclude match on string starting at given start pos
-    if (is_fwd == false)
-    {
-        if (pos <= 0)
-            return false;
-        pos -= 1;
-    }
-    QTextBlock block = this->document()->findBlock(pos);
-    int blockOffset = pos - block.position();
-    int cnt = 50000;
-
-    if (par.m_opt_regexp)
-    {
-        QRegularExpression::PatternOptions reflags =
-                par.m_opt_case ? QRegularExpression::NoPatternOption
-                               : QRegularExpression::CaseInsensitiveOption;
-        QRegularExpression expr(par.m_pat, reflags);
-
-        if (is_fwd)
-        {
-            while (block.isValid() && --cnt)
-            {
-                QRegularExpressionMatch mat;
-                QString text = block.text();
-                int idx = text.indexOf(expr, blockOffset, &mat);
-                if (condUnlikely(idx >= 0))
-                {
-                    matchPos = block.position() + idx;
-                    matchLen = mat.captured(0).length();
-                    if (matchLen == 0) // may occur for "^" et.al.
-                        matchLen = 1;
-                    if (matchBlock)
-                        *matchBlock = block;
-                    return true;
-                }
-                block = block.next();
-                blockOffset = 0;
-            }
-        }
-        else  /* !is_fwd */
-        {
-            while (block.isValid())
-            {
-                QRegularExpressionMatch mat;
-                QString text = block.text();
-                int idx = text.lastIndexOf(expr, blockOffset, &mat);
-                if (condUnlikely(idx >= 0))
-                {
-                    matchPos = block.position() + idx;
-                    matchLen = mat.captured(0).length();
-                    if (matchLen == 0)
-                        matchLen = 1;
-                    if (matchBlock)
-                        *matchBlock = block;
-                    return true;
-                }
-                if (condUnlikely(--cnt <= 0))
-                    break;
-                block = block.previous();
-                blockOffset = -1;
-            }
-        }
-    }
-    else  /* sub-string search */
-    {
-        Qt::CaseSensitivity flags = par.m_opt_case ? Qt::CaseSensitive : Qt::CaseInsensitive;
-
-        if (is_fwd)
-        {
-            while (condLikely(block.isValid() && --cnt))
-            {
-                QString text = block.text();
-                int idx = text.indexOf(par.m_pat, blockOffset, flags);
-                if (condUnlikely(idx >= 0))
-                {
-                    matchPos = block.position() + idx;
-                    matchLen = par.m_pat.length();
-                    if (matchBlock)
-                        *matchBlock = block;
-                    return true;
-                }
-                block = block.next();
-                blockOffset = 0;
-            }
-        }
-        else  /* !is_fwd */
-        {
-            while (condLikely(block.isValid()))
-            {
-                QString text = block.text();
-                int idx = text.lastIndexOf(par.m_pat, blockOffset, flags);
-                if (condUnlikely(idx >= 0))
-                {
-                    matchPos = block.position() + idx;
-                    matchLen = par.m_pat.length();
-                    if (matchBlock)
-                        *matchBlock = block;
-                    return true;
-                }
-                if (condUnlikely(--cnt <= 0))
-                    break;
-                block = block.previous();
-                blockOffset = -1;
-            }
-        }
-    }
-    matchPos = block.isValid() ? block.position() : -1;
-    return false;
 }

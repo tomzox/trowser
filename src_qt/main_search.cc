@@ -43,6 +43,7 @@
 #include "status_line.h"
 #include "search_list.h"
 #include "bg_task.h"
+#include "text_block_find.h"
 #include "dlg_history.h"
 
 // ----------------------------------------------------------------------------
@@ -184,9 +185,9 @@ QJsonObject MainSearch::getRcValues()
     obj.insert("tlb_history", arr);
 
     // dump search settings
-    searchGetParams(); // update tlb_find et.al. from widget state
-    obj.insert("tlb_case", QJsonValue(tlb_case));
-    obj.insert("tlb_regexp", QJsonValue(tlb_regexp));
+    searchGetParams(); // update tlb_find from widget state
+    obj.insert("tlb_case", QJsonValue(tlb_find.m_opt_case));
+    obj.insert("tlb_regexp", QJsonValue(tlb_find.m_opt_regexp));
     obj.insert("tlb_hall", QJsonValue(tlb_hall));
     obj.insert("tlb_hist_maxlen", QJsonValue((int)TLB_HIST_MAXLEN));
 
@@ -275,26 +276,26 @@ void MainSearch::searchHighlightSettingChange()
 //
 void MainSearch::searchHighlightUpdateCurrent()
 {
-    searchGetParams(); // update tlb_find et.al. from widget state
+    searchGetParams(); // update tlb_find from widget state
     if (tlb_hall)
     {
-        if (tlb_find != "")
+        if (tlb_find.m_pat.isEmpty() == false)
         {
-            if (searchExprCheck(tlb_find, tlb_regexp, true))
+            if (searchExprCheck(tlb_find, true))
             {
-                searchHighlightUpdate(tlb_find, tlb_regexp, tlb_case);
+                searchHighlightUpdate(tlb_find);
             }
         }
     }
 }
 
-void MainSearch::searchHighlightUpdate(const QString& pat, bool opt_regexp, bool opt_case)
+void MainSearch::searchHighlightUpdate(const SearchPar& par)
 {
-    if (!pat.isEmpty())
+    if (!par.m_pat.isEmpty())
     {
         if (tlb_hall)
         {
-            m_higl->searchHighlightUpdate(pat, opt_regexp, opt_case, m_f2_e->hasFocus());
+            m_higl->searchHighlightUpdate(par, m_f2_e->hasFocus());
         }
         else
             m_higl->searchHighlightClear();
@@ -317,26 +318,25 @@ void MainSearch::searchHighlightClear()
 void MainSearch::searchBackground(const SearchPar& par, bool is_fwd, int startPos, bool is_changed,
                                   const std::function<void(QTextCursor&)>& callback)
 {
-    //if {$block_bg_tasks} {
-    //  // background tasks are suspended - re-schedule with timer
-    //  set tid_search_inc [after 100 [list Search_Background $pat $is_fwd $opt $startPos $is_changed $callback]]
-    //  return
-    //}
-
     bool isDone;
-    if (is_fwd) {
+    if (is_fwd)
+    {
         QTextBlock b = m_mainText->document()->end();
         if (b != m_mainText->document()->begin())
             b = b.previous();
         isDone = (startPos >= b.position() + b.length());
-    } else {
+    }
+    else
+    {
         isDone = (startPos <= 0);
     }
     if (!isDone)
     {
+        auto finder = MainTextFind::create(m_mainText->document(), par, is_fwd, startPos);
+
         // invoke the actual search in the selected portion of the document
         int matchPos, matchLen;
-        bool found = m_mainText->findInBlocks(par, startPos, is_fwd, matchPos, matchLen);
+        bool found = finder->findNext(matchPos, matchLen);
         //printf("XXX %d -> %d,%d found?:%d\n", startPos, matchPos, matchLen, found);
 
         if (found)
@@ -346,10 +346,10 @@ void MainSearch::searchBackground(const SearchPar& par, bool is_fwd, int startPo
             c2.setPosition(matchPos);
             c2.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, matchLen);
 
-            searchHandleMatch(c2, par.m_pat, par.m_opt_regexp, par.m_opt_case, is_changed);
+            searchHandleMatch(c2, par, is_changed);
             callback(c2);
         }
-        else if (matchPos >= 0)
+        else if (!finder->isDone())
         {
             // no match found in this portion -> reschedule next iteration
             m_timSearchInc->start([=](){ searchBackground(par, is_fwd, matchPos, is_changed, callback); });
@@ -360,7 +360,7 @@ void MainSearch::searchBackground(const SearchPar& par, bool is_fwd, int startPo
     if (isDone)
     {
         QTextCursor c2;
-        searchHandleMatch(c2, par.m_pat, par.m_opt_regexp, par.m_opt_case, is_changed);
+        searchHandleMatch(c2, par, is_changed);
         callback(c2);
     }
 }
@@ -371,21 +371,21 @@ void MainSearch::searchBackground(const SearchPar& par, bool is_fwd, int startPo
  * search entry field, starting at the current cursor position. When a match
  * is found, the cursor is moved there and the line is highlighed.
  */
-bool MainSearch::searchAtomic(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, bool is_changed)
+bool MainSearch::searchAtomic(const SearchPar& par, bool is_fwd, bool is_changed)
 {
     bool found = false;
 
-    if (!pat.isEmpty() && searchExprCheck(pat, opt_regexp, true))
+    if (!par.m_pat.isEmpty() && searchExprCheck(par, true))
     {
         m_mainText->cursorJumpPushPos();
         tlb_last_dir = is_fwd;
 
         int start_pos = searchGetBase(is_fwd, false);
 
-        auto c2 = m_mainText->findInDoc(pat, opt_regexp, opt_case, is_fwd, start_pos);
+        auto c2 = m_mainText->findInDoc(par, is_fwd, start_pos);
 
         // update cursor position and highlight
-        searchHandleMatch(c2, pat, opt_regexp, opt_case, is_changed);
+        searchHandleMatch(c2, par, is_changed);
         found = !c2.isNull();
     }
     else
@@ -403,8 +403,7 @@ bool MainSearch::searchAtomic(const QString& pat, bool opt_regexp, bool opt_case
  * highlight all matches is started.  If no match is found, any previously
  * applies highlights are removed.
  */
-void MainSearch::searchHandleMatch(QTextCursor& match, const QString& pat,
-                                   bool opt_regexp, bool opt_case, bool is_changed)
+void MainSearch::searchHandleMatch(QTextCursor& match, const SearchPar& par, bool is_changed)
 {
     if (!match.isNull() || is_changed)
     {
@@ -430,7 +429,7 @@ void MainSearch::searchHandleMatch(QTextCursor& match, const QString& pat,
 
     if (tlb_hall)
     {
-        searchHighlightUpdate(pat, opt_regexp, opt_case);
+        searchHighlightUpdate(par);
     }
 }
 
@@ -475,9 +474,9 @@ void MainSearch::searchIncrement(bool is_fwd, bool is_changed)
 {
     m_timSearchInc->stop();
 
-    searchGetParams(); // update tlb_find et.al. from widget state
+    searchGetParams(); // update tlb_find from widget state
 
-    if ((tlb_find != "") && searchExprCheck(tlb_find, tlb_regexp, false))
+    if ((tlb_find.m_pat != "") && searchExprCheck(tlb_find, false))
     {
         if (tlb_inc_base < 0)
         {
@@ -496,15 +495,14 @@ void MainSearch::searchIncrement(bool is_fwd, bool is_changed)
         else
             start_pos = searchGetBase(is_fwd, false);
 
-        searchBackground(SearchPar(tlb_find, tlb_regexp, tlb_case),
-                         is_fwd, start_pos, is_changed,
-                         [=](QTextCursor& c){ searchIncMatch(c, tlb_find, is_fwd, is_changed); });
+        searchBackground(tlb_find, is_fwd, start_pos, is_changed,
+                         [=](QTextCursor& c){ searchIncMatch(c, tlb_find.m_pat, is_fwd, is_changed); });
     }
     else
     {
         searchReset();
 
-        if (tlb_find != "")
+        if (tlb_find.m_pat != "")
             m_mainWin->mainStatusLine()->showError("search", "Incomplete or invalid reg.exp.");
         else
             m_mainWin->mainStatusLine()->clearMessage("search");
@@ -553,11 +551,11 @@ void MainSearch::searchIncMatch(QTextCursor& match, const QString& pat, bool is_
 /**
  * This function checks if the search pattern syntax is valid
  */
-bool MainSearch::searchExprCheck(const QString& pat, bool is_re, bool display)
+bool MainSearch::searchExprCheck(const SearchPar& par, bool display)
 {
-    if (is_re)
+    if (par.m_opt_regexp)
     {
-        QRegularExpression re(pat);
+        QRegularExpression re(par.m_pat);
         if (re.isValid() == false)
         {
             if (display)
@@ -632,11 +630,11 @@ int MainSearch::searchGetBase(bool is_fwd, bool is_init)
 
 SearchPar MainSearch::getCurSearchParams()
 {
-    searchGetParams(); // update tlb_find et.al. from widget state
+    searchGetParams(); // update tlb_find from widget state
 
-    if (!tlb_find.isEmpty())
+    if (!tlb_find.m_pat.isEmpty())
     {
-        return SearchPar(tlb_find, tlb_regexp, tlb_case);
+        return tlb_find;
     }
     else if (tlb_history.size() > 0)
     {
@@ -648,10 +646,10 @@ SearchPar MainSearch::getCurSearchParams()
 
 void MainSearch::searchGetParams()
 {
-    tlb_find   = m_f2_e->text();
-    tlb_regexp = m_f2_regexp->isChecked();
-    tlb_case   = m_f2_mcase->isChecked();
-    tlb_hall   = m_f2_hall->isChecked();
+    tlb_find.m_pat        = m_f2_e->text();
+    tlb_find.m_opt_regexp = m_f2_regexp->isChecked();
+    tlb_find.m_opt_case   = m_f2_mcase->isChecked();
+    tlb_hall              = m_f2_hall->isChecked();
 }
 
 /**
@@ -671,12 +669,12 @@ void MainSearch::searchFirst(bool is_fwd, const std::vector<SearchPar>& patList)
 
     for (auto& pat : patList)
     {
-        if (pat.m_pat.isEmpty() || !searchExprCheck(pat.m_pat, pat.m_opt_regexp, true))
+        if (pat.m_pat.isEmpty() || !searchExprCheck(pat, true))
             continue;
 
-        searchAddHistory(pat.m_pat, pat.m_opt_regexp, pat.m_opt_case);
+        searchAddHistory(pat);
 
-        auto c2 = m_mainText->findInDoc(pat.m_pat, pat.m_opt_regexp, pat.m_opt_case, is_fwd, start_pos);
+        auto c2 = m_mainText->findInDoc(pat, is_fwd, start_pos);
 
         if (   !c2.isNull()
             && (match.isNull() || (is_fwd ? (c2 < match) : (c2 > match))) )
@@ -689,7 +687,7 @@ void MainSearch::searchFirst(bool is_fwd, const std::vector<SearchPar>& patList)
     if (matchPar != nullptr)
     {
         m_mainWin->mainStatusLine()->clearMessage("search");
-        searchHandleMatch(match, matchPar->m_pat, matchPar->m_opt_regexp, matchPar->m_opt_case, true);
+        searchHandleMatch(match, *matchPar, true);
     }
     else
     {
@@ -726,19 +724,19 @@ bool MainSearch::searchNext(bool is_fwd)
     bool found = false;
 
     m_mainWin->mainStatusLine()->clearMessage("search");
-    searchGetParams(); // update tlb_find et.al. from widget state
+    searchGetParams(); // update tlb_find from widget state
 
-    if (!tlb_find.isEmpty())
+    if (!tlb_find.m_pat.isEmpty())
     {
-        found = searchAtomic(tlb_find, tlb_regexp, tlb_case, is_fwd, false);
+        found = searchAtomic(tlb_find, is_fwd, false);
         if (!found)
-            searchHandleNoMatch(tlb_find, is_fwd);
+            searchHandleNoMatch(tlb_find.m_pat, is_fwd);
     }
     else if (tlb_history.size() > 0)
     {
         // empty expression: repeat last search
         const SearchPar &par = tlb_history.front();
-        found = searchAtomic(par.m_pat, par.m_opt_regexp, par.m_opt_case, is_fwd, false);
+        found = searchAtomic(par, is_fwd, false);
 
         if (!found)
             searchHandleNoMatch(par.m_pat, is_fwd);
@@ -757,10 +755,10 @@ bool MainSearch::searchNext(bool is_fwd)
  */
 void MainSearch::searchAll(bool raiseWin, int direction)
 {
-    searchGetParams(); // update tlb_find et.al. from widget state
-    if (searchExprCheck(tlb_find, tlb_regexp, true))
+    searchGetParams(); // update tlb_find from widget state
+    if (searchExprCheck(tlb_find, true))
     {
-        searchAddHistory(tlb_find, tlb_regexp, tlb_case);
+        searchAddHistory(tlb_find);
 
         // make focus return and cursor jump back to original position
         if (tlb_find_focus)
@@ -782,8 +780,7 @@ void MainSearch::searchAll(bool raiseWin, int direction)
             }
         }
 
-        SearchPar par(tlb_find, tlb_regexp, tlb_case);
-        SearchList::getInstance(raiseWin)->searchMatches(true, direction, par);
+        SearchList::getInstance(raiseWin)->searchMatches(true, direction, tlb_find);
     }
 }
 
@@ -862,13 +859,13 @@ void MainSearch::searchLeave()
     // ignore if the keyboard focus is leaving towards another application
     if (m_mainWin->focusWidget() != nullptr)
     {
-        if (searchExprCheck(tlb_find, tlb_regexp, false))
+        if (searchExprCheck(tlb_find, false))
         {
             if (tlb_hall)
             {
                 searchHighlightUpdateCurrent();
             }
-            searchAddHistory(tlb_find, tlb_regexp, tlb_case);
+            searchAddHistory(tlb_find);
         }
 
         tlb_hist_pos = -1;
@@ -886,9 +883,9 @@ void MainSearch::searchLeave()
  */
 void MainSearch::searchAbort()
 {
-    if (searchExprCheck(tlb_find, tlb_regexp, false))
+    if (searchExprCheck(tlb_find, false))
     {
-        searchAddHistory(tlb_find, tlb_regexp, tlb_case);
+        searchAddHistory(tlb_find);
     }
 
     m_f2_e->setText("");
@@ -923,8 +920,8 @@ void MainSearch::searchReturn()
         restart = 1;
     }
 
-    searchGetParams(); // update tlb_find et.al. from widget state
-    if (tlb_find.isEmpty())
+    searchGetParams(); // update tlb_find from widget state
+    if (tlb_find.m_pat.isEmpty())
     {
         // empty expression: repeat last search
         if (tlb_history.size() > 0)
@@ -938,7 +935,7 @@ void MainSearch::searchReturn()
         }
     }
 
-    if (searchExprCheck(tlb_find, tlb_regexp, true))
+    if (searchExprCheck(tlb_find, true))
     {
         if (restart)
         {
@@ -998,15 +995,15 @@ void MainSearch::removeFromHistory(const std::set<int>& excluded)
  * If the string is already on the stack, it's moved to the top. Note: top
  * of the stack is the front of the list.
  */
-void MainSearch::searchAddHistory(const QString& txt, bool is_re, bool use_case)
+void MainSearch::searchAddHistory(const SearchPar& par)
 {
-    if (!txt.isEmpty())
+    if (!par.m_pat.isEmpty())
     {
         // search for the expression in the history (options not compared)
         // remove the element if already in the list
         for (auto it = tlb_history.begin(); it != tlb_history.end(); ++it)
         {
-            if (it->m_pat == txt)
+            if (it->m_pat == par.m_pat)
             {
                 tlb_history.erase(it);
                 break;
@@ -1014,7 +1011,7 @@ void MainSearch::searchAddHistory(const QString& txt, bool is_re, bool use_case)
         }
 
         // insert the element at the top of the stack
-        tlb_history.emplace(tlb_history.begin(), SearchPar(txt, is_re, use_case));
+        tlb_history.insert(tlb_history.begin(), par);
 
         // maintain max. stack depth
         while (tlb_history.size() > TLB_HIST_MAXLEN)
@@ -1039,7 +1036,7 @@ void MainSearch::searchBrowseHistory(bool is_up)
 {
     if (tlb_history.size() > 0) {
         if (tlb_hist_pos < 0) {
-            tlb_hist_prefix = tlb_find;
+            tlb_hist_prefix = tlb_find.m_pat;
             tlb_hist_pos = is_up ? 0 : (tlb_history.size() - 1);
         }
         else if (is_up) {
@@ -1059,17 +1056,17 @@ void MainSearch::searchBrowseHistory(bool is_up)
         }
 
         if (tlb_hist_pos >= 0) {
-            tlb_find = tlb_history.at(tlb_hist_pos).m_pat;
-            m_f2_e->setText(tlb_find);
-            m_f2_e->setCursorPosition(tlb_find.length());
+            tlb_find.m_pat = tlb_history.at(tlb_hist_pos).m_pat;
+            m_f2_e->setText(tlb_find.m_pat);
+            m_f2_e->setCursorPosition(tlb_find.m_pat.length());
         }
         else {
             // end of history reached -> reset
-            tlb_find = tlb_hist_prefix;
+            tlb_find.m_pat = tlb_hist_prefix;
             tlb_hist_pos = -1;
             tlb_hist_prefix = -1;
-            m_f2_e->setText(tlb_find);
-            m_f2_e->setCursorPosition(tlb_find.length());
+            m_f2_e->setText(tlb_find.m_pat);
+            m_f2_e->setCursorPosition(tlb_find.m_pat.length());
         }
     }
 }
@@ -1121,20 +1118,20 @@ void MainSearch::searchRemoveFromHistory()
  */
 void MainSearch::searchComplete()
 {
-    searchGetParams(); // update tlb_find et.al. from widget state
+    searchGetParams(); // update tlb_find from widget state
 
     auto line_str = m_mainText->textCursor().block().text();
     int pos = m_mainText->textCursor().positionInBlock();
     int off;
 
-    if (tlb_regexp && !tlb_find.isEmpty())
+    if (tlb_find.m_opt_regexp && !tlb_find.m_pat.isEmpty())
     {
         QRegularExpression::PatternOptions reflags =
-                tlb_case ? QRegularExpression::NoPatternOption
+                tlb_find.m_opt_case ? QRegularExpression::NoPatternOption
                            : QRegularExpression::CaseInsensitiveOption;
-        if (!searchExprCheck(tlb_find, true, true))
+        if (!searchExprCheck(tlb_find, true))
             return;
-        QRegularExpression re2(tlb_find, reflags);
+        QRegularExpression re2(tlb_find.m_pat, reflags);
         auto mat2 = re2.match(line_str.midRef(pos), 0, QRegularExpression::NormalMatch, QRegularExpression::AnchoredMatchOption);
         if (mat2.hasMatch())
             off = mat2.captured(0).length();
@@ -1143,7 +1140,7 @@ void MainSearch::searchComplete()
     }
     else
     {
-        off = tlb_find.length();
+        off = tlb_find.m_pat.length();
     }
 
     static const QRegularExpression re1("^(?:\\W+|\\w+)"); // not thread-safe
@@ -1151,12 +1148,12 @@ void MainSearch::searchComplete()
     if (mat1.hasMatch())
     {
         QString word(mat1.captured(0));
-        searchEscapeSpecialChars(word, tlb_regexp);
+        searchEscapeSpecialChars(word, tlb_find.m_opt_regexp);
 
-        tlb_find += word;
-        m_f2_e->setText(tlb_find);
-        m_f2_e->setCursorPosition(tlb_find.length());
-        m_f2_e->setSelection(tlb_find.length() - word.length(), tlb_find.length());
+        tlb_find.m_pat += word;
+        m_f2_e->setText(tlb_find.m_pat);
+        m_f2_e->setCursorPosition(tlb_find.m_pat.length());
+        m_f2_e->setSelection(tlb_find.m_pat.length() - word.length(), tlb_find.m_pat.length());
     }
 }
 
@@ -1168,7 +1165,7 @@ void MainSearch::searchComplete()
  */
 void MainSearch::searchCompleteLeft()
 {
-    searchGetParams(); // update tlb_find et.al. from widget state
+    searchGetParams(); // update tlb_find from widget state
 
     auto line_str = m_mainText->textCursor().block().text();
     int off = m_mainText->textCursor().positionInBlock();
@@ -1178,10 +1175,10 @@ void MainSearch::searchCompleteLeft()
     if (mat1.hasMatch())
     {
         QString word(mat1.captured(0));
-        searchEscapeSpecialChars(word, tlb_regexp);
+        searchEscapeSpecialChars(word, tlb_find.m_opt_regexp);
 
-        tlb_find = word + tlb_find;
-        m_f2_e->setText(tlb_find);
+        tlb_find.m_pat = word + tlb_find.m_pat;
+        m_f2_e->setText(tlb_find.m_pat);
         m_f2_e->setCursorPosition(word.length());
         m_f2_e->setSelection(0, word.length());
     }
@@ -1195,7 +1192,7 @@ void MainSearch::searchCompleteLeft()
  */
 void MainSearch::searchWord(bool is_fwd)
 {
-    searchGetParams(); // update tlb_find et.al. from widget state
+    searchGetParams(); // update tlb_find from widget state
 
     auto line_str = m_mainText->textCursor().block().text();
     int off = m_mainText->textCursor().positionInBlock();
@@ -1215,22 +1212,22 @@ void MainSearch::searchWord(bool is_fwd)
         else
             word = mat1.captured(0);
 
-        searchEscapeSpecialChars(word, tlb_regexp);
+        searchEscapeSpecialChars(word, tlb_find.m_opt_regexp);
 
         // add regexp to match on word boundaries
-        if (tlb_regexp)
+        if (tlb_find.m_opt_regexp)
             word = QString("\\b") + word + "\\b";
 
-        tlb_find = word;
-        m_f2_e->setText(tlb_find);
+        tlb_find.m_pat = word;
+        m_f2_e->setText(tlb_find.m_pat);
         m_f2_e->setCursorPosition(0);
 
-        searchAddHistory(tlb_find, tlb_regexp, tlb_case);
+        searchAddHistory(tlb_find);
         m_mainWin->mainStatusLine()->clearMessage("search");
 
-        bool found = searchAtomic(tlb_find, tlb_regexp, tlb_case, is_fwd, true);
+        bool found = searchAtomic(tlb_find, is_fwd, true);
         if (!found)
-            searchHandleNoMatch(tlb_find, is_fwd);
+            searchHandleNoMatch(tlb_find.m_pat, is_fwd);
     }
 }
 

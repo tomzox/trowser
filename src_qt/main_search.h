@@ -48,6 +48,13 @@ public:
         , m_opt_case(opt_case)
     {
     }
+    bool operator==(const SearchPar& rhs) const
+    {
+        return (   (m_pat == rhs.m_pat)
+                && (m_opt_regexp == rhs.m_opt_regexp)
+                && (m_opt_case == rhs.m_opt_case));
+    }
+    bool operator!=(const SearchPar& rhs) const { return !(*this == rhs); }
     void reset() { m_pat.clear(); m_opt_regexp = false; m_opt_case = false; }
 
     QString m_pat;
@@ -107,14 +114,14 @@ public:
     void searchReturn();
     void searchVarTrace(const QString &text);
     void searchIncrement(bool is_fwd, bool is_changed);
-    void searchAddHistory(const QString& txt, bool is_re, bool use_case);
+    void searchAddHistory(const SearchPar& par);
     void searchBrowseHistory(bool is_up);
     int  searchHistoryComplete(int step);
     void searchRemoveFromHistory();
     void searchComplete();
     void searchCompleteLeft();
     void searchWord(bool is_fwd);
-    bool searchExprCheck(const QString& pat, bool is_re, bool display);
+    bool searchExprCheck(const SearchPar& par, bool display);
     void highlightFixedLine(int line);
     SearchPar getCurSearchParams();
     const std::vector<SearchPar>& getHistory() const { return tlb_history; }
@@ -123,12 +130,10 @@ public:
 private:
     void searchBackground(const SearchPar& par, bool is_fwd, int start, bool is_changed,
                           const std::function<void(QTextCursor&)>& callback);
-    QTextCursor findInDoc(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, int start_pos);
-    bool searchAtomic(const QString& pat, bool opt_regexp, bool opt_case, bool is_fwd, bool is_changed);
+    bool searchAtomic(const SearchPar& par, bool is_fwd, bool is_changed);
     void searchHighlightUpdateCurrent();
-    void searchHighlightUpdate(const QString& pat, bool opt_regexp, bool opt_case);
-    void searchHandleMatch(QTextCursor& match, const QString& pat,
-                           bool opt_regexp, bool opt_case, bool is_changed);
+    void searchHighlightUpdate(const SearchPar& par);
+    void searchHandleMatch(QTextCursor& match, const SearchPar& par, bool is_changed);
     void searchHandleNoMatch(const QString& pat, bool is_fwd);
     void searchIncMatch(QTextCursor& match, const QString& pat, bool is_fwd, bool is_changed);
     void searchEscapeSpecialChars(QString& word, bool is_re);
@@ -147,9 +152,7 @@ private:
     BgTask      * m_timSearchInc;
     QWidget     * tlb_last_wid = nullptr;
     bool          tlb_last_dir = true;
-    QString       tlb_find;
-    bool          tlb_regexp;
-    bool          tlb_case;
+    SearchPar     tlb_find;
     bool          tlb_hall;
     bool          tlb_find_focus = false;
     int           tlb_inc_base = -1;

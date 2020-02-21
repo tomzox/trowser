@@ -1178,6 +1178,12 @@ QByteArray DlgHigl::s_winGeometry;
 QByteArray DlgHigl::s_winState;
 
 
+/**
+ * This function has to be called by all dialogs using the color selection
+ * dialog for initializing the palette of "standard" colors. This is needed as
+ * setting the palette during start-up (while reading RC file) does not seem to
+ * take effect.
+ */
 void DlgHigl::initColorPalette()  /*static*/
 {
     int idx = 0;

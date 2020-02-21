@@ -108,7 +108,7 @@ private:
     bool searchAbort(bool doWarn = true);
     void closeAbortDialog();
     using ListViewAnchor = std::pair<bool,int>;
-    ListViewAnchor&& getViewAnchor();
+    ListViewAnchor getViewAnchor();
     void seeViewAnchor(ListViewAnchor& anchor);
     void matchViewInt(int line, int idx = -1);
     void adjustLineNumsInt(int top_l, int bottom_l);

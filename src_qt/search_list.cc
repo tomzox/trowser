@@ -51,6 +51,7 @@
 #include "main_search.h"
 #include "status_line.h"
 #include "bg_task.h"
+#include "text_block_find.h"
 #include "bookmarks.h"
 #include "highlighter.h"
 #include "highl_view_dlg.h"
@@ -475,7 +476,7 @@ public:
 
     bool hasUndo(int *count = nullptr) const;
     bool hasRedo(int *count = nullptr) const;
-    std::pair<bool,int>&& describeFirstOp(bool forUndo);
+    std::pair<bool,int> describeFirstOp(bool forUndo);
 
 private:
     std::vector<UndoRedoItem> dlg_srch_undo;
@@ -698,7 +699,7 @@ bool SearchListUndo::hasRedo(int *count) const
     return dlg_srch_redo.size() != 0;
 }
 
-std::pair<bool,int>&& SearchListUndo::describeFirstOp(bool forUndo)
+std::pair<bool,int> SearchListUndo::describeFirstOp(bool forUndo)
 {
     std::vector<UndoRedoItem>& undo_list = forUndo ? dlg_srch_undo : dlg_srch_redo;
     int count = 0;
@@ -711,7 +712,7 @@ std::pair<bool,int>&& SearchListUndo::describeFirstOp(bool forUndo)
         doAdd = prev_op.isAdded;
         count = prev_op.lines.size();
     }
-    return std::move(std::make_pair(doAdd, count));
+    return std::make_pair(doAdd, count);
 }
 
 #ifndef QT_NO_DEBUG
@@ -1206,7 +1207,7 @@ void SearchList::editMenuAboutToShow()
 {
     if (m_undo->hasUndo())
     {
-        std::pair<bool,int> info = m_undo->describeFirstOp(true);
+        auto info = m_undo->describeFirstOp(true);
         QString txt;
         QTextStream(&txt) << "Undo (" << (info.first ? "addition" : "removal")
                           << " of " << info.second << " lines)";
@@ -1222,7 +1223,7 @@ void SearchList::editMenuAboutToShow()
     // following is copy/paste from above except for "Redo" instead of "Undo"
     if (m_undo->hasRedo())
     {
-        std::pair<bool,int> info = m_undo->describeFirstOp(false);
+        auto info = m_undo->describeFirstOp(false);
         QString txt;
         QTextStream(&txt) << "Redo (" << (info.first ? "addition" : "removal")
                           << " of " << info.second << " lines)";
@@ -1454,30 +1455,21 @@ int SearchList::searchAtomicInList(const SearchPar& pat, int line, bool is_fwd)
                          : (block.position() - 1);
     if (textPos >= 0)
     {
-        while (true)
+        auto finder = MainTextFind::create(s_mainText->document(), pat, is_fwd, textPos);
+
+        while (!finder->isDone())
         {
             QTextBlock block;
             int matchPos, matchLen;
 
             // FIXME optimize to search only within blocks of lines that are actually in the list
-            if (s_mainText->findInBlocks(pat, textPos, is_fwd, matchPos, matchLen, &block))
+            if (finder->findNext(matchPos, matchLen, &block))
             {
                 int line = block.blockNumber();
                 int idx;
                 if (m_model->getLineIdx(line, idx))
                     return idx;
-
-                if (is_fwd)
-                    textPos = block.position() + block.length();
-                else if (block.position() > 0)
-                    textPos = block.position() - 1;
-                else
-                    break;
             }
-            else if (matchPos >= 0)
-                textPos = matchPos;
-            else
-                break;
         }
     }
     return -1;
@@ -1493,7 +1485,7 @@ void SearchList::cmdSearchNext(bool is_fwd)
     m_stline->clearMessage("search");
 
     SearchPar par = s_search->getCurSearchParams();
-    if (!par.m_pat.isEmpty() && s_search->searchExprCheck(par.m_pat, par.m_opt_regexp, false))
+    if (!par.m_pat.isEmpty() && s_search->searchExprCheck(par, false))
     {
         auto midx = m_table->currentIndex();
         if (midx.isValid())
@@ -1680,7 +1672,7 @@ void SearchList::searchMatches(bool do_add, int direction, const SearchPar& par)
 {
     if (!par.m_pat.isEmpty())
     {
-        if (s_search->searchExprCheck(par.m_pat, par.m_opt_regexp, true))
+        if (s_search->searchExprCheck(par, true))
         {
             startSearchAll(std::vector<SearchPar>({par}), do_add, direction);
         }
@@ -1721,15 +1713,15 @@ void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add
 {
     auto anchor = getViewAnchor();
     qint64 start_t = QDateTime::currentMSecsSinceEpoch();
-    const SearchPar& pat = pat_list[pat_idx];
     std::vector<int> line_list;
     std::vector<int> idx_list;
+    auto finder = MainTextFind::create(s_mainText->document(), pat_list[pat_idx], direction>=0, textPos);
 
-    while (true)
+    while (!finder->isDone())
     {
         QTextBlock block;
         int matchPos, matchLen;
-        if (s_mainText->findInBlocks(pat, textPos, direction>=0, matchPos, matchLen, &block))
+        if (finder->findNext(matchPos, matchLen, &block))
         {
             int line = block.blockNumber();
             int idx;
@@ -1744,25 +1736,6 @@ void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add
                 line_list.push_back(line);
                 idx_list.push_back(idx);
             }
-
-            if (direction >= 0)
-                textPos = block.position() + block.length();
-            else if (block.position() > 0)
-                textPos = block.position() - 1;
-            else
-            {
-                textPos = -1;
-                break;
-            }
-        }
-        else if (matchPos >= 0)
-        {
-            textPos = matchPos;
-        }
-        else
-        {
-            textPos = -1;
-            break;
         }
 
         // limit the runtime of the loop - return start line number for the next invocation
@@ -1796,8 +1769,10 @@ void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add
         seeViewAnchor(anchor);
     }
 
-    if (textPos >= 0)
+    if (!finder->isDone())
     {
+        textPos = finder->nextStartPos();
+
         // create or update the progress bar
         QTextBlock lastBlock = s_mainText->document()->lastBlock();
         int textLength = std::max(lastBlock.position() + lastBlock.length(), 1);
@@ -1954,7 +1929,7 @@ void SearchList::closeAbortDialog()
  * as "anchor" for the view, i.e. which will be made visible again after the
  * insertions or removals (which may lead to scrolling.)
  */
-SearchList::ListViewAnchor&& SearchList::getViewAnchor()
+SearchList::ListViewAnchor SearchList::getViewAnchor()
 {
     bool haveSel = false;
     int line = -1;
@@ -1973,7 +1948,7 @@ SearchList::ListViewAnchor&& SearchList::getViewAnchor()
         if (midx.row() < m_model->lineCount())
             line = m_model->getLineOfIdx(midx.row());
     }
-    return std::move(std::make_pair(haveSel, line));
+    return std::make_pair(haveSel, line);
 }
 
 

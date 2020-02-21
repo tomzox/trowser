@@ -33,6 +33,7 @@
 #include "main_text.h"
 #include "main_search.h"
 #include "bg_task.h"
+#include "text_block_find.h"
 #include "highlighter.h"
 #include "search_list.h"
 
@@ -86,13 +87,12 @@ void Highlighter::addSearchInc(QTextCursor& sel)
 
 // mark the complete line containing the match
 // merge with pre-existing format (new has precedence though), if any
-void Highlighter::addSearchHall(QTextCursor& sel, const QTextCharFormat& fmt, HiglId id)
+void Highlighter::addSearchHall(const QTextBlock& blk, const QTextCharFormat& fmt, HiglId id)
 {
-    QTextCursor c(sel);
-    c.movePosition(QTextCursor::StartOfBlock, QTextCursor::MoveAnchor);
-    c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+    QTextCursor c(blk);
+    c.movePosition(QTextCursor::NextBlock, QTextCursor::KeepAnchor);
 
-    auto pair = m_tags.equal_range(c.blockNumber());
+    auto pair = m_tags.equal_range(blk.blockNumber());
     bool found = false;
     int others = 0;
     for (auto it = pair.first; it != pair.second; ++it)
@@ -107,12 +107,12 @@ void Highlighter::addSearchHall(QTextCursor& sel, const QTextCharFormat& fmt, Hi
     }
     if (found == false)
     {
+        m_tags.emplace_hint(pair.second, std::make_pair(blk.blockNumber(), id));
+
         if (others == 0)
             c.setCharFormat(fmt);
         else
             c.mergeCharFormat(fmt);
-
-        m_tags.emplace_hint(pair.second, std::make_pair(c.blockNumber(), id));
     }
 }
 
@@ -617,18 +617,18 @@ void Highlighter::highlightInit()
  * the respective highlighting. The loop is broken up by installing each
  * new iteration as an idle event (and limiting each step to 100ms)
  */
-void Highlighter::highlightInitBg(int pat_idx, int line)
+void Highlighter::highlightInitBg(int pat_idx, int startPos)
 {
     if ((size_t)pat_idx < m_patList.size())
     {
         // here we do the actual work:
         // apply the tag to all matching lines of text
-        line = highlightLines(m_patList[pat_idx], line);
+        startPos = highlightLines(m_patList[pat_idx], startPos);
 
-        if (line >= 0)
+        if (startPos >= 0)
         {
             // not done yet - reschedule
-            tid_high_init->start([=](){ highlightInitBg(pat_idx, line); });
+            tid_high_init->start([=](){ highlightInitBg(pat_idx, startPos); });
         }
         else
         {
@@ -655,31 +655,22 @@ void Highlighter::highlightInitBg(int pat_idx, int line)
  * last searched line.  In this case the caller must invoke the funtion again
  * (as an idle event, to allow user-interaction in-between.)
  */
-int Highlighter::highlightLines(const HiglPat& pat, int line)
+int Highlighter::highlightLines(const HiglPat& pat, int startPos)
 {
     qint64 start_t = QDateTime::currentMSecsSinceEpoch();
+    auto finder = MainTextFind::create(m_mainText->document(), pat.m_srch, true, startPos);
 
     while (true)
     {
         QTextBlock block;
         int matchPos, matchLen;
-        if (m_mainText->findInBlocks(pat.m_srch, line, true, matchPos, matchLen, &block))
+        if (finder->findNext(matchPos, matchLen, &block))
         {
             // match found, highlight this line
-            //wt.f1_t.tag_add(tagnam, "%d.0" % line, "%d.0" % (line + 1))
-            QTextCursor match(block);
-            match.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, matchPos - block.position());
-            match.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, matchLen);
-            addSearchHall(match, pat.m_fmt, pat.m_id);
+            addSearchHall(block, pat.m_fmt, pat.m_id);
 
             // trigger the search result list dialog in case the line is included there too
             SearchList::signalHighlightLine(block.blockNumber());
-
-            line = matchPos + matchLen;
-        }
-        else if (matchPos >= 0)
-        {
-            line = matchPos;
         }
         else
             break;
@@ -687,7 +678,7 @@ int Highlighter::highlightLines(const HiglPat& pat, int line)
         // limit the runtime of the loop - return start line number for the next invocation
         qint64 now = QDateTime::currentMSecsSinceEpoch();
         if (now - start_t > 100)
-            return line;
+            return finder->nextStartPos();
     }
     // all done for this pattern
     return -1;
@@ -701,12 +692,12 @@ int Highlighter::highlightLines(const HiglPat& pat, int line)
  * for single tags (e.g. modified highlight patterns or colors; currently not used
  * for search highlighting because a separate "cancel ID" is required.)
  */
-void Highlighter::highlightAll(const HiglPat& pat, int line)
+void Highlighter::highlightAll(const HiglPat& pat, int startPos)
 {
-    line = highlightLines(pat, line);
-    if (line >= 0)
+    startPos = highlightLines(pat, startPos);
+    if (startPos >= 0)
     {
-        tid_high_init->start([=](){ highlightAll(pat, line); });
+        tid_high_init->start([=](){ highlightAll(pat, startPos); });
     }
     else
     {
@@ -728,23 +719,15 @@ void Highlighter::highlightVisible(const HiglPat& pat)
 
     int line = c1.block().position();
     int line_end = c2.block().position() + c2.block().length();
+    auto finder = MainTextFind::create(m_mainText->document(), pat.m_srch, true, line);
 
-    while (line < line_end)
+    while (finder->nextStartPos() < line_end)
     {
         QTextBlock block;
         int matchPos, matchLen;
-        if (m_mainText->findInBlocks(pat.m_srch, line, true, matchPos, matchLen, &block))
+        if (finder->findNext(matchPos, matchLen, &block))
         {
-            //wt.f1_t.tag_add(tagnam, "%d.0" % line, "%d.0" % (line + 1))
-            QTextCursor match(block);
-            match.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, matchPos - block.position());
-            match.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, matchLen);
-            addSearchHall(match, pat.m_fmt, pat.m_id);
-            line = matchPos + matchLen;
-        }
-        else if (matchPos >= 0)
-        {
-            line = matchPos;
+            addSearchHall(block, pat.m_fmt, pat.m_id);
         }
         else
             break;
@@ -825,17 +808,12 @@ void Highlighter::searchHighlightClear()
  * is en-/disabled, when the search string is modified or when search options
  * are changed.
  */
-void Highlighter::searchHighlightUpdate(const QString& pat, bool opt_regexp, bool opt_case, bool onlyVisible)
+void Highlighter::searchHighlightUpdate(const SearchPar& par, bool onlyVisible)
 {
-    if (   (m_hallPat.m_srch.m_pat != pat)
-        || (m_hallPat.m_srch.m_opt_regexp != opt_regexp)
-        || (m_hallPat.m_srch.m_opt_case != opt_case)
-        || (m_hallPatComplete == false))
+    if ((m_hallPat.m_srch != par) || (m_hallPatComplete == false))
     {
         // remember options for comparison
-        m_hallPat.m_srch.m_pat = pat;
-        m_hallPat.m_srch.m_opt_regexp = opt_regexp;
-        m_hallPat.m_srch.m_opt_case = opt_case;
+        m_hallPat.m_srch = par;
         m_hallPatComplete = false;
 
         if (!onlyVisible)
@@ -862,7 +840,7 @@ void Highlighter::searchHighlightUpdate(const QString& pat, bool opt_regexp, boo
  * This helper function calls the global search highlight function until
  * highlighting is complete.
  */
-void Highlighter::searchHighlightAll(const HiglPat& pat, int line)
+void Highlighter::searchHighlightAll(const HiglPat& pat, int startPos)
 {
     // FIXME this is a work-around because highlightYviewRedirect does not work
     if (m_hallYview != m_mainText->verticalScrollBar()->value())
@@ -871,10 +849,10 @@ void Highlighter::searchHighlightAll(const HiglPat& pat, int line)
         highlightVisible(pat);
     }
 
-    line = highlightLines(pat, line);
-    if (line >= 0)
+    startPos = highlightLines(pat, startPos);
+    if (startPos >= 0)
     {
-        tid_search_hall->start([=](){ searchHighlightAll(pat, line); });
+        tid_search_hall->start([=](){ searchHighlightAll(pat, startPos); });
     }
     else
     {
@@ -891,7 +869,7 @@ void Highlighter::searchHighlightAll(const HiglPat& pat, int line)
  */
 void Highlighter::searchHighlightMatch(QTextCursor& match)
 {
-    addSearchHall(match, m_hallPat.m_fmt, m_hallPat.m_id);
+    addSearchHall(match.block(), m_hallPat.m_fmt, m_hallPat.m_id);
     addSearchInc(match);
 }
 

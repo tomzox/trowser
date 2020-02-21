@@ -35,14 +35,6 @@ class StatusLine;
 class Highlighter;
 class Bookmarks;
 
-#ifdef __GNUC__
-#define condLikely(x)       __builtin_expect(!!(x), 1)
-#define condUnlikely(x)     __builtin_expect(!!(x), 0)
-#else
-#define condLikely(x)       (x)
-#define condUnlikely(x)     (x)
-#endif
-
 // ----------------------------------------------------------------------------
 
 class MainWin : public QMainWindow
