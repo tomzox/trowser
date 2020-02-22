@@ -232,7 +232,7 @@ const HiglFmtSpec * Highlighter::getFmtSpecForId(HiglId id)
 }
 
 // non-reentrant due to internal static buffer
-const HiglFmtSpec * Highlighter::getFmtSpecForLine(int line)
+const HiglFmtSpec * Highlighter::getFmtSpecForLine(int line, bool filterHall)
 {
     const HiglFmtSpec * ptr = nullptr;
 
@@ -240,8 +240,13 @@ const HiglFmtSpec * Highlighter::getFmtSpecForLine(int line)
     if (range.first != range.second)
     {
         auto it = range.first;
-        if (it->second == HIGL_ID_BOOKMARK)
-            ++it;
+        if (filterHall)
+            while ((it != range.second) && ((it->second == HIGL_ID_BOOKMARK) || (it->second == HIGL_ID_SEARCH)))
+                ++it;
+        else
+            if (it->second == HIGL_ID_BOOKMARK)
+                ++it;
+
         if (it != range.second)
         {
             auto firstId = it->second;
@@ -254,7 +259,7 @@ const HiglFmtSpec * Highlighter::getFmtSpecForLine(int line)
 
                 for (/*nop*/; it != range.second; ++it)
                 {
-                    if (it->second != HIGL_ID_BOOKMARK)
+                    if (!((it->second == HIGL_ID_BOOKMARK) || (filterHall && (it->second == HIGL_ID_SEARCH))))
                         fmtSpecBuf.merge(findPatById(it->second)->m_fmtSpec);
                 }
                 ptr = &fmtSpecBuf;
@@ -750,10 +755,10 @@ void Highlighter::highlightYviewCallback(int)
         }
     }
 
-    //if (tid_search_hall->isActive())
-    //{
-    //    highlightVisible(m_hallPat);
-    //}
+    if (tid_search_hall->isActive())
+    {
+        highlightVisible(m_hallPat);
+    }
 
     // automatically remove the redirect if no longer needed
     if (!tid_high_init->isActive() && !tid_search_hall->isActive())

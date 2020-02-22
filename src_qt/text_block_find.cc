@@ -26,14 +26,6 @@
 #include "main_search.h"  // SearchPar
 #include "text_block_find.h"
 
-#ifdef __GNUC__
-#define condLikely(x)       __builtin_expect(!!(x), 1)
-#define condUnlikely(x)     __builtin_expect(!!(x), 0)
-#else
-#define condLikely(x)       (x)
-#define condUnlikely(x)     (x)
-#endif
-
 // ----------------------------------------------------------------------------
 
 /**
@@ -60,9 +52,10 @@ public:
         , m_expr(par.m_pat, m_reFlags)
     {
         if (m_expr.isValid() == false)
-            m_blk = QTextBlock();
+            m_blk = QTextBlock();  // invalidate
     }
     virtual bool findNext(int& matchPos, int& matchLen, QTextBlock *matchBlock = nullptr) override;
+    virtual ~MainTextFindRegExp() = default;
 private:
     const QRegularExpression::PatternOptions m_reFlags;
     const QRegularExpression m_expr;
@@ -80,12 +73,12 @@ bool MainTextFindRegExp::findNext(int& matchPos, int& matchLen, QTextBlock *matc
 
     if (m_isFwd)
     {
-        while (condLikely(m_blk.isValid() && --cnt))
+        while (m_blk.isValid() && --cnt)
         {
             QRegularExpressionMatch mat;
             QString text = m_blk.text();
             int idx = text.indexOf(m_expr, 0, &mat);
-            if (condUnlikely(idx >= 0))
+            if (idx >= 0)
             {
                 matchPos = m_blk.position() + idx;
                 matchLen = mat.captured(0).length();
@@ -101,12 +94,12 @@ bool MainTextFindRegExp::findNext(int& matchPos, int& matchLen, QTextBlock *matc
     }
     else  /* !isFwd */
     {
-        while (condLikely(m_blk.isValid() && --cnt))
+        while (m_blk.isValid() && --cnt)
         {
             QRegularExpressionMatch mat;
             QString text = m_blk.text();
             int idx = text.lastIndexOf(m_expr, -1, &mat);
-            if (condUnlikely(idx >= 0))
+            if (idx >= 0)
             {
                 matchPos = m_blk.position() + idx;
                 matchLen = mat.captured(0).length();
@@ -137,9 +130,10 @@ public:
         , m_cmpFlags(par.m_opt_case ? Qt::CaseSensitive : Qt::CaseInsensitive)
     {
         if (par.m_pat.isEmpty())
-            m_blk = QTextBlock();
+            m_blk = QTextBlock();  // invalidate
     }
     virtual bool findNext(int& matchPos, int& matchLen, QTextBlock *matchBlock = nullptr) override;
+    virtual ~MainTextFindSubStr() = default;
 private:
     const QString& m_subStr;
     const Qt::CaseSensitivity m_cmpFlags;
@@ -156,11 +150,11 @@ bool MainTextFindSubStr::findNext(int& matchPos, int& matchLen, QTextBlock *matc
     int cnt = MAX_ITERATIONS;
     if (m_isFwd)
     {
-        while (condLikely(m_blk.isValid() && --cnt))
+        while (m_blk.isValid() && --cnt)
         {
             QString text = m_blk.text();
             int idx = text.indexOf(m_subStr, 0, m_cmpFlags);
-            if (condUnlikely(idx >= 0))
+            if (idx >= 0)
             {
                 matchPos = m_blk.position() + idx;
                 matchLen = m_subStr.length();
@@ -174,11 +168,11 @@ bool MainTextFindSubStr::findNext(int& matchPos, int& matchLen, QTextBlock *matc
     }
     else  /* !isFwd */
     {
-        while (condLikely(m_blk.isValid() && --cnt))
+        while (m_blk.isValid() && --cnt)
         {
             QString text = m_blk.text();
             int idx = text.lastIndexOf(m_subStr, -1, m_cmpFlags);
-            if (condUnlikely(idx >= 0))
+            if (idx >= 0)
             {
                 matchPos = m_blk.position() + idx;
                 matchLen = m_subStr.length();

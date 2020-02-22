@@ -502,7 +502,16 @@ void DlgHistory::cmdSearch(bool is_fwd)
         {
             patList.push_back(m_model->getSearchPar(row));
         }
-        s_search->searchFirst(is_fwd, patList);
+
+        bool found = s_search->searchFirst(is_fwd, patList);
+        if (!found)
+        {
+            QString msg = QString("No match until ")
+                            + (is_fwd ? "end" : "start")
+                            + " of file"
+                            + ((patList.size() <= 1) ? "" : " for any selected pattern");
+            m_stline->showWarning("search", msg);
+        }
     }
     else  // should never occur as button (incl. shortcut) gets disabled
         m_stline->showError("search", "No expression selected");

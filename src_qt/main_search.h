@@ -99,13 +99,12 @@ public:
     void setRcValues(const QJsonObject& obj);
     void searchAll(bool raiseWin, int direction);
     bool searchNext(bool isFwd);
-    void searchFirst(bool is_fwd, const std::vector<SearchPar>& patList);
+    bool searchFirst(bool is_fwd, const std::vector<SearchPar>& patList);
     void searchEnterOpt(const SearchPar& pat);
     void searchEnter(bool is_fwd, QWidget * parent = nullptr);
-    void searchOptToggleHall();
-    void searchOptToggleRegExp();
-    void searchOptToggleCase();
-    void searchHighlightSettingChange();
+    void searchOptToggleHall(int v);
+    void searchOptToggleRegExp(int v);
+    void searchOptToggleCase(int v);
     void searchHighlightClear();
     void searchReset();
     void searchInit();
@@ -131,6 +130,7 @@ private:
     void searchBackground(const SearchPar& par, bool is_fwd, int start, bool is_changed,
                           const std::function<void(QTextCursor&)>& callback);
     bool searchAtomic(const SearchPar& par, bool is_fwd, bool is_changed);
+    void searchHighlightSettingChange();
     void searchHighlightUpdateCurrent();
     void searchHighlightUpdate(const SearchPar& par);
     void searchHandleMatch(QTextCursor& match, const SearchPar& par, bool is_changed);
@@ -138,7 +138,6 @@ private:
     void searchIncMatch(QTextCursor& match, const QString& pat, bool is_fwd, bool is_changed);
     void searchEscapeSpecialChars(QString& word, bool is_re);
     int  searchGetBase(bool is_fwd, bool is_init);
-    void searchGetParams();
 
 private:
     MainWin     * const m_mainWin;

@@ -1,20 +1,9 @@
 
-- bookmarks view delegate: filter search highlight
-- support different font sizes in search list view rows
-- search list/bookmark/highlght dialogs:
-  use max(default font height, MainText font height) for row height
 - Highlighter::setList: restarts complete highlight init -> only newly added
-- MainText: key-down at end of document wraps to start
-- search list: "u" key sometimes stops working (falls back to default key binding)
-  use overridden key handler instead
-
-clean-up:
-- use signals instead of hard-wired callbacks to dialogs
-- main_win: split RC file into separate class (?)
-- main_search: split search history into separate class (?)
-- undo/redo in separate class (?)
-- split off duplicated "find" toolbar code into separate class
-- limit access to MainText QPlainText base class interface
+- support different font sizes in search list view rows
+- search list/bookmark/highlight dialogs:
+  use max(default font height, MainText font height) for row height
+- clearing search highlight in large documents blocks GUI for too long
 
 - search_list: frame number pattern parsing
   requires enhancement: configuration dialog 2 * patterns
@@ -27,11 +16,20 @@ clean-up:
 - main text: xview scrolling; yoff position with offset et.al.
 - main text: number prefix on key commands
 
+clean-up:
+- use signals instead of hard-wired callbacks to dialogs
+- main_win: split RC file into separate class (?)
+- main_search: split search history into separate class (?)
+- undo/redo in separate class (?)
+- split off duplicated "find" toolbar code into separate class
+- limit access to MainText QPlainText base class interface
+
 optional enhancements:
 - highlight mark-up: relative font size change & overline & underline color/style
 - multiple instances of search list window
 - bookmark undo/redo for line list (implemented within Bookmarks class)
 - bookmark adding/removing via text search (all/all above/all below)
+- search history dialog: max list length configurable
 
 // QT sources:
 // https://code.woboq.org/qt5/qtbase/src/gui/text/qtextdocument.cpp.html

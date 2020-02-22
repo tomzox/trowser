@@ -36,6 +36,7 @@ public:
     bool isDone() const { return !m_blk.isValid(); }
     int nextStartPos() const { return m_blk.position(); }
     virtual bool findNext(int& matchPos, int& matchLen, QTextBlock *matchBlock = nullptr) = 0;
+    virtual ~MainTextFind() = default;
 
 protected:
     MainTextFind(const QTextDocument* doc, int startPos, bool isFwd);

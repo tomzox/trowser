@@ -954,7 +954,16 @@ void DlgHigl::cmdSearch(bool is_fwd)
         {
             patList.push_back(m_model->getSearchPar(midx));
         }
-        m_search->searchFirst(is_fwd, patList);
+
+        bool found = m_search->searchFirst(is_fwd, patList);
+        if (!found)
+        {
+            QString msg = QString("No match until ")
+                            + (is_fwd ? "end" : "start")
+                            + " of file"
+                            + ((patList.size() <= 1) ? "" : " for any selected pattern");
+            m_stline->showWarning("search", msg);
+        }
     }
     else  // should never occur as button (incl. shortcut) gets disabled
         m_stline->showError("search", "No pattern is selected in the list");

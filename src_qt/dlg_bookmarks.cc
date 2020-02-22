@@ -136,7 +136,7 @@ public:
     {
         int line = getLineOfIdx(index.row());
         if (line >= 0)
-            return m_higl->getFmtSpecForLine(line);
+            return m_higl->getFmtSpecForLine(line, true);
         else
             return nullptr;
     }

@@ -91,9 +91,10 @@ private:
     void cmdToggleShowLineDelta(bool checked);
     void cmdSetLineIdxRoot(bool checked);
     void cmdSetDeltaColRoot(bool);
+    void cmdToggleSearchHighlight(bool checked);
     void cmdClearAll();
     void cmdRemoveSelection();
-    void cmdToggleBookmark(bool);
+    void cmdToggleBookmark();
     void cmdUndo();
     void cmdRedo();
     int  searchAtomicInList(const SearchPar& pat, int textPos, bool is_fwd);
@@ -116,7 +117,7 @@ private:
     void cmdSaveFileAs(bool lnum_only);
     void cmdLoadFrom(bool);
     bool loadLineList(const QString& fileName, std::set<int>& line_list);
-    void cmdDisplayStats(bool);
+    void cmdDisplayStats();
 
 private:
     static Highlighter * s_higl;
@@ -146,6 +147,7 @@ private:
     BgTask            * tid_search_list = nullptr;
     int                 m_ignoreSelCb = -1;
 
+    bool                m_showSrchHall = true;
     bool                m_showLineIdx = false;
     bool                m_showLineDelta = false;
 };

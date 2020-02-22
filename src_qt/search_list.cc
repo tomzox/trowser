@@ -29,6 +29,7 @@
 #include <QPushButton>
 #include <QProgressBar>
 #include <QMessageBox>
+#include <QScrollBar>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextBlock>
@@ -66,9 +67,10 @@ class SearchListModel : public QAbstractItemModel, public HighlightViewModelIf
 public:
     enum TblColIdx { COL_IDX_BOOK, COL_IDX_LINE, COL_IDX_LINE_D, COL_IDX_TXT, COL_COUNT };
 
-    SearchListModel(MainText * mainText, Highlighter * higl)
+    SearchListModel(MainText * mainText, Highlighter * higl, bool showSrchHall)
         : m_mainText(mainText)
         , m_higl(higl)
+        , m_showSrchHall(showSrchHall)
     {
     }
     virtual ~SearchListModel()
@@ -138,13 +140,17 @@ public:
         return dlg_srch_lines;
     }
     void adjustLineNums(int top_l, int bottom_l);
+    void showSearchHall(bool enable)
+    {
+        m_showSrchHall = enable;
+    }
 
     // implementation of HighlightViewModelIf interfaces
     virtual const HiglFmtSpec * getFmtSpec(const QModelIndex& index) const override
     {
         int line = getLineOfIdx(index.row());
         if (line >= 0)
-            return m_higl->getFmtSpecForLine(line);
+            return m_higl->getFmtSpecForLine(line, !m_showSrchHall);
         else
             return nullptr;
     }
@@ -156,9 +162,8 @@ public:
 private:
     MainText * const            m_mainText;
     Highlighter * const         m_higl;
+    bool                        m_showSrchHall = true;
     int                         m_rootLineIdx = 0;
-    // TODO? https://en.wikipedia.org/wiki/Skip_list#Indexable_skiplist
-    // simple alternative: list of length-limited vectors (e.g. max 1000)
     std::vector<int>            dlg_srch_lines;
 };
 
@@ -793,6 +798,17 @@ void SearchListUndo::invariant() const
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This helper class is an "item delegate" for rendering the content of the
+ * bookmarks column of the search list. The content is either empty or a blue
+ * dot if the respective line is bookmarked.
+ *
+ * Note the dot replaces the mark-up applies to bookmarks in the main window,
+ * which is not applies in the search list.  Actually text mark-up is used in
+ * the main window only because the plain-text widget does not support marking
+ * the line properly. (Handling could be made consistent in Qt 5.12 with
+ * QTextBlockFormat::setMarker().)
+ */
 class SearchListDrawBok : public QAbstractItemDelegate
 {
 public:
@@ -870,10 +886,13 @@ public:
     virtual void keyPressEvent(QKeyEvent *e) override;
     virtual int sizeHintForColumn(int column) const override;
     void setDocLineCount(int lineCount);
+    void addKeyBinding(Qt::KeyboardModifier mod, Qt::Key key, const std::function<void()>& cb);
 
 private:
     const int TXT_MARGIN = 5;
     int m_docLineCount = 0;
+    std::unordered_map<uint32_t,const std::function<void()>> m_keyCb;
+
 };
 
 int SearchListView::sizeHintForColumn(int column) const
@@ -900,8 +919,23 @@ void SearchListView::setDocLineCount(int lineCount)
     this->resizeColumnToContents(SearchListModel::COL_IDX_LINE_D);
 }
 
+void SearchListView::addKeyBinding(Qt::KeyboardModifier mod, Qt::Key key, const std::function<void()>& cb)
+{
+    Q_ASSERT((mod & ~0x0F000000) == 0);  // SHIFT, CTRL, ALT
+    Q_ASSERT((key & ~0x0FFFFFFF) == 0);
+
+    uint32_t val = (uint32_t(mod) << 4) | uint32_t(key);
+    m_keyCb.emplace(std::make_pair(val, cb));
+}
+
 void SearchListView::keyPressEvent(QKeyEvent *e)
 {
+    auto it = m_keyCb.find((uint32_t(e->modifiers()) << 4) | uint32_t(e->key()));
+    if (it != m_keyCb.end()) {
+        (it->second)();
+        return;
+    }
+
     switch (e->key())
     {
         // Firstly make Home key behave same with and without CTRL
@@ -923,6 +957,23 @@ void SearchListView::keyPressEvent(QKeyEvent *e)
                 QModelIndex midx = model()->index(count - 1, 0);
                 this->setCurrentIndex(midx);
             }
+            break;
+
+        case Qt::Key_Down:
+            if (e->modifiers() == Qt::ControlModifier)
+                verticalScrollBar()->setValue(verticalScrollBar()->value() + verticalScrollBar()->singleStep() );
+            else
+                QTableView::keyPressEvent(e);
+            break;
+
+        case Qt::Key_Up:
+            if (e->modifiers() == Qt::ControlModifier)
+                verticalScrollBar()->setValue(verticalScrollBar()->value() - verticalScrollBar()->singleStep() );
+            else
+                QTableView::keyPressEvent(e);
+            break;
+
+        case Qt::Key_Tab:
             break;
 
         default:
@@ -954,7 +1005,7 @@ SearchList::SearchList()
 
     tid_search_list = new BgTask(central_wid, BG_PRIO_SEARCH_LIST);
 
-    m_model = new SearchListModel(s_mainText, s_higl);
+    m_model = new SearchListModel(s_mainText, s_higl, m_showSrchHall);
     m_draw = new HighlightViewDelegate(m_model, false,
                                        s_mainWin->getFontContent(),
                                        s_mainWin->getFgColDefault(),
@@ -1001,36 +1052,29 @@ SearchList::SearchList()
     connect(s_mainWin, &MainWin::textFontChanged, this, &SearchList::mainFontChanged);
 
     populateMenus();
+
+    m_table->addKeyBinding(Qt::ControlModifier, Qt::Key_G, [=](){ SearchList::cmdDisplayStats(); });
+    m_table->addKeyBinding(Qt::NoModifier,      Qt::Key_M, [=](){ cmdToggleBookmark(); });
+    m_table->addKeyBinding(Qt::NoModifier,      Qt::Key_N, [=](){ cmdSearchNext(true); });
+    m_table->addKeyBinding(Qt::ShiftModifier,   Qt::Key_N, [=](){ cmdSearchNext(false); });
+    m_table->addKeyBinding(Qt::NoModifier,      Qt::Key_Slash, [=](){ cmdNewSearch(true); });
+    m_table->addKeyBinding(Qt::ShiftModifier,   Qt::Key_Slash, [=](){ cmdNewSearch(true); });  // don't care SHIFT or not
+    m_table->addKeyBinding(Qt::NoModifier,      Qt::Key_Question, [=](){ cmdNewSearch(false); });
+    m_table->addKeyBinding(Qt::ShiftModifier,   Qt::Key_Question, [=](){ cmdNewSearch(false); });  // don't care SHIFT or not
+    m_table->addKeyBinding(Qt::NoModifier,      Qt::Key_U, [=](){ cmdUndo(); });
+    m_table->addKeyBinding(Qt::ControlModifier, Qt::Key_R, [=](){ cmdRedo(); });
+
     auto act = new QAction(central_wid);
-        act->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_G));
-        connect(act, &QAction::triggered, this, &SearchList::cmdDisplayStats);
-        central_wid->addAction(act);
-    act = new QAction(central_wid);
         act->setShortcut(QKeySequence(Qt::ALT | Qt::Key_0));
         connect(act, &QAction::triggered, this, &SearchList::cmdSetDeltaColRoot);
         central_wid->addAction(act);
     act = new QAction(central_wid);
-        act->setShortcut(QKeySequence(Qt::Key_M));
-        connect(act, &QAction::triggered, this, &SearchList::cmdToggleBookmark);
-        central_wid->addAction(act);
-
-    act = new QAction(central_wid);
-        act->setShortcuts( QList<QKeySequence>() << QKeySequence(Qt::ALT | Qt::Key_N)
-                                                 << QKeySequence(Qt::Key_N) );
+        act->setShortcut(QKeySequence(Qt::ALT | Qt::Key_N));
         connect(act, &QAction::triggered, [=](){ this->cmdSearchNext(true); });
         central_wid->addAction(act);
     act = new QAction(central_wid);
-        act->setShortcuts( QList<QKeySequence>() << QKeySequence(Qt::ALT | Qt::Key_P)
-                                                 << QKeySequence(Qt::SHIFT | Qt::Key_N) );
+        act->setShortcut(QKeySequence(Qt::ALT | Qt::Key_P));
         connect(act, &QAction::triggered, [=](){ this->cmdSearchNext(false); });
-        central_wid->addAction(act);
-    act = new QAction(central_wid);
-        act->setShortcut(QKeySequence(Qt::Key_Slash));
-        connect(act, &QAction::triggered, [=](){ this->cmdNewSearch(true); });
-        central_wid->addAction(act);
-    act = new QAction(central_wid);
-        act->setShortcut(QKeySequence(Qt::Key_Question));
-        connect(act, &QAction::triggered, [=](){ this->cmdNewSearch(false); });
         central_wid->addAction(act);
 
 #if 0
@@ -1041,7 +1085,6 @@ SearchList::SearchList()
     wt.dlg_srch_f1_l.bind("<Alt-Key-f>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("show_fn")))
     wt.dlg_srch_f1_l.bind("<Alt-Key-t>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("show_tick")))
     wt.dlg_srch_f1_l.bind("<Alt-Key-d>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("tick_delta")))
-    //TODO navigation key controls equivalent legacy "TextSel" class
 #endif
 
     m_table->setFocus(Qt::ShortcutFocusReason);
@@ -1102,7 +1145,7 @@ void SearchList::mainFontChanged()
 
 void SearchList::populateMenus()
 {
-    auto men = menuBar()->addMenu("Control");
+    auto men = menuBar()->addMenu("&Control");
     auto act = men->addAction("Load line numbers...");
         connect(act, &QAction::triggered, this, &SearchList::cmdLoadFrom);
     act = men->addAction("Save text as...");
@@ -1115,7 +1158,7 @@ void SearchList::populateMenus()
     act = men->addAction("Close");
         connect(act, &QAction::triggered, this, &SearchList::cmdClose);
 
-    men = menuBar()->addMenu("Edit");
+    men = menuBar()->addMenu("&Edit");
         connect(men, &QMenu::aboutToShow, this, &SearchList::editMenuAboutToShow);
     m_menActUndo = men->addAction("Undo");
         m_menActUndo->setShortcut(QKeySequence(Qt::Key_U));
@@ -1141,7 +1184,7 @@ void SearchList::populateMenus()
     act = men->addAction("Remove main window search matches");
         connect(act, &QAction::triggered, [=](){ removeMatches(0); });
 
-    men = menuBar()->addMenu("Search");
+    men = menuBar()->addMenu("&Search");
     act = men->addAction("Search history...");
         connect(act, &QAction::triggered, [=](){ DlgHistory::openDialog(); });
     act = men->addAction("Edit highlight patterns...");
@@ -1162,12 +1205,13 @@ void SearchList::populateMenus()
         connect(act, &QAction::triggered, s_search, &MainSearch::searchHighlightClear);
 
 
-    men = menuBar()->addMenu("Options");
-    //act = men->addAction("Highlight all matches");
-    //    act->setCheckable(true);
-    //    act->setChecked(m_showSrchHall);
-    //    act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_H));
-    //    connect(act, &QAction::triggered, this, &SearchList::cmdToggleSearchHighlight);
+    men = menuBar()->addMenu("&Options");
+    act = men->addAction("Highlight all search matches");
+        act->setCheckable(true);
+        act->setChecked(m_showSrchHall);
+        act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_H));
+        connect(act, &QAction::triggered, this, &SearchList::cmdToggleSearchHighlight);
+    men->addSeparator();
     act = men->addAction("Show line number");
         act->setCheckable(true);
         act->setChecked(m_showLineIdx);
@@ -1295,14 +1339,6 @@ void SearchList::configureColumnVisibility()
         m_table->hideColumn(SearchListModel::COL_IDX_LINE);
 }
 
-#if 0  // needed? requires filtering Hall ID from fmtSpec
-void SearchList::cmdToggleSearchHighlight(bool checked)
-{
-    m_showSrchHall = checked;
-    m_model->showSearchHall(m_showSrchHall);
-}
-#endif
-
 void SearchList::cmdToggleShowLineNumber(bool checked)
 {
     m_showLineIdx = checked;
@@ -1323,6 +1359,13 @@ void SearchList::cmdSetLineIdxRoot(bool)
         int line = m_model->getLineOfIdx(sel.front().row());
         m_model->setLineDeltaRoot(line);
     }
+}
+
+void SearchList::cmdToggleSearchHighlight(bool checked)
+{
+    m_showSrchHall = checked;
+    m_model->showSearchHall(m_showSrchHall);
+    m_model->forceRedraw(SearchListModel::COL_IDX_TXT);
 }
 
 
@@ -1425,7 +1468,7 @@ void SearchList::cmdRemoveSelection()
  * function adds or removes a bookmark on the currently selected line (but only
  * if exactly one line is selected.)
  */
-void SearchList::cmdToggleBookmark(bool)
+void SearchList::cmdToggleBookmark()
 {
     auto sel = m_table->selectionModel()->selectedRows();
     if (sel.size() == 1)
@@ -1521,7 +1564,7 @@ void SearchList::cmdSearchNext(bool is_fwd)
  */
 void SearchList::cmdNewSearch(bool is_fwd)
 {
-    s_search->searchEnter(is_fwd, this);
+    s_search->searchEnter(is_fwd, m_table);
     s_mainWin->activateWindow();
 }
 
@@ -2077,23 +2120,23 @@ void SearchList::signalBookmarkLine(int line)  /*static*/
 /**
  * This external interface function is called out of the main window's
  * highlight loop for every line to which a search-match highlight is applied.
- * If the search list dialog is not open the function does nothing. Else it
- * forces a redraw of the text column in the given line so that the changed
- * highlighting is applied. (The model internally queries the main window
- * highlighting database so no local state change is required.)
+ * The function forces a redraw of the text column in the given line so that
+ * the changed highlighting is applied. (The model internally queries the main
+ * window highlighting database so no local state change is required.)
  */
 void SearchList::signalHighlightLine(int line)  /*static*/
 {
     if (s_instance != nullptr)
     {
-        //TODO if (m_showSrchHall || (tid_high_init != nullptr))
+        // not checking "m_showSrchHall" - call will have no effect
         s_instance->m_model->forceRedraw(SearchListModel::COL_IDX_TXT, line);
     }
 }
 
 /**
- * This function is bound to the "Toggle highlight" checkbutton in the
- * search list dialog's menu.  The function enables or disables search highlight.
+ * This external interface function is called by the highlighter module after
+ * bulk changes to the highlight pattern list. The function forces a redraw of
+ * the text content, so that it is redrawn with up-to date highlighting.
  */
 void SearchList::signalHighlightReconfigured()  /*static*/
 {
@@ -2437,7 +2480,7 @@ void SearchList::cmdLoadFrom(bool)
  * This function is bound to CTRL-g in the search list and displays stats
  * about the content of the search result list.
  */
-void SearchList::cmdDisplayStats(bool)
+void SearchList::cmdDisplayStats()
 {
     auto sel = m_table->selectionModel()->selectedRows();
     QString msg;

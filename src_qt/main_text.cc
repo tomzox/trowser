@@ -491,20 +491,19 @@ void MainText::cursorMoveLine(int delta, bool toStart)
 {
     auto c = this->textCursor();
 
-    if (delta > 0) {
-        auto newBlk = c.block().next();
-        c.setPosition(newBlk.position());
-        this->setTextCursor(c);
-    }
-    else if (delta < 0) {
-        auto newBlk = c.block().previous();
-        c.setPosition(newBlk.position());
-        this->setTextCursor(c);
-    }
-    this->horizontalScrollBar()->setValue(0);
-
     if (toStart)
     {
+        if (delta > 0) {
+            c.movePosition(QTextCursor::NextBlock);
+            this->setTextCursor(c);
+        }
+        else if (delta < 0) {
+            c.movePosition(QTextCursor::PreviousBlock);
+            this->setTextCursor(c);
+        }
+
+        this->horizontalScrollBar()->setValue(0);
+
         // forward to the first non-blank character
         auto line_str = c.block().text();
         static const QRegularExpression re1("^\\s*"); // not thread-safe
@@ -512,6 +511,22 @@ void MainText::cursorMoveLine(int delta, bool toStart)
         if (mat1.hasMatch())
         {
             c.setPosition(c.position() + mat1.captured(0).length());
+            this->setTextCursor(c);
+        }
+    }
+    else  // up/down within same column
+    {
+        auto blk = c.block();
+        int linePos = c.position() - blk.position();
+        if (delta > 0)
+            blk = blk.next();
+        else if (delta < 0)
+            blk = blk.previous();
+        if (blk.isValid())
+        {
+            if (linePos >= blk.length())  // TODO remember target column, to be used in next up/down move
+                linePos = (blk.length() != 0) ? (blk.length() - 1) : 0;
+            c.setPosition(blk.position() + linePos);
             this->setTextCursor(c);
         }
     }
