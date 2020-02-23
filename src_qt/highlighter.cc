@@ -59,10 +59,15 @@ Highlighter::Highlighter(MainText * textWid)
 
     // default format for search highlighting
     m_bookPat.m_id = HIGL_ID_BOOKMARK;
-    m_bookPat.m_fmtSpec.m_fgCol = 0xffff55ff;
-    m_bookPat.m_fmtSpec.m_olCol = 0xff3d4291;
+    //m_bookPat.m_fmtSpec.m_fgCol = 0xffff55ff;
+    //m_bookPat.m_fmtSpec.m_olCol = 0xff3d4291;
+    //m_bookPat.m_fmtSpec.m_bold = true;
+    //m_bookPat.m_fmtSpec.m_sizeOff = 4;
     m_bookPat.m_fmtSpec.m_bold = true;
-    m_bookPat.m_fmtSpec.m_sizeOff = 4;
+    m_bookPat.m_fmtSpec.m_underline = true;
+    m_bookPat.m_fmtSpec.m_overline = true;
+    m_bookPat.m_fmtSpec.m_bgCol = 0xFFF4EEF4;
+    m_bookPat.m_fmtSpec.m_fgCol = 0xFFB90000;
     configFmt(m_bookPat.m_fmt, m_bookPat.m_fmtSpec);
 
     m_hipro = new QProgressBar(m_mainText);
@@ -295,6 +300,7 @@ void HiglFmtSpec::merge(const HiglFmtSpec& other)
     m_bold |= other.m_bold;
     m_italic |= other.m_italic;
     m_underline |= other.m_underline;
+    m_overline |= other.m_overline;
     m_strikeout |= other.m_strikeout;
 
     m_sizeOff += other.m_sizeOff;
@@ -313,6 +319,7 @@ bool HiglFmtSpec::operator==(const HiglFmtSpec& other) const
             (m_bold == other.m_bold) &&
             (m_italic == other.m_italic) &&
             (m_underline == other.m_underline) &&
+            (m_overline == other.m_overline) &&
             (m_strikeout == other.m_strikeout) &&
             (m_sizeOff == other.m_sizeOff) &&
             (m_font == other.m_font);
@@ -352,20 +359,25 @@ void Highlighter::configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec)
         if (tmp.fromString(fmtSpec.m_font))
             fmt.setFont(tmp);
     }
-
-    if (fmtSpec.m_underline)
-        fmt.setFontUnderline(true);
-    if (fmtSpec.m_bold)
-        fmt.setFontWeight(QFont::Bold);
-    if (fmtSpec.m_italic)
-        fmt.setFontItalic(true);
-    if (fmtSpec.m_strikeout)
-        fmt.setFontStrikeOut(true);
-
-    if (fmtSpec.m_sizeOff)
+    else
     {
-        // NOTE fmt.fontPointSize() does not work here
-        fmt.setFontPointSize(fmt.font().pointSize() + fmtSpec.m_sizeOff);
+        if (fmtSpec.m_underline)
+            fmt.setFontUnderline(true);
+        if (fmtSpec.m_overline)
+            fmt.setFontOverline(true);
+        if (fmtSpec.m_bold)
+            fmt.setFontWeight(QFont::Bold);
+        if (fmtSpec.m_italic)
+            fmt.setFontItalic(true);
+        if (fmtSpec.m_strikeout)
+            fmt.setFontStrikeOut(true);
+
+        if (fmtSpec.m_sizeOff)
+        {
+            // NOTE fmt.fontPointSize() does not work here
+            int sz = m_mainText->font().pointSize() + fmtSpec.m_sizeOff;
+            fmt.setFontPointSize((sz > 0) ? sz : 1);
+        }
     }
 }
 
@@ -424,12 +436,14 @@ void Highlighter::insertFmtRcValues(QJsonObject& obj, const HiglFmtSpec& fmtSpec
 
     if (fmtSpec.m_underline)
         obj.insert("font_underline", QJsonValue(true));
+    if (fmtSpec.m_overline)
+        obj.insert("font_overline", QJsonValue(true));
+    if (fmtSpec.m_strikeout)
+        obj.insert("font_strikeout", QJsonValue(true));
     if (fmtSpec.m_bold)
         obj.insert("font_bold", QJsonValue(true));
     if (fmtSpec.m_italic)
         obj.insert("font_italic", QJsonValue(true));
-    if (fmtSpec.m_strikeout)
-        obj.insert("font_strikeout", QJsonValue(true));
 
     if (fmtSpec.m_sizeOff)
         obj.insert("font_size_offset", QJsonValue(fmtSpec.m_sizeOff));
@@ -476,12 +490,14 @@ void Highlighter::setRcValues(const QJsonValue& val)
 
             else if (var == "font_underline")
                 fmtSpec.m_underline = true;
+            else if (var == "font_overline")
+                fmtSpec.m_overline = true;
+            else if (var == "font_strikeout")
+                fmtSpec.m_strikeout = true;
             else if (var == "font_bold")
                 fmtSpec.m_bold = true;
             else if (var == "font_italic")
                 fmtSpec.m_italic = true;
-            else if (var == "font_strikeout")
-                fmtSpec.m_strikeout = true;
 
             else if (var == "font_size_offset")
                 fmtSpec.m_sizeOff = val.toInt();
@@ -677,7 +693,7 @@ int Highlighter::highlightLines(const HiglPat& pat, int startPos)
             // trigger the search result list dialog in case the line is included there too
             SearchList::signalHighlightLine(block.blockNumber());
         }
-        else
+        else if (finder->isDone())  // TODO move time limit into finder (optional)
             break;
 
         // limit the runtime of the loop - return start line number for the next invocation

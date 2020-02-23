@@ -31,6 +31,7 @@
 #include <QCheckBox>
 #include <QMenu>
 #include <QComboBox>
+#include <QSpinBox>
 #include <QAbstractItemModel>
 #include <QDialogButtonBox>
 #include <QMessageBox>
@@ -67,6 +68,11 @@ static const size_t s_brushStyleCnt = sizeof(s_brushStyles) / sizeof(s_brushStyl
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This class implements a trivial "model" for the brush/pattern selection via
+ * ComboBox drop-down menu. The data() method returns text labels as well as an
+ * icon for the pre-defined set of selectable patterns.
+ */
 class BrushStyleListModel : public QAbstractItemModel
 {
 public:
@@ -139,7 +145,7 @@ public:
 // ----------------------------------------------------------------------------
 
 /**
- * This function creates the color highlighting editor dialog.
+ * This constructor creates the highlighting / mark-up editor dialog.
  * This dialog shows all currently defined pattern definitions.
  */
 DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec,
@@ -154,7 +160,7 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
     auto central_wid = new QWidget();
     auto layout_top = new QVBoxLayout(central_wid);
 
-    QFontMetricsF metrics(m_mainWin->getFontContent());
+    QFontMetrics metrics(m_mainWin->getFontContent());
     m_sampleWid = new QPlainTextEdit(central_wid);
         m_sampleWid->setLineWrapMode(QPlainTextEdit::NoWrap);
         m_sampleWid->setFont(m_mainWin->getFontContent());
@@ -260,35 +266,56 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
         m_curFontBut->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
         layout_grid->addWidget(m_curFontBut, 3, 1, 1, 4);
 
-    //
-    // Font option checkboxes
-    //
     auto frm = new QFrame(central_wid);
-        auto layout_rb = new QHBoxLayout(frm);
-        auto rb = new QCheckBox("Underline", central_wid);
-            rb->setChecked(m_fmtSpec.m_underline);
-            connect(rb, &QCheckBox::stateChanged,
-                    [=](int state){ cmdSetFontOption(&m_fmtSpec.m_underline, (state == Qt::Checked)); });
-            layout_rb->addWidget(rb);
-        rb = new QCheckBox("Bold", central_wid);
-            rb->setChecked(m_fmtSpec.m_bold);
-            connect(rb, &QCheckBox::stateChanged,
-                    [=](int state){ cmdSetFontOption(&m_fmtSpec.m_bold, (state == Qt::Checked)); });
-            layout_rb->addWidget(rb);
-        rb = new QCheckBox("Italic", central_wid);
-            rb->setChecked(m_fmtSpec.m_italic);
-            connect(rb, &QCheckBox::stateChanged,
-                    [=](int state){ cmdSetFontOption(&m_fmtSpec.m_italic, (state == Qt::Checked)); });
-            layout_rb->addWidget(rb);
-        rb = new QCheckBox("Strike out", central_wid);
-            rb->setChecked(m_fmtSpec.m_strikeout);
-            connect(rb, &QCheckBox::stateChanged,
-                    [=](int state){ cmdSetFontOption(&m_fmtSpec.m_strikeout, (state == Qt::Checked)); });
-            layout_rb->addWidget(rb);
-        layout_grid->addWidget(frm, 4, 1, 1, 4);
+        frm->setFrameStyle(QFrame::Panel | QFrame::Raised);
+    auto layout_fopt = new QGridLayout(frm);
+
+    //
+    // Font size & options, row #1
+    //
+    m_boldChkb = new QCheckBox("Bold", central_wid);
+        m_boldChkb->setChecked(m_fmtSpec.m_bold);
+        connect(m_boldChkb, &QCheckBox::stateChanged,
+                [=](int state){ cmdSetFontOption(&m_fmtSpec.m_bold, (state == Qt::Checked)); });
+        layout_fopt->addWidget(m_boldChkb, 0, 0);
+    m_italicChkb = new QCheckBox("Italic", central_wid);
+        m_italicChkb->setChecked(m_fmtSpec.m_italic);
+        connect(m_italicChkb, &QCheckBox::stateChanged,
+                [=](int state){ cmdSetFontOption(&m_fmtSpec.m_italic, (state == Qt::Checked)); });
+        layout_fopt->addWidget(m_italicChkb, 0, 1);
+    lab = new QLabel(QString::fromUtf8("\xCE\x94-Size:"), central_wid);
+        layout_fopt->addWidget(lab, 0, 2, Qt::AlignLeft | Qt::AlignVCenter);
+    m_fontSizeBox = new QSpinBox(central_wid);
+        m_fontSizeBox->setRange(-99, 99);
+        m_fontSizeBox->setSuffix("pt");
+        m_fontSizeBox->setValue(m_fmtSpec.m_sizeOff);
+        m_fontSizeBox->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
+            connect(m_fontSizeBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &DlgMarkup::cmdSetFontSizeOff);
+        layout_fopt->addWidget(m_fontSizeBox, 0, 3);
+
+    //
+    // Font size & options, row #2
+    //
+    m_underlineChkb = new QCheckBox("Underline", central_wid);
+        m_underlineChkb->setChecked(m_fmtSpec.m_underline);
+        connect(m_underlineChkb, &QCheckBox::stateChanged,
+                [=](int state){ cmdSetFontOption(&m_fmtSpec.m_underline, (state == Qt::Checked)); });
+        layout_fopt->addWidget(m_underlineChkb, 1, 0);
+    m_strikeoutChkb = new QCheckBox("Strike out", central_wid);
+        m_strikeoutChkb->setChecked(m_fmtSpec.m_strikeout);
+        connect(m_strikeoutChkb, &QCheckBox::stateChanged,
+                [=](int state){ cmdSetFontOption(&m_fmtSpec.m_strikeout, (state == Qt::Checked)); });
+        layout_fopt->addWidget(m_strikeoutChkb, 1, 1);
+    m_overlineChkb = new QCheckBox("Overline", central_wid);
+        m_overlineChkb->setChecked(m_fmtSpec.m_overline);
+        connect(m_overlineChkb, &QCheckBox::stateChanged,
+                [=](int state){ cmdSetFontOption(&m_fmtSpec.m_overline, (state == Qt::Checked)); });
+        layout_fopt->addWidget(m_overlineChkb, 1, 2, 1, 2, Qt::AlignLeft);
 
     drawFontButtonText();
     drawButtonPixmaps();
+    setFontButtonState();
+    layout_grid->addWidget(frm, 4, 1, 2, 4);
     layout_top->addLayout(layout_grid);
 
     m_cmdButs = new QDialogButtonBox(QDialogButtonBox::Cancel |
@@ -318,7 +345,7 @@ DlgMarkup::~DlgMarkup()
  */
 void DlgMarkup::mainFontChanged()
 {
-    QFontMetricsF metrics(m_mainWin->getFontContent());
+    QFontMetrics metrics(m_mainWin->getFontContent());
     m_sampleWid->setFixedHeight(metrics.height() * (SAMPLE_STR_LINE_CNT + 2));
     m_sampleWid->setFont(m_mainWin->getFontContent());
 
@@ -389,6 +416,16 @@ void DlgMarkup::cmdSetFontOption(bool *option, bool value)
     drawTextSample();
 }
 
+void DlgMarkup::cmdSetFontSizeOff(int value)
+{
+    m_fmtSpec.m_sizeOff = value;
+
+    m_isModified = !(m_fmtSpec == m_fmtSpecOrig);
+    m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(m_isModified);
+
+    drawTextSample();
+}
+
 void DlgMarkup::cmdResetFont()
 {
     m_fmtSpec.m_font.clear();
@@ -398,6 +435,7 @@ void DlgMarkup::cmdResetFont()
 
     drawFontButtonText();
     drawTextSample();
+    setFontButtonState();
 }
 
 void DlgMarkup::cmdSelectFont()
@@ -419,6 +457,7 @@ void DlgMarkup::cmdSelectFont()
 
         drawFontButtonText();
         drawTextSample();
+        setFontButtonState();
     }
 }
 
@@ -514,4 +553,16 @@ void DlgMarkup::drawButtonPixmap(QPushButton *but, QRgb col, Qt::BrushStyle styl
     {
         but->setIcon(QIcon());
     }
+}
+
+void DlgMarkup::setFontButtonState()
+{
+    bool ena = m_fmtSpec.m_font.isEmpty();
+
+    m_fontSizeBox->setEnabled(ena);
+    m_boldChkb->setEnabled(ena);
+    m_italicChkb->setEnabled(ena);
+    m_underlineChkb->setEnabled(ena);
+    m_overlineChkb->setEnabled(ena);
+    m_strikeoutChkb->setEnabled(ena);
 }

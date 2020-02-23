@@ -317,14 +317,15 @@ DlgBookmarks::DlgBookmarks()
                                        s_mainWin->getFgColDefault(),
                                        s_mainWin->getBgColDefault());
 
-    QFontMetricsF metrics(s_mainWin->getFontContent());
+    QFontMetrics metrics1(s_mainWin->getFontContent());
     m_table = new DlgBookmarkView(central_wid);
         m_table->setModel(m_model);
         m_table->setShowGrid(false);
         m_table->horizontalHeader()->setSectionResizeMode(DlgBookmarkModel::COL_IDX_TEXT, QHeaderView::Stretch);
         m_table->verticalHeader()->setVisible(false);
         m_table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-        m_table->verticalHeader()->setDefaultSectionSize(metrics.height());
+        QFontMetrics metrics2(m_table->font());
+        m_table->verticalHeader()->setDefaultSectionSize(std::max(metrics1.height(), metrics2.height()));
         m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
         m_table->setContextMenuPolicy(Qt::CustomContextMenu);
         m_table->setItemDelegateForColumn(DlgBookmarkModel::COL_IDX_TEXT, m_draw);
@@ -412,8 +413,9 @@ void DlgBookmarks::cmdClose(bool)
  */
 void DlgBookmarks::mainFontChanged()
 {
-    QFontMetricsF metrics(s_mainWin->getFontContent());
-    m_table->verticalHeader()->setDefaultSectionSize(metrics.height());
+    QFontMetrics metrics1(s_mainWin->getFontContent());
+    QFontMetrics metrics2(m_table->font());
+    m_table->verticalHeader()->setDefaultSectionSize(std::max(metrics1.height(), metrics2.height()));
 
     m_model->forceRedraw(DlgBookmarkModel::COL_IDX_TEXT);
 }

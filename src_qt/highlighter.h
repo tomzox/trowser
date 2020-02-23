@@ -52,12 +52,10 @@ public:
     bool                m_bold = false;
     bool                m_italic = false;
     bool                m_underline = false;
+    bool                m_overline = false;
     bool                m_strikeout = false;
     int                 m_sizeOff = 0;
     QString             m_font;
-    // relief: "", raised, sunken, ridge, groove
-    // relief borderwidth: 1,2,...,9
-    // spacing: 0,1,2,...
 };
 
 using HiglId = unsigned;

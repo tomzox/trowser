@@ -903,7 +903,7 @@ int SearchListView::sizeHintForColumn(int column) const
         int maxLine = (column == SearchListModel::COL_IDX_LINE)
                          ? m_docLineCount : -m_docLineCount;
 
-        QFontMetricsF metrics(viewOptions().font);
+        QFontMetrics metrics(viewOptions().font);
         int width = metrics.boundingRect(QString::number(maxLine)).width();
         return width + TXT_MARGIN * 2;
     }
@@ -1016,7 +1016,7 @@ SearchList::SearchList()
     m_undo->connectModelForDebug(m_model);
 #endif
 
-    QFontMetricsF metrics(s_mainWin->getFontContent());
+    QFontMetrics metrics(s_mainWin->getFontContent());
     m_table = new SearchListView(central_wid);
         m_table->setModel(m_model);
         m_table->setShowGrid(false);
@@ -1137,7 +1137,7 @@ void SearchList::cmdClose(bool)
  */
 void SearchList::mainFontChanged()
 {
-    QFontMetricsF metrics(s_mainWin->getFontContent());
+    QFontMetrics metrics(s_mainWin->getFontContent());
     m_table->verticalHeader()->setDefaultSectionSize(metrics.height());
 
     m_model->forceRedraw(SearchListModel::COL_IDX_TXT);

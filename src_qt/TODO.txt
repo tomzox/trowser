@@ -1,8 +1,6 @@
 
 - Highlighter::setList: restarts complete highlight init -> only newly added
 - support different font sizes in search list view rows
-- search list/bookmark/highlight dialogs:
-  use max(default font height, MainText font height) for row height
 - clearing search highlight in large documents blocks GUI for too long
 
 - search_list: frame number pattern parsing
@@ -25,7 +23,6 @@ clean-up:
 - limit access to MainText QPlainText base class interface
 
 optional enhancements:
-- highlight mark-up: relative font size change & overline & underline color/style
 - multiple instances of search list window
 - bookmark undo/redo for line list (implemented within Bookmarks class)
 - bookmark adding/removing via text search (all/all above/all below)

@@ -27,6 +27,8 @@ class QPlainTextEdit;
 class QPushButton;
 class QAbstractButton;
 class QComboBox;
+class QSpinBox;
+class QCheckBox;
 
 class HiglFmtSpec;
 class Highlighter;
@@ -52,17 +54,19 @@ signals:
 private:
     virtual void closeEvent(QCloseEvent *) override;
     void mainFontChanged();
+    void cmdButton(QAbstractButton * button);
+    void cmdResetColor(QRgb * col);
+    void cmdSelectColor(QRgb * col, const QString& desc);
+    void cmdSetFontOption(bool *option, bool value);
+    void cmdSetFontSizeOff(int value);
+    void cmdResetFont();
+    void cmdSelectFont();
+    void cmdSelectStyle(Qt::BrushStyle * style, int idx);
     void drawTextSample();
     void drawButtonPixmaps();
     void drawButtonPixmap(QPushButton *but, QRgb col, Qt::BrushStyle style, QPixmap& pix);
     void drawFontButtonText();
-    void cmdResetColor(QRgb * col);
-    void cmdSelectColor(QRgb * col, const QString& desc);
-    void cmdSetFontOption(bool *option, bool value);
-    void cmdResetFont();
-    void cmdSelectFont();
-    void cmdSelectStyle(Qt::BrushStyle * style, int idx);
-    void cmdButton(QAbstractButton * button);
+    void setFontButtonState();
 
 private:
     const HiglId        m_id;
@@ -81,6 +85,12 @@ private:
     QComboBox         * m_fgStyleBut = nullptr;
     QPushButton       * m_olColBut = nullptr;
     QPushButton       * m_curFontBut = nullptr;
+    QSpinBox          * m_fontSizeBox = nullptr;
+    QCheckBox         * m_boldChkb = nullptr;
+    QCheckBox         * m_italicChkb = nullptr;
+    QCheckBox         * m_underlineChkb = nullptr;
+    QCheckBox         * m_overlineChkb = nullptr;
+    QCheckBox         * m_strikeoutChkb = nullptr;
 };
 
 #endif /* _DLG_MARKUP_H */

@@ -527,8 +527,9 @@ DlgHigl::~DlgHigl()
  */
 void DlgHigl::mainFontChanged()
 {
-    QFontMetricsF metrics(m_mainWin->getFontContent());
-    m_table->verticalHeader()->setDefaultSectionSize(metrics.height() + 2*3);
+    QFontMetrics metrics1(m_mainWin->getFontContent());
+    QFontMetrics metrics2(m_table->font());
+    m_table->verticalHeader()->setDefaultSectionSize(2*3 + std::max(metrics1.height(), metrics2.height()));
 
     m_model->forceRedraw(DlgHiglModel::COL_IDX_FMT);
 }
@@ -588,28 +589,38 @@ void DlgHigl::showContextMenu(const QPoint& pos)
     if (state_sel_1)
     {
         const HiglFmtSpec * pFmtSpec = m_model->getFmtSpec(sel.front());
+        bool optEna = pFmtSpec->m_font.isEmpty();
 
-        act = sub->addAction("Underline");
-            act->setCheckable(true);
-            act->setChecked(pFmtSpec->m_underline);
-            connect(act, &QAction::triggered, [=](){ cmdToggleFontUnderline(sel.front(), act->isChecked()); });
         act = sub->addAction("Bold");
+            act->setEnabled(optEna);
             act->setCheckable(true);
             act->setChecked(pFmtSpec->m_bold);
             connect(act, &QAction::triggered, [=](){ cmdToggleFontBold(sel.front(), act->isChecked()); });
         act = sub->addAction("Italic");
+            act->setEnabled(optEna);
             act->setCheckable(true);
             act->setChecked(pFmtSpec->m_italic);
             connect(act, &QAction::triggered, [=](){ cmdToggleFontItalic(sel.front(), act->isChecked()); });
+        act = sub->addAction("Underline");
+            act->setEnabled(optEna);
+            act->setCheckable(true);
+            act->setChecked(pFmtSpec->m_underline);
+            connect(act, &QAction::triggered, [=](){ cmdToggleFontUnderline(sel.front(), act->isChecked()); });
         act = sub->addAction("Strikeout");
+            act->setEnabled(optEna);
             act->setCheckable(true);
             act->setChecked(pFmtSpec->m_strikeout);
             connect(act, &QAction::triggered, [=](){ cmdToggleFontStrikeout(sel.front(), act->isChecked()); });
+        act = sub->addAction("Overline");
+            act->setEnabled(optEna);
+            act->setCheckable(true);
+            act->setChecked(pFmtSpec->m_overline);
+            connect(act, &QAction::triggered, [=](){ cmdToggleFontOverline(sel.front(), act->isChecked()); });
         act = sub->addSeparator();
         act = sub->addAction("Reset font to default");
-            act->setEnabled(!pFmtSpec->m_font.isEmpty());
+            act->setEnabled(!optEna);
             connect(act, &QAction::triggered, [=](){ cmdResetFont(sel.front()); });
-        act = sub->addAction("Change font...");
+        act = sub->addAction("Font family && options...");
             connect(act, &QAction::triggered, this, &DlgHigl::cmdChangeFont);
     }
     else
@@ -1040,6 +1051,13 @@ void DlgHigl::cmdToggleFontItalic(const QModelIndex& index, bool checked)
     m_model->setFmtData(index.row(), fmtSpec);
 }
 
+void DlgHigl::cmdToggleFontOverline(const QModelIndex& index, bool checked)
+{
+    HiglFmtSpec fmtSpec = *m_model->getFmtSpec(index);
+    fmtSpec.m_overline = checked;
+    m_model->setFmtData(index.row(), fmtSpec);
+}
+
 void DlgHigl::cmdToggleFontStrikeout(const QModelIndex& index, bool checked)
 {
     HiglFmtSpec fmtSpec = *m_model->getFmtSpec(index);
@@ -1050,7 +1068,7 @@ void DlgHigl::cmdToggleFontStrikeout(const QModelIndex& index, bool checked)
 void DlgHigl::cmdResetFont(const QModelIndex& index)
 {
     HiglFmtSpec fmtSpec = *m_model->getFmtSpec(index);
-    fmtSpec.m_font = "";
+    fmtSpec.m_font.clear();
     m_model->setFmtData(index.row(), fmtSpec);
 }
 

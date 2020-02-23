@@ -40,23 +40,38 @@ void HighlightViewDelegate::paint(QPainter *pt, const QStyleOptionViewItem& opti
         {
             font.fromString(fmtSpec->m_font);
         }
-        if (fmtSpec->m_underline)
-            font.setUnderline(true);
-        if (fmtSpec->m_bold)
-            font.setWeight(QFont::Bold);
-        if (fmtSpec->m_italic)
-            font.setItalic(true);
-        if (fmtSpec->m_strikeout)
-            font.setStrikeOut(true);
+        else
+        {
+            if (fmtSpec->m_underline)
+                font.setUnderline(true);
+            if (fmtSpec->m_overline)
+                font.setOverline(true);
+            if (fmtSpec->m_strikeout)
+                font.setStrikeOut(true);
+            if (fmtSpec->m_bold)
+                font.setWeight(QFont::Bold);
+            if (fmtSpec->m_italic)
+                font.setItalic(true);
+
+            if (fmtSpec->m_sizeOff)
+            {
+                int sz = font.pointSize() + fmtSpec->m_sizeOff;
+                font.setPointSize((sz > 0) ? sz : 1);
+            }
+        }
     }
 
     auto data = m_model->higlModelData(index);
-    QFontMetricsF metrics(font);
+    QFontMetrics metrics(font);
     int w = option.rect.width();
     int h = option.rect.height();
     int xoff = 0;
     int yoff = 0;
-    if (m_centering)
+    if (!m_centering)
+    {
+        yoff = (h - metrics.height()) / 2;
+    }
+    else
     {   
         auto txtRect = metrics.boundingRect(data.toString());
         xoff = (w - txtRect.width()) / 2 - txtRect.x();
@@ -115,32 +130,41 @@ void HighlightViewDelegate::paint(QPainter *pt, const QStyleOptionViewItem& opti
     pt->restore();
 }
 
-QSize HighlightViewDelegate::sizeHint(const QStyleOptionViewItem& /*option*/, const QModelIndex &index) const
+QSize HighlightViewDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex &index) const
 {
     const HiglFmtSpec * fmtSpec = m_model->getFmtSpec(index);
     if (fmtSpec != nullptr)
     {
+        // determine height needed by text in other columns, using default widget font
+        QFontMetrics metricsDflt(option.font);
+        int minHeight = metricsDflt.height() + TXT_MARGIN*2;
+
         QFont font(m_fontDefault);
         if (!fmtSpec->m_font.isEmpty())
         {
             font.fromString(fmtSpec->m_font);
         }
+        else if (fmtSpec->m_sizeOff)
+        {
+            int sz = font.pointSize() + fmtSpec->m_sizeOff;
+            font.setPointSize((sz > 0) ? sz : 1);
+        }
 
         if (m_centering)
         {
-            // calculate size of pixmap as sample text dimensions plus margin
+            // calculate size of item as sample text dimensions plus margin
             auto data = m_model->higlModelData(index);
-            QFontMetricsF metrics(font);
+            QFontMetrics metrics(font);
             auto txtRect = metrics.boundingRect(data.toString());
-            int pixWidth = int(txtRect.width() + TXT_MARGIN*2);
-            int pixHeight = int(txtRect.height() + TXT_MARGIN*2);
+            int pixWidth = txtRect.width() + TXT_MARGIN*2;
+            int pixHeight = txtRect.height() + TXT_MARGIN*2;
 
-            return QSize(pixWidth, pixHeight);
+            return QSize(pixWidth, std::max(pixHeight, minHeight));
         }
         else
         {
-            QFontMetricsF metrics(font);
-            return QSize(1, metrics.height());
+            QFontMetrics metrics(font);
+            return QSize(1, std::min(metrics.height(), minHeight));
         }
     }
     return QSize();

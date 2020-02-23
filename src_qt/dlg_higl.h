@@ -76,6 +76,7 @@ private:
     void cmdToggleFontUnderline(const QModelIndex& index, bool checked);
     void cmdToggleFontBold(const QModelIndex& index, bool checked);
     void cmdToggleFontItalic(const QModelIndex& index, bool checked);
+    void cmdToggleFontOverline(const QModelIndex& index, bool checked);
     void cmdToggleFontStrikeout(const QModelIndex& index, bool checked);
     void cmdResetFont(const QModelIndex& index);
     void cmdChangeFont(bool);
