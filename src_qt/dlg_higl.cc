@@ -36,6 +36,7 @@
 #include <QColorDialog>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QDebug>
 
 #include <cstdio>
 #include <string>
@@ -149,17 +150,15 @@ QVariant DlgHiglModel::headerData(int section, Qt::Orientation orientation, int 
     {
         if (orientation == Qt::Horizontal)
         {
-            if (section < COL_COUNT)
+            switch (section)
             {
-                switch (section)
-                {
-                    case COL_IDX_PAT: return QVariant("Pattern");
-                    case COL_IDX_REGEXP: return QVariant("Reg.Exp.?");
-                    case COL_IDX_CASE: return QVariant("Match case?");
-                    case COL_IDX_FMT: return QVariant("Format");
-                    default: break;
-                }
+                case COL_IDX_PAT: return QVariant("Pattern");
+                case COL_IDX_REGEXP: return QVariant("Reg.Exp.?");
+                case COL_IDX_CASE: return QVariant("Match case?");
+                case COL_IDX_FMT: return QVariant("Format");
+                default: break;
             }
+            qWarning("Invalid index:%d for headerData()", section);
         }
         else if ((size_t)section < m_patList.size())
         {
@@ -180,9 +179,10 @@ QVariant DlgHiglModel::data(const QModelIndex &index, int role) const
             case COL_IDX_PAT: return QVariant(el.m_pat);
             case COL_IDX_REGEXP: return QVariant(el.m_opt_regexp);
             case COL_IDX_CASE: return QVariant(el.m_opt_case);
-            case COL_IDX_FMT: /*fall-through*/
+            case COL_IDX_FMT: return QVariant();  // content rendered by item delegate
             default: break;
         }
+        qWarning("Invalid index:%d for data()", index.column());
     }
     return QVariant();
 }
@@ -890,7 +890,8 @@ void DlgHigl::cmdEditFormat(bool)
         auto it = findDlgMarkup(id, m_dlgMarkup);
         if (it == m_dlgMarkup.end())
         {
-            auto ptr = std::make_unique<DlgMarkup>(id, pat.m_pat, fmtSpec, m_higl, m_mainWin);
+            QString title = QString("Pattern /") + pat.m_pat + "/ mark-up";
+            auto ptr = std::make_unique<DlgMarkup>(id, title, fmtSpec, m_higl, m_mainWin);
 
             connect(ptr.get(), &DlgMarkup::closeReq, this, &DlgHigl::signalMarkupCloseReq);
             connect(ptr.get(), &DlgMarkup::applyReq, this, &DlgHigl::signalMarkupApplyReq);

@@ -91,7 +91,7 @@ public:
     void getPatList(std::vector<HiglPatExport>&) const;
     void setList(const std::vector<HiglPatExport>& patList);
     void setFmtSpec(HiglId id, const HiglFmtSpec& fmtSpec);
-    const HiglFmtSpec * getFmtSpecForLine(int line, bool filterHall);
+    const HiglFmtSpec * getFmtSpecForLine(int line, bool filterBookmark, bool filterHall);
     const HiglFmtSpec * getFmtSpecForId(HiglId id);
     void configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec);
     void adjustLineNums(int top_l, int bottom_l);

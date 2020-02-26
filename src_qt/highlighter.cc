@@ -237,7 +237,7 @@ const HiglFmtSpec * Highlighter::getFmtSpecForId(HiglId id)
 }
 
 // non-reentrant due to internal static buffer
-const HiglFmtSpec * Highlighter::getFmtSpecForLine(int line, bool filterHall)
+const HiglFmtSpec * Highlighter::getFmtSpecForLine(int line, bool filterBookmark, bool filterHall)
 {
     const HiglFmtSpec * ptr = nullptr;
 
@@ -245,12 +245,10 @@ const HiglFmtSpec * Highlighter::getFmtSpecForLine(int line, bool filterHall)
     if (range.first != range.second)
     {
         auto it = range.first;
-        if (filterHall)
-            while ((it != range.second) && ((it->second == HIGL_ID_BOOKMARK) || (it->second == HIGL_ID_SEARCH)))
-                ++it;
-        else
-            if (it->second == HIGL_ID_BOOKMARK)
-                ++it;
+        while (   (it != range.second)
+               && (   ((it->second == HIGL_ID_BOOKMARK) && filterBookmark)
+                   || ((it->second == HIGL_ID_SEARCH) && filterHall) ))
+            ++it;
 
         if (it != range.second)
         {
@@ -264,7 +262,8 @@ const HiglFmtSpec * Highlighter::getFmtSpecForLine(int line, bool filterHall)
 
                 for (/*nop*/; it != range.second; ++it)
                 {
-                    if (!((it->second == HIGL_ID_BOOKMARK) || (filterHall && (it->second == HIGL_ID_SEARCH))))
+                    if (!(   ((it->second == HIGL_ID_BOOKMARK) && filterBookmark)
+                          || ((it->second == HIGL_ID_SEARCH) && filterHall) ))
                         fmtSpecBuf.merge(findPatById(it->second)->m_fmtSpec);
                 }
                 ptr = &fmtSpecBuf;

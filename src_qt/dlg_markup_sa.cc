@@ -104,15 +104,15 @@ void DlgMarkupSA::openDialog(DlgMarkupSA* &ptr, HiglId id, const QString& name,
 
 void DlgMarkupSA::editSearchFmt(Highlighter * higl, MainWin * mainWin)  /*static*/
 {
-    openDialog(DlgMarkupSA::s_searchFmtDlg, Highlighter::HIGL_ID_SEARCH, "Search", higl, mainWin);
+    openDialog(DlgMarkupSA::s_searchFmtDlg, Highlighter::HIGL_ID_SEARCH, "Search matches mark-up", higl, mainWin);
 }
 
 void DlgMarkupSA::editSearchIncFmt(Highlighter * higl, MainWin * mainWin)  /*static*/
 {
-    openDialog(DlgMarkupSA::s_searchIncFmtDlg, Highlighter::HIGL_ID_SEARCH_INC, "Search increment", higl, mainWin);
+    openDialog(DlgMarkupSA::s_searchIncFmtDlg, Highlighter::HIGL_ID_SEARCH_INC, "Search increment mark-up", higl, mainWin);
 }
 
 void DlgMarkupSA::editBookmarkFmt(Highlighter * higl, MainWin * mainWin)  /*static*/
 {
-    openDialog(DlgMarkupSA::s_bookmarkFmtDlg, Highlighter::HIGL_ID_BOOKMARK, "Bookmarks", higl, mainWin);
+    openDialog(DlgMarkupSA::s_bookmarkFmtDlg, Highlighter::HIGL_ID_BOOKMARK, "Bookmarks mark-up", higl, mainWin);
 }

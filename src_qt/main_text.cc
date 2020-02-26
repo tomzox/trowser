@@ -956,6 +956,9 @@ QTextCursor MainText::findInDoc(const SearchPar& par, bool is_fwd, int start_pos
     {
         // invoke the actual search in the selected portion of the document
         auto flags = QTextDocument::FindFlags(is_fwd ? 0 : QTextDocument::FindBackward);
+        if (par.m_opt_case)
+            flags = QTextDocument::FindFlags(flags | QTextDocument::FindCaseSensitively);
+
         if (par.m_opt_regexp)
         {
             QRegularExpression::PatternOptions reflags =
@@ -966,8 +969,6 @@ QTextCursor MainText::findInDoc(const SearchPar& par, bool is_fwd, int start_pos
         }
         else
         {
-            if (par.m_opt_case)
-                flags = QTextDocument::FindFlags(flags | QTextDocument::FindCaseSensitively);
             c2 = this->document()->find(par.m_pat, c1, flags);
         }
 

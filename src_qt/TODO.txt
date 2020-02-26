@@ -1,14 +1,13 @@
 
+- initial highlighting: mark-up visible equiv. to search HALL
 - Highlighter::setList: restarts complete highlight init -> only newly added
 - support different font sizes in search list view rows
 - clearing search highlight in large documents blocks GUI for too long
-
-- search_list: frame number pattern parsing
-  requires enhancement: configuration dialog 2 * patterns
 - search_list: performance optimization line list used by SearchListModel
 
 - add tool-tips
 - add help (e.g. load HTML manual page into QTextEdit)
+- command line options --head/--tail not used yet (i.e. no size limit yet)
 - loading files in the background / at least after main window is open
 - loading from pipe
 - main text: xview scrolling; yoff position with offset et.al.
@@ -27,6 +26,3 @@ optional enhancements:
 - bookmark undo/redo for line list (implemented within Bookmarks class)
 - bookmark adding/removing via text search (all/all above/all below)
 - search history dialog: max list length configurable
-
-// QT sources:
-// https://code.woboq.org/qt5/qtbase/src/gui/text/qtextdocument.cpp.html

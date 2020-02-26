@@ -136,7 +136,7 @@ public:
     {
         int line = getLineOfIdx(index.row());
         if (line >= 0)
-            return m_higl->getFmtSpecForLine(line, true);
+            return m_higl->getFmtSpecForLine(line, true, true);
         else
             return nullptr;
     }
@@ -159,15 +159,13 @@ QVariant DlgBookmarkModel::headerData(int section, Qt::Orientation orientation, 
     {
         if (orientation == Qt::Horizontal)
         {
-            if (section < COL_COUNT)
+            switch (section)
             {
-                switch (section)
-                {
-                    case COL_IDX_LINE: return QVariant("Line number");
-                    case COL_IDX_TEXT: return QVariant("Content / Description");
-                    case COL_COUNT: break;
-                }
+                case COL_IDX_LINE: return QVariant("Line number");
+                case COL_IDX_TEXT: return QVariant("Content / Description");
+                default: break;
             }
+            qWarning("Invalid index:%d for headerData()", section);
         }
         else
         {
@@ -191,8 +189,9 @@ QVariant DlgBookmarkModel::data(const QModelIndex &index, int role) const
         {
             case COL_IDX_LINE: return QVariant(line + 1);
             case COL_IDX_TEXT: return QVariant(m_bookmarks->getText(line));
-            case COL_COUNT: break;
+            default: break;
         }
+        qWarning("Invalid index:%d for data()", index.column());
     }
     return QVariant();
 }
@@ -218,6 +217,8 @@ bool DlgBookmarkModel::setData(const QModelIndex &index, const QVariant &value, 
                 result = true;
             }
         }
+        else
+            qWarning("setData() for non-editable column %d", col);
     }
     return result;
 }
@@ -345,8 +346,8 @@ DlgBookmarks::DlgBookmarks()
         connect(act, &QAction::triggered, [=](){ s_bookmarks->saveFileAs(this, false); });
     act = fileMenu->addAction("Load...");
         connect(act, &QAction::triggered, [=](){ s_bookmarks->readFileFrom(this); });
-    auto m_cmdButFile = m_cmdButs->addButton("File...", QDialogButtonBox::ActionRole);
-        m_cmdButFile->setMenu(fileMenu);
+    auto but = m_cmdButs->addButton("File...", QDialogButtonBox::ActionRole);
+        but->setMenu(fileMenu);
     layout_top->addWidget(m_cmdButs);
 
     connect(s_mainWin, &MainWin::textFontChanged, this, &DlgBookmarks::mainFontChanged);

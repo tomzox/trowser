@@ -63,7 +63,7 @@
 #include "dlg_markup_sa.h"
 
 static int load_file_mode = 0;
-static int load_buf_size = 0x100000;
+static int load_buf_size = 0x10000000;
 static const char * myrcfile = ".trowserc.qt";
 static const char * const DEFAULT_FONT_FAM = "DejaVu Sans Mono";
 static const int DEFAULT_FONT_SZ = 9;
@@ -814,13 +814,13 @@ void MainWin::updateRcAfterIdle()
 void PrintUsage(const char * const argv[], int argvn=-1, const char * reason=nullptr)
 {
     if (reason != nullptr)
-        fprintf(stderr, "%s: %s: %s", argv[0], reason, argv[argvn]);
+        fprintf(stderr, "%s: %s: %s\n", argv[0], reason, argv[argvn]);
 
-    fprintf(stderr, "Usage: %s [options] {file|-}", argv[0]);
+    fprintf(stderr, "Usage: %s [options] {file|-}\n", argv[0]);
 
     if (argvn != -1)
     {
-        fprintf(stderr, "Use -h or --help for a list of options");
+        fprintf(stderr, "Use -h or --help for a list of options\n");
     }
     else
     {

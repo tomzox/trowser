@@ -57,6 +57,8 @@
 #include "highlighter.h"
 #include "highl_view_dlg.h"
 #include "search_list.h"
+#include "parse_frame.h"
+#include "dlg_parser.h"
 #include "dlg_higl.h"
 #include "dlg_history.h"
 
@@ -65,11 +67,14 @@
 class SearchListModel : public QAbstractItemModel, public HighlightViewModelIf
 {
 public:
-    enum TblColIdx { COL_IDX_BOOK, COL_IDX_LINE, COL_IDX_LINE_D, COL_IDX_TXT, COL_COUNT };
+    enum TblColIdx { COL_IDX_BOOK, COL_IDX_LINE, COL_IDX_LINE_D,
+                     COL_IDX_CUST_VAL, COL_IDX_CUST_VAL_DELTA, COL_IDX_CUST_FRM, COL_IDX_CUST_FRM_DELTA,
+                     COL_IDX_TXT, COL_COUNT };
 
-    SearchListModel(MainText * mainText, Highlighter * higl, bool showSrchHall)
+    SearchListModel(MainText * mainText, Highlighter * higl, const ParseSpec& parseSpec, bool showSrchHall)
         : m_mainText(mainText)
         , m_higl(higl)
+        , m_parser(ParseFrame::create(m_mainText->document(), parseSpec))  // may return nullptr
         , m_showSrchHall(showSrchHall)
     {
     }
@@ -98,6 +103,40 @@ public:
     }
     virtual QVariant headerData(int section __attribute__((unused)), Qt::Orientation orientation __attribute__((unused)), int role __attribute__((unused))) const override
     {
+        if (orientation == Qt::Horizontal)
+        {
+            if (role == Qt::DisplayRole)
+            {
+                switch (section)
+                {
+                    case COL_IDX_BOOK: return QVariant("BM.");
+                    case COL_IDX_LINE: return QVariant("#");
+                    case COL_IDX_LINE_D: return QVariant("\xCE\x94");  // UTF-8 0xCE94: Greek delta
+                    case COL_IDX_CUST_VAL: return QVariant(m_parser.get() ? m_parser->getHeader(ParseColumnFlags::Val) : "");
+                    case COL_IDX_CUST_VAL_DELTA: return QVariant(m_parser.get() ? ("\xCE\x94" + m_parser->getHeader(ParseColumnFlags::Val)) : "");
+                    case COL_IDX_CUST_FRM: return QVariant(m_parser.get() ? m_parser->getHeader(ParseColumnFlags::Frm) : "");
+                    case COL_IDX_CUST_FRM_DELTA: return QVariant(m_parser.get() ? ("\xCE\x94" + m_parser->getHeader(ParseColumnFlags::Frm)) : "");
+                    case COL_IDX_TXT: return QVariant("Text");
+                    case COL_COUNT: break;
+                }
+            }
+            else if (role == Qt::ToolTipRole)
+            {
+                switch (section)
+                {
+                    case COL_IDX_BOOK: return QVariant("Marking bookmarked lines with a blue dot");
+                    case COL_IDX_LINE: return QVariant("Original line number in the main window");
+                    case COL_IDX_LINE_D: return QVariant("Line number delta to selected base line");
+                    case COL_IDX_CUST_VAL: return QVariant("Value extracted from text content as per \"custom column configuration\"");
+                    case COL_IDX_CUST_VAL_DELTA: return QVariant("Delta between extracted value of each line to that of a selected line");
+                    case COL_IDX_CUST_FRM: return QVariant("Frame boundary value extracted from text content as per \"custom column configuration\"");
+                    case COL_IDX_CUST_FRM_DELTA: return QVariant("Delta between frame boundary value of each line to that of a selected line");
+                    case COL_IDX_TXT: return QVariant("Copy of the text in the main window");
+                    case COL_COUNT: break;
+                }
+            }
+            // Qt::SizeHintRole
+        }
         return QVariant();
     }
     virtual QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -134,6 +173,7 @@ public:
     void removeAll(std::vector<int>& removedLines);
 
     void setLineDeltaRoot(int line);
+    bool setCustomDeltaRoot(TblColIdx col, int line);
     void forceRedraw(TblColIdx col, int line = -1);
     const std::vector<int>& exportLineList() const
     {
@@ -144,13 +184,30 @@ public:
     {
         m_showSrchHall = enable;
     }
+    void showBookmarkMarkup(bool enable)
+    {
+        m_showBookmarkMarkup = enable;
+    }
+    void setCustomColCfg(const ParseSpec& parseSpec)
+    {
+        m_parser = ParseFrame::create(m_mainText->document(), parseSpec);
+        if (dlg_srch_lines.size() != 0)
+        {
+            emit dataChanged(createIndex(0, COL_IDX_CUST_VAL),
+                             createIndex(dlg_srch_lines.size() - 1, COL_IDX_CUST_FRM_DELTA));
+        }
+    }
+    ParseColumns getCustomColumns() const
+    {
+        return (m_parser.get() ? m_parser->getColumns() : ParseColumns(0));
+    }
 
     // implementation of HighlightViewModelIf interfaces
     virtual const HiglFmtSpec * getFmtSpec(const QModelIndex& index) const override
     {
         int line = getLineOfIdx(index.row());
         if (line >= 0)
-            return m_higl->getFmtSpecForLine(line, !m_showSrchHall);
+            return m_higl->getFmtSpecForLine(line, !m_showBookmarkMarkup, !m_showSrchHall);
         else
             return nullptr;
     }
@@ -162,9 +219,14 @@ public:
 private:
     MainText * const            m_mainText;
     Highlighter * const         m_higl;
+    ParseFramePtr               m_parser;
     bool                        m_showSrchHall = true;
+    bool                        m_showBookmarkMarkup = false;
     int                         m_rootLineIdx = 0;
+    int                         m_rootCustVal = 0;
+    int                         m_rootCustFrm = 0;
     std::vector<int>            dlg_srch_lines;
+
 };
 
 QVariant SearchListModel::data(const QModelIndex &index, int role) const
@@ -173,17 +235,40 @@ QVariant SearchListModel::data(const QModelIndex &index, int role) const
         && ((size_t)index.row() < dlg_srch_lines.size()))
     {
         int line = dlg_srch_lines[index.row()];
+        bool ok;
+
         switch (index.column())
         {
             case COL_IDX_LINE:
                 return QVariant(QString::number(line + 1));
             case COL_IDX_LINE_D:
                 return QVariant(QString::number(line - m_rootLineIdx));
+            case COL_IDX_CUST_VAL:
+                if (m_parser.get() != nullptr)
+                    return QVariant(m_parser->parseFrame(line, 0));
+                break;
+            case COL_IDX_CUST_VAL_DELTA:
+                if (m_parser.get() != nullptr)
+                {
+                    int val = m_parser->parseFrame(line, 0).toInt(&ok);
+                    if (ok)
+                        return QVariant(QString::number(val - m_rootCustVal));
+                }
+                break;
+            case COL_IDX_CUST_FRM:
+                if (m_parser.get() != nullptr)
+                    return QVariant(m_parser->parseFrame(line, 1));
+                break;
+            case COL_IDX_CUST_FRM_DELTA:
+                if (m_parser.get() != nullptr)
+                {
+                    int val = m_parser->parseFrame(line, 1).toInt(&ok);
+                    if (ok)
+                        return QVariant(QString::number(val - m_rootCustFrm));
+                }
+                break;
             case COL_IDX_TXT:
-            {
-                QTextBlock block = m_mainText->document()->findBlockByNumber(line);
-                return QVariant(block.text());
-            }
+                return QVariant(m_mainText->document()->findBlockByNumber(line).text());
             case COL_IDX_BOOK:
             case COL_COUNT:
                 break;
@@ -381,6 +466,28 @@ void SearchListModel::setLineDeltaRoot(int line)
     }
 }
 
+bool SearchListModel::setCustomDeltaRoot(TblColIdx col, int line)
+{
+    Q_ASSERT((col == COL_IDX_CUST_VAL_DELTA) || (col == COL_IDX_CUST_FRM_DELTA));
+    bool result = false;
+
+    int val = m_parser->parseFrame(line, ((col == COL_IDX_CUST_VAL_DELTA) ? 0 : 1)).toInt(&result);
+    if (result)
+    {
+        if (col == COL_IDX_CUST_VAL_DELTA)
+            m_rootCustVal = val;
+        else
+            m_rootCustFrm = val;
+
+        if (dlg_srch_lines.size() != 0)
+        {
+            emit dataChanged(createIndex(0, col),
+                             createIndex(dlg_srch_lines.size() - 1, col));
+        }
+    }
+    return result;
+}
+
 // called when external state has changed that affects rendering
 void SearchListModel::forceRedraw(TblColIdx col, int line)  // ATTN row/col order reverse of usual
 {
@@ -434,6 +541,11 @@ void SearchListModel::adjustLineNums(int top_l, int bottom_l)
             emit dataChanged(createIndex(0, COL_IDX_LINE),
                              createIndex(dlg_srch_lines.size() - 1, COL_IDX_LINE));
         }
+    }
+
+    if (m_parser != nullptr)
+    {
+        m_parser->clearCache();
     }
 }
 
@@ -1005,7 +1117,8 @@ SearchList::SearchList()
 
     tid_search_list = new BgTask(central_wid, BG_PRIO_SEARCH_LIST);
 
-    m_model = new SearchListModel(s_mainText, s_higl, m_showSrchHall);
+
+    m_model = new SearchListModel(s_mainText, s_higl, s_parseSpec, m_showSrchHall);
     m_draw = new HighlightViewDelegate(m_model, false,
                                        s_mainWin->getFontContent(),
                                        s_mainWin->getFgColDefault(),
@@ -1021,6 +1134,7 @@ SearchList::SearchList()
         m_table->setModel(m_model);
         m_table->setShowGrid(false);
         m_table->horizontalHeader()->setVisible(false);
+        m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         m_table->horizontalHeader()->setSectionResizeMode(SearchListModel::COL_IDX_TXT, QHeaderView::Stretch);
         m_table->verticalHeader()->setVisible(false);
         m_table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
@@ -1211,6 +1325,10 @@ void SearchList::populateMenus()
         act->setChecked(m_showSrchHall);
         act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_H));
         connect(act, &QAction::triggered, this, &SearchList::cmdToggleSearchHighlight);
+    act = men->addAction("Show bookmark mark-up");
+        act->setCheckable(true);
+        act->setChecked(m_showBookmarkMarkup);
+        connect(act, &QAction::triggered, this, &SearchList::cmdToggleBookmarkMarkup);
     men->addSeparator();
     act = men->addAction("Show line number");
         act->setCheckable(true);
@@ -1220,28 +1338,65 @@ void SearchList::populateMenus()
         m_actShowLineDelta->setCheckable(true);
         m_actShowLineDelta->setChecked(m_showLineDelta);
         connect(m_actShowLineDelta, &QAction::triggered, this, &SearchList::cmdToggleShowLineDelta);
-#if 0
-    act = men->addAction("Show frame number");
-        act->setCheckable(true);
-        //command=SearchList_ToggleFrameNo, variable=dlg_srch_show_fn
-        //accelerator="ALT-f")
-    act = men->addAction("Show tick number");
-        act->setCheckable(true);
-        //command=SearchList_ToggleFrameNo, variable=dlg_srch_show_tick
-        //accelerator="ALT-t")
-    act = men->addAction("Show tick num. delta");
-        act->setCheckable(true);
-        //command=SearchList_ToggleFrameNo, variable=dlg_srch_tick_delta
-        //accelerator="ALT-d")
-#endif
+
+    m_actShowCustomVal = men->addAction("Show custom column");
+        m_actShowCustomVal->setCheckable(true);
+        m_actShowCustomVal->setVisible(false);
+        connect(m_actShowCustomVal, &QAction::triggered, [=](bool v){ cmdToggleShowCustom(ParseColumnFlags::Val, v); });
+    m_actShowCustomValDelta = men->addAction("Show custom column");
+        m_actShowCustomValDelta->setCheckable(true);
+        m_actShowCustomValDelta->setVisible(false);
+        connect(m_actShowCustomValDelta, &QAction::triggered, [=](bool v){ cmdToggleShowCustom(ParseColumnFlags::ValDelta, v); });
+    m_actShowCustomFrm = men->addAction("Show custom column");
+        m_actShowCustomFrm->setCheckable(true);
+        m_actShowCustomFrm->setVisible(false);
+        connect(m_actShowCustomFrm, &QAction::triggered, [=](bool v){ cmdToggleShowCustom(ParseColumnFlags::Frm, v); });
+    m_actShowCustomFrmDelta = men->addAction("Show custom column");
+        m_actShowCustomFrmDelta->setCheckable(true);
+        m_actShowCustomFrmDelta->setVisible(false);
+        connect(m_actShowCustomFrmDelta, &QAction::triggered, [=](bool v){ cmdToggleShowCustom(ParseColumnFlags::FrmDelta, v); });
+
     men->addSeparator();
     act = men->addAction("Select line as origin for line number delta");
         connect(act, &QAction::triggered, this, &SearchList::cmdSetLineIdxRoot);
+    m_actRootCustomValDelta = men->addAction("Select line as origin for custom val");
+        connect(m_actRootCustomValDelta, &QAction::triggered, [=](){ cmdSetCustomColRoot(ParseColumnFlags::ValDelta); });
+    m_actRootCustomFrmDelta = men->addAction("Select line as origin for custom frame boundary");
+        connect(m_actRootCustomFrmDelta, &QAction::triggered, [=](){ cmdSetCustomColRoot(ParseColumnFlags::FrmDelta); });
         // shortcut ALT-0 is shared with other columns and thus has different callback
-#if 0
-    act = men->addAction("Select line as origin for tick delta");
-        //command=SearchList_SetFnRoot
-#endif
+
+    men->addSeparator();
+    act = men->addAction("Configure custom column with parsed values...");
+        connect(act, &QAction::triggered, this, &SearchList::cmdOpenParserConfig);
+
+    configureCustomMenuActions();
+}
+
+void SearchList::configureCustomMenuActions()
+{
+    auto custFlags = m_model->getCustomColumns();
+
+    m_actShowCustomVal->setText("Show custom: " + s_parseSpec.getHeader(ParseColumnFlags::Val));
+    m_actShowCustomVal->setChecked(m_showCustom & ParseColumnFlags::Val);
+    m_actShowCustomVal->setVisible(custFlags & ParseColumnFlags::Val);
+
+    m_actShowCustomValDelta->setText("Show custom: Delta " + s_parseSpec.getHeader(ParseColumnFlags::Val));
+    m_actShowCustomValDelta->setChecked(m_showCustom & ParseColumnFlags::ValDelta);
+    m_actShowCustomValDelta->setVisible(custFlags & ParseColumnFlags::ValDelta);
+
+    m_actShowCustomFrm->setText("Show custom: " + s_parseSpec.getHeader(ParseColumnFlags::Frm));
+    m_actShowCustomFrm->setChecked(m_showCustom & ParseColumnFlags::Frm);
+    m_actShowCustomFrm->setVisible(custFlags & ParseColumnFlags::Frm);
+
+    m_actShowCustomFrmDelta->setText("Show custom: Delta " + s_parseSpec.getHeader(ParseColumnFlags::Frm));
+    m_actShowCustomFrmDelta->setChecked(m_showCustom & ParseColumnFlags::FrmDelta);
+    m_actShowCustomFrmDelta->setVisible(custFlags & ParseColumnFlags::FrmDelta);
+
+    m_actRootCustomValDelta->setText("Select line as origin for custom: Delta " + s_parseSpec.getHeader(ParseColumnFlags::Val));
+    m_actRootCustomValDelta->setVisible(custFlags & ParseColumnFlags::ValDelta);
+
+    m_actRootCustomFrmDelta->setText("Select line as origin for custom: Delta " + s_parseSpec.getHeader(ParseColumnFlags::Frm));
+    m_actRootCustomFrmDelta->setVisible(custFlags & ParseColumnFlags::FrmDelta);
 }
 
 /**
@@ -1294,24 +1449,25 @@ void SearchList::showContextMenu(const QPoint& pos)
 {
     auto menu = new QMenu("Search list actions", this);
     auto sel = m_table->selectionModel()->selectedRows();
+    bool sel_size_1 = (sel.size() == 1);
 
     auto act = menu->addAction("Select line as origin for line number delta");
-        act->setEnabled(m_showLineDelta && (sel.size() == 1));
+        act->setEnabled(sel_size_1);  // && m_showLineDelta
         connect(act, &QAction::triggered, this, &SearchList::cmdSetLineIdxRoot);
-#if 0
-    auto act = menu->addAction("Select line as origin for tick delta");
-    act->setEnabled(false);
-    if ((sel.size() == 1) && ((tick_pat_sep != "") || (tick_pat_num != "")))
+
+    if (m_actRootCustomValDelta->isVisible())
     {
-        int line = m_model->getLineOfIdx(sel.front().row());
-        fn = ParseFrameTickNo("$line.0", dlg_srch_fn_cache);
-        if (fn != "")
-        {
-            connect(act, &QAction::triggered, this, &SearchList::setFnRoot);
-            act->setEnabled(true);
-        }
+        act = menu->addAction(m_actRootCustomValDelta->text());
+        act->setEnabled(sel_size_1); // && (m_showCustom & ParseColumnFlags::ValDelta)
+        connect(act, &QAction::triggered, [=](){ cmdSetCustomColRoot(ParseColumnFlags::ValDelta); });
     }
-#endif
+    if (m_actRootCustomFrmDelta->isVisible())
+    {
+        // Note: error if this line has no numerical value is handled by callback
+        act = menu->addAction(m_actRootCustomFrmDelta->text());
+        act->setEnabled(sel_size_1); // && (m_showCustom & ParseColumnFlags::FrmDelta)
+        connect(act, &QAction::triggered, [=](){ cmdSetCustomColRoot(ParseColumnFlags::FrmDelta); });
+    }
 
     menu->addSeparator();
     act = menu->addAction("Remove selected lines");
@@ -1328,15 +1484,55 @@ void SearchList::showContextMenu(const QPoint& pos)
 
 void SearchList::configureColumnVisibility()
 {
+    if (m_showLineIdx)
+        m_table->showColumn(SearchListModel::COL_IDX_LINE);
+    else
+        m_table->hideColumn(SearchListModel::COL_IDX_LINE);
+
     if (m_showLineDelta)
         m_table->showColumn(SearchListModel::COL_IDX_LINE_D);
     else
         m_table->hideColumn(SearchListModel::COL_IDX_LINE_D);
 
-    if (m_showLineIdx)
-        m_table->showColumn(SearchListModel::COL_IDX_LINE);
+    if (m_showCustom & ParseColumnFlags::Val)
+        m_table->showColumn(SearchListModel::COL_IDX_CUST_VAL);
     else
-        m_table->hideColumn(SearchListModel::COL_IDX_LINE);
+        m_table->hideColumn(SearchListModel::COL_IDX_CUST_VAL);
+
+    if (m_showCustom & ParseColumnFlags::ValDelta)
+        m_table->showColumn(SearchListModel::COL_IDX_CUST_VAL_DELTA);
+    else
+        m_table->hideColumn(SearchListModel::COL_IDX_CUST_VAL_DELTA);
+
+    if (m_showCustom & ParseColumnFlags::Frm)
+        m_table->showColumn(SearchListModel::COL_IDX_CUST_FRM);
+    else
+        m_table->hideColumn(SearchListModel::COL_IDX_CUST_FRM);
+
+    if (m_showCustom & ParseColumnFlags::FrmDelta)
+        m_table->showColumn(SearchListModel::COL_IDX_CUST_FRM_DELTA);
+    else
+        m_table->hideColumn(SearchListModel::COL_IDX_CUST_FRM_DELTA);
+
+    // any non-default columns shown -> display header
+    if (m_showLineDelta || m_showLineIdx || (m_showCustom != ParseColumns(0)))
+        m_table->horizontalHeader()->setVisible(true);
+    else
+        m_table->horizontalHeader()->setVisible(false);
+}
+
+void SearchList::cmdToggleSearchHighlight(bool checked)
+{
+    m_showSrchHall = checked;
+    m_model->showSearchHall(m_showSrchHall);
+    m_model->forceRedraw(SearchListModel::COL_IDX_TXT);
+}
+
+void SearchList::cmdToggleBookmarkMarkup(bool checked)
+{
+    m_showBookmarkMarkup = checked;
+    m_model->showBookmarkMarkup(m_showBookmarkMarkup);
+    m_model->forceRedraw(SearchListModel::COL_IDX_BOOK);
 }
 
 void SearchList::cmdToggleShowLineNumber(bool checked)
@@ -1351,6 +1547,16 @@ void SearchList::cmdToggleShowLineDelta(bool checked)
     configureColumnVisibility();
 }
 
+void SearchList::cmdToggleShowCustom(ParseColumnFlags col, bool checked)
+{
+    if (checked)
+        m_showCustom |= col;
+    else
+        m_showCustom ^= (m_showCustom & col);
+
+    configureColumnVisibility();
+}
+
 void SearchList::cmdSetLineIdxRoot(bool)
 {
     auto sel = m_table->selectionModel()->selectedRows();
@@ -1358,14 +1564,41 @@ void SearchList::cmdSetLineIdxRoot(bool)
     {
         int line = m_model->getLineOfIdx(sel.front().row());
         m_model->setLineDeltaRoot(line);
+
+        // auto-enable the column if not shown yet
+        if (m_showLineDelta == false)
+            m_actShowLineDelta->activate(QAction::Trigger);
     }
+    else
+        m_stline->showError("menu", "Please select a line in the list first");
 }
 
-void SearchList::cmdToggleSearchHighlight(bool checked)
+void SearchList::cmdSetCustomColRoot(ParseColumnFlags col)
 {
-    m_showSrchHall = checked;
-    m_model->showSearchHall(m_showSrchHall);
-    m_model->forceRedraw(SearchListModel::COL_IDX_TXT);
+    auto sel = m_table->selectionModel()->selectedRows();
+    if (sel.size() == 1)
+    {
+        int line = m_model->getLineOfIdx(sel.front().row());
+        auto tblCol = (col == ParseColumnFlags::ValDelta)
+                        ? SearchListModel::COL_IDX_CUST_VAL_DELTA
+                        : SearchListModel::COL_IDX_CUST_FRM_DELTA;
+
+        if (m_model->setCustomDeltaRoot(tblCol, line))
+        {
+            // auto-enable the column if not shown yet
+            if ((m_showCustom & col) == 0)
+            {
+                if (col == ParseColumnFlags::ValDelta)
+                    m_actShowCustomValDelta->activate(QAction::Trigger);
+                else
+                    m_actShowCustomFrmDelta->activate(QAction::Trigger);
+            }
+        }
+        else
+            m_stline->showError("menu", "Parsing did not yield a numerical value for this line");
+    }
+    else
+        m_stline->showError("menu", "Please select a line in the list first");
 }
 
 
@@ -1377,39 +1610,30 @@ void SearchList::cmdToggleSearchHighlight(bool checked)
  */
 void SearchList::cmdSetDeltaColRoot(bool)
 {
-    auto sel = m_table->selectionModel()->selectedRows();
-    if (sel.size() == 1)
+    bool done = false;
+
+    // auto-enable line index if no delta column is configured
+    if (m_showLineDelta || (m_model->getCustomColumns() == ParseColumns(0)))
     {
-        int line = m_model->getLineOfIdx(sel.front().row());
-
-        // when multiple columns are supported: auto-enable last used option
-        if (!m_showLineDelta) // && !m_tickFrameDelta
-        {
-            m_actShowLineDelta->activate(QAction::Trigger);
-        }
-
-        if (m_showLineDelta)
-        {
-            m_model->setLineDeltaRoot(line);
-        }
-#if 0
-        else if (m_tickFrameDelta)
-        {
-            //if ((tick_pat_sep != "") || (tick_pat_num != ""))
-            // extract the frame number from the text in the main window around the referenced line
-            fn = ParseFrameTickNo("%d.0" % line, dlg_srch_fn_cache)
-            if (fn != "")
-            {
-                dlg_srch_tick_delta = 1
-                dlg_srch_tick_root = fn.split(" ")[0]
-            }
-            else
-                m_stline->showError("search", "Parsing did not yield a number for this line");
-        }
-#endif
+        cmdSetLineIdxRoot(true);   // dummy parameter
+        done = true;
     }
-    else
-        m_stline->showError("search", "Select a text line as origin for delta display");
+
+    if (m_showCustom & ParseColumnFlags::ValDelta)
+    {
+        cmdSetCustomColRoot(ParseColumnFlags::ValDelta);
+        done = true;
+    }
+    if (m_showCustom & ParseColumnFlags::FrmDelta)
+    {
+        cmdSetCustomColRoot(ParseColumnFlags::FrmDelta);
+        done = true;
+    }
+
+    if (done == false)
+    {
+        m_stline->showError("menu", "Please enable a delta column via Options menu first");
+    }
 }
 
 
@@ -2113,6 +2337,9 @@ void SearchList::signalBookmarkLine(int line)  /*static*/
     {
         // note line parameter may be -1 for "all"
         s_instance->m_model->forceRedraw(SearchListModel::COL_IDX_BOOK, line);
+
+        // actually needed only if (m_showBookmarkMarkup)
+        s_instance->m_model->forceRedraw(SearchListModel::COL_IDX_TXT, line);
     }
 }
 
@@ -2228,8 +2455,6 @@ void SearchList::adjustLineNumsInt(int top_l, int bottom_l)
     m_undo->adjustLineNums(top_l, bottom_l);
 
     m_table->setDocLineCount(s_mainText->document()->lineCount());
-
-    //TODO dlg_srch_fn_cache = {}
 }
 
 void SearchList::adjustLineNums(int top_l, int bottom_l)  /*static*/
@@ -2497,6 +2722,43 @@ void SearchList::cmdDisplayStats()
     m_stline->showPlain("file", msg);
 }
 
+void SearchList::cmdOpenParserConfig(bool)
+{
+    if (m_dlgParser == nullptr)
+    {
+        m_dlgParser = new DlgParser(s_mainWin, s_mainText, s_parseSpec);
+        connect(m_dlgParser, &DlgParser::dlgClosed, this, &SearchList::signalDlgParserClosed);
+    }
+    else
+    {
+        m_dlgParser->activateWindow();
+        m_dlgParser->raise();
+    }
+}
+
+void SearchList::signalDlgParserClosed(bool changed)
+{
+    if (m_dlgParser != nullptr)
+    {
+        if (changed)
+        {
+            m_dlgParser->getSpec(s_parseSpec);
+
+            // apply the configuration in the model
+            m_model->setCustomColCfg(s_parseSpec);
+
+            // hide columns that are no longer enabled in configuration
+            m_showCustom &= m_model->getCustomColumns();
+            configureColumnVisibility();
+
+            // set visbility & text of menu entries related to custom columns
+            configureCustomMenuActions();
+        }
+        m_dlgParser->deleteLater();
+        m_dlgParser = nullptr;
+    }
+}
+
 
 // ----------------------------------------------------------------------------
 // Static state & interface
@@ -2511,6 +2773,7 @@ MainSearch  * SearchList::s_search;
 MainWin     * SearchList::s_mainWin;
 MainText    * SearchList::s_mainText;
 Bookmarks   * SearchList::s_bookmarks;
+ParseSpec     SearchList::s_parseSpec;
 
 /**
  * This function is called when writing the config file to retrieve persistent
@@ -2531,6 +2794,8 @@ QJsonObject SearchList::getRcValues()  /*static*/
 
     obj.insert("win_geom", QJsonValue(QString(s_winGeometry.toHex())));
     obj.insert("win_state", QJsonValue(QString(s_winState.toHex())));
+
+    obj.insert("custom_column_cfg", s_parseSpec.getRcValues());
 
     return obj;
 }
@@ -2554,6 +2819,10 @@ void SearchList::setRcValues(const QJsonValue& val)  /*static*/
         else if (var == "win_state")
         {
             s_winState = QByteArray::fromHex(val.toString().toLatin1());
+        }
+        else if (var == "custom_column_cfg")
+        {
+            s_parseSpec = ParseSpec(val);
         }
     }
 }

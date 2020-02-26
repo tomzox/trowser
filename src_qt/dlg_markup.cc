@@ -283,14 +283,15 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
         connect(m_italicChkb, &QCheckBox::stateChanged,
                 [=](int state){ cmdSetFontOption(&m_fmtSpec.m_italic, (state == Qt::Checked)); });
         layout_fopt->addWidget(m_italicChkb, 0, 1);
-    lab = new QLabel(QString::fromUtf8("\xCE\x94-Size:"), central_wid);
+    lab = new QLabel(QString::fromUtf8("\xCE\x94-Size:"), central_wid);  // UTF 0xCE94: Greek delta
         layout_fopt->addWidget(lab, 0, 2, Qt::AlignLeft | Qt::AlignVCenter);
     m_fontSizeBox = new QSpinBox(central_wid);
         m_fontSizeBox->setRange(-99, 99);
         m_fontSizeBox->setSuffix("pt");
         m_fontSizeBox->setValue(m_fmtSpec.m_sizeOff);
         m_fontSizeBox->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
-            connect(m_fontSizeBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &DlgMarkup::cmdSetFontSizeOff);
+        connect(m_fontSizeBox, QOverload<int>::of(&QSpinBox::valueChanged),
+                this, &DlgMarkup::cmdSetFontSizeOff);
         layout_fopt->addWidget(m_fontSizeBox, 0, 3);
 
     //

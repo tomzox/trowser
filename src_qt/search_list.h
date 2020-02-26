@@ -27,6 +27,7 @@
 #include <set>
 
 #include "main_search.h"  // for SearchPar
+#include "parse_frame.h"
 
 class QTableView;
 class QTextCursor;
@@ -45,6 +46,9 @@ class HighlightViewDelegate;
 class SearchListDrawBok;
 class SearchListUndo;
 class BgTask;
+class DlgParser;
+
+// ----------------------------------------------------------------------------
 
 class SearchList : public QMainWindow
 {
@@ -79,6 +83,7 @@ private:
     ~SearchList();
 
     void populateMenus();
+    void configureCustomMenuActions();
     virtual void closeEvent(QCloseEvent *) override;
     void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected);
     void showContextMenu(const QPoint& pos);
@@ -89,9 +94,12 @@ private:
     void configureColumnVisibility();
     void cmdToggleShowLineNumber(bool checked);
     void cmdToggleShowLineDelta(bool checked);
+    void cmdToggleShowCustom(ParseColumnFlags col, bool checked);
     void cmdSetLineIdxRoot(bool checked);
+    void cmdSetCustomColRoot(ParseColumnFlags col);
     void cmdSetDeltaColRoot(bool);
     void cmdToggleSearchHighlight(bool checked);
+    void cmdToggleBookmarkMarkup(bool checked);
     void cmdClearAll();
     void cmdRemoveSelection();
     void cmdToggleBookmark();
@@ -117,6 +125,8 @@ private:
     void cmdSaveFileAs(bool lnum_only);
     void cmdLoadFrom(bool);
     bool loadLineList(const QString& fileName, std::set<int>& line_list);
+    void cmdOpenParserConfig(bool);
+    void signalDlgParserClosed(bool changed);
     void cmdDisplayStats();
 
 private:
@@ -130,6 +140,7 @@ private:
     static QByteArray   s_winGeometry;
     static QByteArray   s_winState;
     static QString      s_prevFileName;
+    static ParseSpec    s_parseSpec;
 
     SearchListView    * m_table = nullptr;
     SearchListModel   * m_model = nullptr;
@@ -144,12 +155,21 @@ private:
     QAction           * m_menActAbort = nullptr;
     QAction           * m_menActRemove = nullptr;
     QAction           * m_actShowLineDelta = nullptr;
+    QAction           * m_actShowCustomVal = nullptr;
+    QAction           * m_actShowCustomValDelta = nullptr;
+    QAction           * m_actShowCustomFrm = nullptr;
+    QAction           * m_actShowCustomFrmDelta = nullptr;
+    QAction           * m_actRootCustomValDelta = nullptr;
+    QAction           * m_actRootCustomFrmDelta = nullptr;
     BgTask            * tid_search_list = nullptr;
     int                 m_ignoreSelCb = -1;
+    DlgParser         * m_dlgParser = nullptr;
 
     bool                m_showSrchHall = true;
+    bool                m_showBookmarkMarkup = false;
     bool                m_showLineIdx = false;
     bool                m_showLineDelta = false;
+    ParseColumns        m_showCustom = 0;
 };
 
 #endif /* _SEARCH_LIST_H */
