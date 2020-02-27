@@ -508,8 +508,8 @@ void MainSearch::searchVarTrace(const QString & val)
 
     if (m_f2_e->hasFocus())
     {
-        //TODO m_timSearchInc->setInterval(SEARCH_INC_DELAY);
-        m_timSearchInc->start([=, is_fwd=tlb_last_dir](){ searchIncrement(is_fwd, true); });
+        // delay start of search, to avoid jumps while user still typing fast
+        m_timSearchInc->start(SEARCH_INC_DELAY, [=, is_fwd=tlb_last_dir](){ searchIncrement(is_fwd, true); });
     }
 }
 
@@ -1069,7 +1069,7 @@ void MainSearch::searchBrowseHistory(bool is_up)
             tlb_hist_pos = is_up ? 0 : (tlb_history.size() - 1);
         }
         else if (is_up) {
-            if (tlb_hist_pos + 1 < (long)tlb_history.size()) {
+            if (size_t(tlb_hist_pos) + 1 < tlb_history.size()) {
                 tlb_hist_pos += 1;
             }
             else {
@@ -1106,7 +1106,7 @@ void MainSearch::searchBrowseHistory(bool is_up)
  */
 int MainSearch::searchHistoryComplete(int step)
 {
-    for (int idx = tlb_hist_pos; (idx >= 0) && (idx < (long)tlb_history.size()); idx += step)
+    for (int idx = tlb_hist_pos; (idx >= 0) && (size_t(idx) < tlb_history.size()); idx += step)
     {
         if (tlb_history.at(idx).m_pat.startsWith(tlb_hist_prefix))
             return idx;
@@ -1120,7 +1120,7 @@ int MainSearch::searchHistoryComplete(int step)
  */
 void MainSearch::searchRemoveFromHistory()
 {
-    if ((tlb_hist_pos >= 0) && (tlb_hist_pos < (long)tlb_history.size()))
+    if ((tlb_hist_pos >= 0) && (size_t(tlb_hist_pos) < tlb_history.size()))
     {
         tlb_history.erase(tlb_history.begin() + tlb_hist_pos);
 
@@ -1133,7 +1133,7 @@ void MainSearch::searchRemoveFromHistory()
             tlb_hist_pos = -1;
             tlb_hist_prefix.clear();
         }
-        else if (tlb_hist_pos >= (long)tlb_history.size())
+        else if (size_t(tlb_hist_pos) >= tlb_history.size())
         {
             tlb_hist_pos = tlb_history.size() - 1;
         }

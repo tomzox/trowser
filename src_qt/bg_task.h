@@ -41,10 +41,12 @@ public:
 
     bool isActive() const { return m_isActive; }
     void start(const std::function<void()>& callback);
+    void start(unsigned delay, const std::function<void()>& callback);
     void stop();
 
 private:
-    static void timer_exp();
+    static void schedTimerExpired();
+    void privateTimerExpired();
 
 private:
     static std::list<BgTask*> s_queue;
@@ -55,6 +57,7 @@ private:
 
     std::function<void()> m_callback;
     bool m_isActive;
+    QTimer * s_privateTimer;
 };
 
 #endif // _BG_TASK_H

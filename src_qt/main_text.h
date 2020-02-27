@@ -70,6 +70,7 @@ private:
     static const uint JUMP_STACK_MAXLEN = 100;
 
     virtual void keyPressEvent(QKeyEvent *e) override;
+    virtual void dragEnterEvent(QDragEnterEvent *ev) override;
     bool keyCmdText(wchar_t chr);
 
     void YviewSet(char where, int col);

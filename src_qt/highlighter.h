@@ -74,7 +74,6 @@ public:
     SearchPar       m_srch;
     HiglFmtSpec     m_fmtSpec;
     QTextCharFormat m_fmt;
-    HiglId          m_id;
 };
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -84,64 +83,62 @@ class Highlighter : public QWidget
     Q_OBJECT
 
 public:
-    Highlighter(MainText * textWid);
+    Highlighter(MainText * textWid, MainWin * mainWin);
     QJsonArray getRcValues();
     void setRcValues(const QJsonValue& val);
     void removeInc(QTextDocument * doc);
     void getPatList(std::vector<HiglPatExport>&) const;
-    void setList(const std::vector<HiglPatExport>& patList);
+    void setPatList(const std::vector<HiglPatExport>& patList);
     void setFmtSpec(HiglId id, const HiglFmtSpec& fmtSpec);
     const HiglFmtSpec * getFmtSpecForLine(int line, bool filterBookmark, bool filterHall);
     const HiglFmtSpec * getFmtSpecForId(HiglId id);
     void configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec);
     void adjustLineNums(int top_l, int bottom_l);
-    HiglId allocateNewId();
 
     void highlightInit();
     void searchHighlightMatch(QTextCursor& match);
     void searchHighlightClear();
     void searchHighlightUpdate(const SearchPar& par, bool onlyVisible);
-    void searchHighlightAll(const HiglPat& pat, int startPos);
+    void searchHighlightAll(HiglId id, int startPos);
     void bookmarkHighlight(int line, bool enabled);
 
-    static constexpr int INVALID_HIGL_ID = 0;
-    static constexpr int HIGL_ID_SEARCH = 1;
-    static constexpr int HIGL_ID_SEARCH_INC = 2;
-    static constexpr int HIGL_ID_BOOKMARK = 3;
-    static constexpr int HIGL_ID_FIRST_FREE = 4;
+    static constexpr int INVALID_HIGL_ID = -1;
+    static constexpr int HIGL_ID_SEARCH = 0;
+    static constexpr int HIGL_ID_SEARCH_INC = 1;
+    static constexpr int HIGL_ID_BOOKMARK = 2;
+    static constexpr int HIGL_ID_FIRST_USER_DEF = 3;
 
 private:
     void addSearchInc(QTextCursor& sel);
     void addSearchHall(const QTextBlock& blk, const QTextCharFormat& fmt, HiglId id);
     void removeHall(QTextDocument * doc, HiglId id);
     void redrawHall(QTextDocument * doc, HiglId id);
-    void redraw(QTextDocument * doc, int blkNum);
+    void redraw(QTextDocument * doc, int line);
     void clearAll(QTextDocument * doc);
-    HiglPat* findPatById(HiglId id);
-    void insertFmtRcValues(QJsonObject& obj, const HiglFmtSpec& fmtSpec);
 
-    void addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id = INVALID_HIGL_ID);
-    void highlightInitBg(int pat_idx, int startPos);
-    int  highlightLines(const HiglPat& pat, int startPos);
-    void highlightVisible(const HiglPat& pat);
+    void addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec);
+    void highlightInitBg(HiglId id, int startPos);
+    int  highlightLines(HiglId id, int startPos);
+    void highlightVisible(HiglId id);
     void highlightYviewRedirect();
     void highlightYviewCallback(int value);
+    void highlightYviewHook();
     void highlightAll(const HiglPat& pat, int startPos);
 
 private:
+    static constexpr QRgb s_colFind   {0xfffaee0a};
+    static constexpr QRgb s_colFindInc{0xffc8ff00};
+
     MainText * const m_mainText;
+    MainWin * const m_mainWin;
     QProgressBar* m_hipro = nullptr;
 
     std::multimap<int,HiglId> m_tags;
     int           m_findIncPos = -1;
 
     std::vector<HiglPat> m_patList;
-    HiglPat       m_hallPat;
-    HiglPat       m_searchIncPat;
-    HiglPat       m_bookPat;
-    HiglId        m_lastId = HIGL_ID_FIRST_FREE;
     bool          m_hallPatComplete = false;
-    int           m_hallYview = 0;
+    int           m_yViewValue = -1;
     bool          m_yViewRedirected = false;
 
     BgTask      * tid_high_init = nullptr;

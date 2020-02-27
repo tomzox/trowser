@@ -55,31 +55,38 @@ BgTask::BgTask(QObject * parent, BG_TASK_PRIO priority)
     : m_parent(parent)
     , m_priority(priority)
     , m_isActive(false)
+    , s_privateTimer(nullptr)
 {
     if (s_timer == nullptr)
     {
         s_timer = new QTimer(parent);
         s_timer->setSingleShot(true);
         s_timer->setInterval(0);
-        connect(s_timer, &QTimer::timeout, [](){ BgTask::timer_exp(); });
+        connect(s_timer, &QTimer::timeout, [](){ BgTask::schedTimerExpired(); });
     }
 }
 
 BgTask::~BgTask()
 {
-    stop();
     // s_timer is shared (static) hence not deleted
+    stop();
+
+    if (s_privateTimer)
+    {
+        s_privateTimer->stop();
+        delete s_privateTimer;
+    }
 }
 
 
 /**
- * This internal function is installed as handler for the timer used for
+ * This internal static function is installed as handler for the timer used for
  * scheduling all pending background tasks. The function extracts the task of
  * highest priority from the queue and invokes its handler. If any tasks are
  * remaining (maybe added within the callback function), the timer is
  * restarted.
  */
-void BgTask::timer_exp()  /*static*/
+void BgTask::schedTimerExpired()  /*static*/
 {
     auto it = std::min_element(s_queue.begin(), s_queue.end(),
                                [](BgTask* a, BgTask* b) bool { return a->m_priority < b->m_priority; });
@@ -113,6 +120,8 @@ void BgTask::timer_exp()  /*static*/
 void BgTask::start(const std::function<void()>& callback)
 {
     Q_ASSERT(!m_parent.isNull());  // timer not stopped before destruction
+    Q_ASSERT(!m_isActive);  // caller did not stop before rescheduling
+    Q_ASSERT(std::find(s_queue.begin(), s_queue.end(), this) == s_queue.end());
 
     m_callback = callback;
     m_isActive = true;
@@ -126,8 +135,8 @@ void BgTask::start(const std::function<void()>& callback)
 
 
 /**
- * This function stops the given background task instance from beeing
- * scheduled. If the task is not currently pending, the function does nothing.
+ * This function stops the given background task instance from being scheduled.
+ * If the task is not currently pending, the function does nothing.
  */
 void BgTask::stop()
 {
@@ -143,4 +152,48 @@ void BgTask::stop()
             s_timer->stop();
         }
     }
+    if (s_privateTimer != nullptr)
+    {
+        s_privateTimer->stop();
+    }
+}
+
+/**
+ * This overloaded function is for convenience: The function starts the
+ * background task with an initial delay. This is achieved by using an extra
+ * timer; only when this timer expires, the task is added to the regular
+ * scheduling queue. The regular stop() function handles the initial delay and
+ * later scheduling transparently (i.e. task is cancelled regardless of the
+ * phase of scheduling it is in).
+ */
+void BgTask::start(unsigned delay, const std::function<void()>& callback)
+{
+    Q_ASSERT(!m_parent.isNull());  // timer not stopped before destruction
+
+    if (m_isActive)
+        stop();
+
+    if (s_privateTimer == nullptr)
+    {
+        s_privateTimer = new QTimer(m_parent);
+        s_privateTimer->setSingleShot(true);
+        connect(s_privateTimer, &QTimer::timeout, [=](){ privateTimerExpired(); });
+    }
+    else
+        s_privateTimer->stop();
+
+    m_callback = callback;
+
+    s_privateTimer->setInterval(delay);
+    s_privateTimer->start();
+}
+
+/**
+ * This internal function is installed as handler for the private timer used for
+ * initial delay of scheduling a task. The function adds the task to the common
+ * scheduling queue.
+ */
+void BgTask::privateTimerExpired()
+{
+    start(m_callback);
 }

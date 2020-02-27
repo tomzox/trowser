@@ -14,6 +14,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This module implements the highlight pattern list and application of such
+ * highlighting to the main text window. The main purpose is after start-up to
+ * iterate across the highlight/pattern list, for each search for lines of text
+ * that match a pattern and apply the respective mark-up to them. Afterwards
+ * the module will be used for applying highlighting of search matches; these
+ * can be either single lines plus a sub-set of that line for "incremental
+ * search" highlight, or global highlighting. Additionally the module supports
+ * the highlighting editor dialog by exporting the pattern list and allowing
+ * to commit updates to the list.
  */
 
 #include <QTextBlock>
@@ -36,39 +48,37 @@
 #include "text_block_find.h"
 #include "highlighter.h"
 #include "search_list.h"
+#include "dlg_bookmarks.h"
 
-
-static constexpr QRgb s_colFind   (0xfffaee0a);
-static constexpr QRgb s_colFindInc(0xffc8ff00);
-//static constexpr s_colSelection QRgb(0xffc3c3c3);
 
 // ----------------------------------------------------------------------------
 
-Highlighter::Highlighter(MainText * textWid)
+Highlighter::Highlighter(MainText * textWid, MainWin * mainWin)
     : m_mainText(textWid)
+    , m_mainWin(mainWin)
 {
     // default format for search highlighting
-    m_hallPat.m_id = HIGL_ID_SEARCH;
-    m_hallPat.m_fmtSpec.m_bgCol = s_colFind;
-    configFmt(m_hallPat.m_fmt, m_hallPat.m_fmtSpec);
+    HiglFmtSpec fmtSpecSearch;
+    fmtSpecSearch.m_bgCol = s_colFind;
+    addPattern(SearchPar(), fmtSpecSearch);
 
     // default format for search increment
-    m_searchIncPat.m_id = HIGL_ID_SEARCH_INC;
-    m_searchIncPat.m_fmtSpec.m_bgCol = s_colFindInc;
-    configFmt(m_searchIncPat.m_fmt, m_searchIncPat.m_fmtSpec);
+    HiglFmtSpec fmtSpecSearchInc;
+    fmtSpecSearchInc.m_bgCol = s_colFindInc;
+    addPattern(SearchPar(), fmtSpecSearchInc);
 
-    // default format for search highlighting
-    m_bookPat.m_id = HIGL_ID_BOOKMARK;
-    //m_bookPat.m_fmtSpec.m_fgCol = 0xffff55ff;
-    //m_bookPat.m_fmtSpec.m_olCol = 0xff3d4291;
-    //m_bookPat.m_fmtSpec.m_bold = true;
-    //m_bookPat.m_fmtSpec.m_sizeOff = 4;
-    m_bookPat.m_fmtSpec.m_bold = true;
-    m_bookPat.m_fmtSpec.m_underline = true;
-    m_bookPat.m_fmtSpec.m_overline = true;
-    m_bookPat.m_fmtSpec.m_bgCol = 0xFFF4EEF4;
-    m_bookPat.m_fmtSpec.m_fgCol = 0xFFB90000;
-    configFmt(m_bookPat.m_fmt, m_bookPat.m_fmtSpec);
+    // default format for bookmarks
+    HiglFmtSpec fmtSpecBookmark;
+        //fmtSpecBookmark.m_fgCol = QRgb(0xFFFF55FF);
+        //fmtSpecBookmark.m_olCol = QRgb(0xFF3D4291);
+        //fmtSpecBookmark.m_bold = true;
+        //fmtSpecBookmark.m_sizeOff = 4;
+    fmtSpecBookmark.m_bold = true;
+    fmtSpecBookmark.m_underline = true;  // over+underline ~= frame
+    fmtSpecBookmark.m_overline = true;
+    fmtSpecBookmark.m_bgCol = QRgb(0xFFF4EEF4);  // very light pink
+    fmtSpecBookmark.m_fgCol = QRgb(0xFFB90000);  // dark red
+    addPattern(SearchPar(), fmtSpecBookmark);
 
     m_hipro = new QProgressBar(m_mainText);
         m_hipro->setOrientation(Qt::Horizontal);
@@ -81,11 +91,13 @@ Highlighter::Highlighter(MainText * textWid)
     tid_search_hall = new BgTask(m_mainText, BG_PRIO_HIGHLIGHT_SEARCH);
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 // mark the matching portion of a line of text
 // only one line can be marked this way
 void Highlighter::addSearchInc(QTextCursor& sel)
 {
-    sel.mergeCharFormat(m_searchIncPat.m_fmt);
+    sel.mergeCharFormat(m_patList[HIGL_ID_SEARCH_INC].m_fmt);
 
     m_findIncPos = sel.blockNumber();
 }
@@ -138,9 +150,9 @@ void Highlighter::removeHall(QTextDocument * doc, HiglId id)
     {
         if (it->second == id)
         {
-            int blkNum = it->first;
+            int line = it->first;
             it = m_tags.erase(it);
-            redraw(doc, blkNum);
+            redraw(doc, line);
         }
         else
             ++it;
@@ -149,25 +161,25 @@ void Highlighter::removeHall(QTextDocument * doc, HiglId id)
 
 void Highlighter::redrawHall(QTextDocument * doc, HiglId id)
 {
-    int prevBlk = -1;
+    int prevLine = -1;
     for (auto it = m_tags.begin(); it != m_tags.end(); ++it)
     {
         if (it->second == id)
         {
-            int blkNum = it->first;
-            if (prevBlk != blkNum)
+            int line = it->first;
+            if (prevLine != line)
             {
-                redraw(doc, blkNum);
-                prevBlk = blkNum;
+                redraw(doc, line);
+                prevLine = line;
             }
         }
     }
 }
 
 // re-calculate line format for the given line after removal of a specific highlight
-void Highlighter::redraw(QTextDocument * doc, int blkNum)
+void Highlighter::redraw(QTextDocument * doc, int line)
 {
-    QTextBlock blk = doc->findBlockByNumber(blkNum);
+    QTextBlock blk = doc->findBlockByNumber(line);
 
     QTextCursor c(blk);
     c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
@@ -181,17 +193,17 @@ void Highlighter::redraw(QTextDocument * doc, int blkNum)
 
         if (++it != pair.second)
         {
-            QTextCharFormat fmt(findPatById(firstId)->m_fmt);
+            QTextCharFormat fmt(m_patList.at(firstId).m_fmt);
 
             for (/*nop*/; it != pair.second; ++it)
             {
-                fmt.merge(findPatById(it->second)->m_fmt);
+                fmt.merge(m_patList.at(it->second).m_fmt);
             }
             c.setCharFormat(fmt);
         }
         else  // one highlight remaining in this line
         {
-            c.setCharFormat(findPatById(firstId)->m_fmt);
+            c.setCharFormat(m_patList.at(firstId).m_fmt);
         }
     }
     else  // no highlight remaining in this line
@@ -199,22 +211,6 @@ void Highlighter::redraw(QTextDocument * doc, int blkNum)
         QTextCharFormat fmt;  // default format w/o mark-up
         c.setCharFormat(fmt);
     }
-}
-
-HiglPat* Highlighter::findPatById(HiglId id)
-{
-    if (id == HIGL_ID_SEARCH)
-        return &m_hallPat;
-    else if (id == HIGL_ID_SEARCH_INC)
-        return &m_searchIncPat;
-    else if (id == HIGL_ID_BOOKMARK)
-        return &m_bookPat;
-
-    for (auto& pat : m_patList)
-        if (pat.m_id == id)
-            return &pat;
-
-    return &m_hallPat;  // should never happen
 }
 
 // UNUSED
@@ -233,7 +229,10 @@ void Highlighter::clearAll(QTextDocument * doc)
 
 const HiglFmtSpec * Highlighter::getFmtSpecForId(HiglId id)
 {
-    return &findPatById(id)->m_fmtSpec;
+    if (id < m_patList.size())
+        return &m_patList[id].m_fmtSpec;
+    else
+        return nullptr;
 }
 
 // non-reentrant due to internal static buffer
@@ -258,19 +257,19 @@ const HiglFmtSpec * Highlighter::getFmtSpecForLine(int line, bool filterBookmark
             {
                 static HiglFmtSpec fmtSpecBuf;
 
-                fmtSpecBuf = findPatById(firstId)->m_fmtSpec;
+                fmtSpecBuf = m_patList.at(firstId).m_fmtSpec;
 
                 for (/*nop*/; it != range.second; ++it)
                 {
                     if (!(   ((it->second == HIGL_ID_BOOKMARK) && filterBookmark)
                           || ((it->second == HIGL_ID_SEARCH) && filterHall) ))
-                        fmtSpecBuf.merge(findPatById(it->second)->m_fmtSpec);
+                        fmtSpecBuf.merge(m_patList.at(it->second).m_fmtSpec);
                 }
                 ptr = &fmtSpecBuf;
             }
             else  // one highlight remaining in this line
             {
-                ptr = &findPatById(firstId)->m_fmtSpec;
+                ptr = &m_patList.at(firstId).m_fmtSpec;
             }
         }
     }
@@ -380,39 +379,67 @@ void Highlighter::configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec)
     }
 }
 
-void Highlighter::addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec, HiglId id)
+// push a new pattern/highlight definition to the end of the pattern list
+void Highlighter::addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec)
 {
     HiglPat fmt;
 
-    configFmt(fmt.m_fmt, fmtSpec);
     fmt.m_srch = srch;
     fmt.m_fmtSpec = fmtSpec;
-    fmt.m_id = ((id != INVALID_HIGL_ID) ? id : ++m_lastId);
+    configFmt(fmt.m_fmt, fmt.m_fmtSpec);
 
-    m_patList.push_back(fmt);
+    m_patList.push_back(std::move(fmt));
 }
 
 QJsonArray Highlighter::getRcValues()
 {
     QJsonArray arr;
 
-    for (auto pat : {&m_hallPat, &m_searchIncPat, &m_bookPat})
+    for (size_t idx = 0; idx < m_patList.size(); ++idx)
     {
-        QJsonObject obj;
-        obj.insert("ID", QJsonValue(int(pat->m_id)));
-        insertFmtRcValues(obj, pat->m_fmtSpec);
-        arr.push_back(obj);
-    }
-
-    for (const HiglPat& pat : m_patList)
-    {
+        const HiglPat& pat = m_patList[idx];
         QJsonObject obj;
 
-        obj.insert("search_pattern", QJsonValue(pat.m_srch.m_pat));
-        obj.insert("search_reg_exp", QJsonValue(pat.m_srch.m_opt_regexp));
-        obj.insert("search_match_case", QJsonValue(pat.m_srch.m_opt_case));
+        if (idx == HIGL_ID_SEARCH)
+            obj.insert("special_purpose", QJsonValue("0: search match highlight"));
+        else if (idx == HIGL_ID_SEARCH_INC)
+            obj.insert("special_purpose", QJsonValue("1: search increment highlight"));
+        else if (idx == HIGL_ID_BOOKMARK)
+            obj.insert("special_purpose", QJsonValue("2: bookmark highlight"));
+        else
+        {
+            obj.insert("search_pattern", QJsonValue(pat.m_srch.m_pat));
+            obj.insert("search_reg_exp", QJsonValue(pat.m_srch.m_opt_regexp));
+            obj.insert("search_match_case", QJsonValue(pat.m_srch.m_opt_case));
+        }
 
-        insertFmtRcValues(obj, pat.m_fmtSpec);
+        if (pat.m_fmtSpec.m_bgCol != HiglFmtSpec::INVALID_COLOR)
+            obj.insert("bg_col", QJsonValue(int(pat.m_fmtSpec.m_bgCol)));
+        if (pat.m_fmtSpec.m_fgCol != HiglFmtSpec::INVALID_COLOR)
+            obj.insert("fg_col", QJsonValue(int(pat.m_fmtSpec.m_fgCol)));
+        if (pat.m_fmtSpec.m_bgStyle != Qt::NoBrush)
+            obj.insert("bg_style", QJsonValue(pat.m_fmtSpec.m_bgStyle));
+        if (pat.m_fmtSpec.m_fgStyle != Qt::NoBrush)
+            obj.insert("fg_style", QJsonValue(pat.m_fmtSpec.m_fgStyle));
+        if (pat.m_fmtSpec.m_olCol != HiglFmtSpec::INVALID_COLOR)
+            obj.insert("outline_col", QJsonValue(int(pat.m_fmtSpec.m_olCol)));
+
+        if (pat.m_fmtSpec.m_underline)
+            obj.insert("font_underline", QJsonValue(true));
+        if (pat.m_fmtSpec.m_overline)
+            obj.insert("font_overline", QJsonValue(true));
+        if (pat.m_fmtSpec.m_strikeout)
+            obj.insert("font_strikeout", QJsonValue(true));
+        if (pat.m_fmtSpec.m_bold)
+            obj.insert("font_bold", QJsonValue(true));
+        if (pat.m_fmtSpec.m_italic)
+            obj.insert("font_italic", QJsonValue(true));
+
+        if (pat.m_fmtSpec.m_sizeOff)
+            obj.insert("font_size_offset", QJsonValue(pat.m_fmtSpec.m_sizeOff));
+
+        if (!pat.m_fmtSpec.m_font.isEmpty())
+            obj.insert("font", QJsonValue(pat.m_fmtSpec.m_font));
 
         arr.push_back(obj);
     }
@@ -420,45 +447,16 @@ QJsonArray Highlighter::getRcValues()
     return arr;
 }
 
-void Highlighter::insertFmtRcValues(QJsonObject& obj, const HiglFmtSpec& fmtSpec)
-{
-    if (fmtSpec.m_bgCol != HiglFmtSpec::INVALID_COLOR)
-        obj.insert("bg_col", QJsonValue(int(fmtSpec.m_bgCol)));
-    if (fmtSpec.m_fgCol != HiglFmtSpec::INVALID_COLOR)
-        obj.insert("fg_col", QJsonValue(int(fmtSpec.m_fgCol)));
-    if (fmtSpec.m_bgStyle != Qt::NoBrush)
-        obj.insert("bg_style", QJsonValue(fmtSpec.m_bgStyle));
-    if (fmtSpec.m_fgStyle != Qt::NoBrush)
-        obj.insert("fg_style", QJsonValue(fmtSpec.m_fgStyle));
-    if (fmtSpec.m_olCol != HiglFmtSpec::INVALID_COLOR)
-        obj.insert("outline_col", QJsonValue(int(fmtSpec.m_olCol)));
-
-    if (fmtSpec.m_underline)
-        obj.insert("font_underline", QJsonValue(true));
-    if (fmtSpec.m_overline)
-        obj.insert("font_overline", QJsonValue(true));
-    if (fmtSpec.m_strikeout)
-        obj.insert("font_strikeout", QJsonValue(true));
-    if (fmtSpec.m_bold)
-        obj.insert("font_bold", QJsonValue(true));
-    if (fmtSpec.m_italic)
-        obj.insert("font_italic", QJsonValue(true));
-
-    if (fmtSpec.m_sizeOff)
-        obj.insert("font_size_offset", QJsonValue(fmtSpec.m_sizeOff));
-
-    if (!fmtSpec.m_font.isEmpty())
-        obj.insert("font", QJsonValue(fmtSpec.m_font));
-}
-
 void Highlighter::setRcValues(const QJsonValue& val)
 {
     const QJsonArray arr = val.toArray();
-    for (auto it = arr.begin(); it != arr.end(); ++it)
+    size_t idx = 0;
+
+    for (auto it = arr.begin(); it != arr.end(); ++it, ++idx)
     {
         SearchPar srch;
         HiglFmtSpec fmtSpec;
-        HiglId id = INVALID_HIGL_ID;
+        size_t fixedId = INVALID_HIGL_ID;
 
         const QJsonObject obj = it->toObject();
         for (auto it = obj.begin(); it != obj.end(); ++it)
@@ -466,8 +464,8 @@ void Highlighter::setRcValues(const QJsonValue& val)
             const QString& var = it.key();
             const QJsonValue& val = it.value();
 
-            if (var == "ID")  // pre-defined format
-                id = val.toInt();
+            if (var == "special_purpose")
+                fixedId = size_t(val.toString().left(1).toInt());
 
             else if (var == "search_pattern")
                 srch.m_pat = val.toString();
@@ -505,68 +503,128 @@ void Highlighter::setRcValues(const QJsonValue& val)
                 fmtSpec.m_font = val.toString();
         }
 
-        if (id == INVALID_HIGL_ID)
+        if (fixedId < HIGL_ID_FIRST_USER_DEF)
+            setFmtSpec(idx, fmtSpec);
+        else
             addPattern(srch, fmtSpec);
-        else if (id < HIGL_ID_FIRST_FREE)
-            setFmtSpec(id, fmtSpec);
     }
 }
 
+
+/**
+ * This external interface is used by the pattern configuration dialog fpr
+ * retrieving the entire list of pattern definitions. The exported data
+ * structure differs from the internal one, as it lacks the character format,
+ * but has an additional ID. The latter is used to detect insertions, removal
+ * or reordering when writing back modifications.
+ */
 void Highlighter::getPatList(std::vector<HiglPatExport>& exp) const
 {
-    for (auto& w : m_patList)
+    for (HiglId idx = HIGL_ID_FIRST_USER_DEF; idx < m_patList.size(); ++idx)
     {
-        exp.emplace_back(HiglPatExport{w.m_srch, w.m_fmtSpec, w.m_id});
+        exp.emplace_back(HiglPatExport{m_patList[idx].m_srch, m_patList[idx].m_fmtSpec, idx});
     }
 }
 
-void Highlighter::setList(const std::vector<HiglPatExport>& patList)
+
+/**
+ * This external interface is used by the pattern configuration dialog for
+ * writing back modifications. The given list will completely replace all
+ * previous user-defined patterns. As an optimizations, the function detects
+ * internally when no reordering was done and in this case update formatting
+ * only.  Else all format is cleared from the text and initial highlighting
+ * task is started. (The latter could be further optimized.)
+ */
+void Highlighter::setPatList(const std::vector<HiglPatExport>& newPatList)
 {
-    for (auto& w : m_patList)
+    bool reordered = false;
+
+    if (newPatList.size() + HIGL_ID_FIRST_USER_DEF == m_patList.size())
     {
-        removeHall(m_mainText->document(), w.m_id);
+        for (HiglId idx = HIGL_ID_FIRST_USER_DEF; idx < m_patList.size(); ++idx)
+        {
+            if (   (newPatList[idx - HIGL_ID_FIRST_USER_DEF].m_id != idx)
+                || (newPatList[idx - HIGL_ID_FIRST_USER_DEF].m_srch != m_patList[idx].m_srch))
+            {
+                reordered = true;
+                break;
+            }
+        }
     }
-    m_patList.clear();
+    else
+        reordered = true;
 
-    for (auto& w : patList)
+    if (reordered == false)
     {
-        addPattern(w.m_srch, w.m_fmtSpec, w.m_id);
+        // Only format of individual enries has changed
+        for (HiglId idx = HIGL_ID_FIRST_USER_DEF; idx < m_patList.size(); ++idx)
+        {
+            if (!(newPatList[idx - HIGL_ID_FIRST_USER_DEF].m_fmtSpec == m_patList[idx].m_fmtSpec))
+            {
+                m_patList[idx].m_fmtSpec = newPatList[idx - HIGL_ID_FIRST_USER_DEF].m_fmtSpec;
+                configFmt(m_patList[idx].m_fmt, m_patList[idx].m_fmtSpec);
+
+                redrawHall(m_mainText->document(), idx);
+            }
+        }
+
+        // LEGACY adding only a single pattern (note: redo foreach where m_id > thresh)
+        //HighlightAll(w[0], w[4], opt)
     }
+    else
+    {
+        // entries were inserted, removed, or search criteria changed
+        // => redo complete initial highlighting
+        searchHighlightClear();
 
-    tid_high_init->stop();
-    highlightInit();
-    // FIXME changing only a single pattern (note: redo foreach where m_id > thresh)
-    //HighlightAll(w[0], w[4], opt)
+        for (HiglId idx = HIGL_ID_FIRST_USER_DEF; idx < m_patList.size(); ++idx)
+        {
+            removeHall(m_mainText->document(), idx);
+        }
+        m_patList.erase(m_patList.begin() + HIGL_ID_FIRST_USER_DEF, m_patList.end());
 
+        for (auto& w : newPatList)
+        {
+            addPattern(w.m_srch, w.m_fmtSpec);
+        }
 
-    SearchList::signalHighlightReconfigured();
-#if 0 //TODO
+        tid_high_init->stop();
+        highlightInit();
+    }
 
     // remove the highlight in other dialogs, if currently open
-    //TODO MarkList_DeleteTag(tagname)
-    //TODO MarkList_CreateHighlightTags()
+    SearchList::signalHighlightReconfigured();
+    DlgBookmarks::signalHighlightReconfigured();
 
-    //TODO UpdateRcAfterIdle()
-
-    searchHighlightClear()
-#endif
+    m_mainWin->updateRcFile();
 }
 
+
+/**
+ * This external interface is used by the "standalone mark-up editor" (i.e.
+ * the editor used for search & bookmark mark-up) to write back a format for a
+ * single highlighting ID. The function will copy the new format to the pattern
+ * list and redraw all text lines that are marked with the same ID.
+ */
 void Highlighter::setFmtSpec(HiglId id, const HiglFmtSpec& fmtSpec)
 {
-    HiglPat* buf = findPatById(id);
-    buf->m_fmtSpec = fmtSpec;
-    buf->m_fmt = QTextCharFormat();
-    configFmt(buf->m_fmt, buf->m_fmtSpec);
+    if (id < m_patList.size())
+    {
+        HiglPat& buf = m_patList[id];
 
-    redrawHall(m_mainText->document(), id);
+        buf.m_fmtSpec = fmtSpec;
+        buf.m_fmt = QTextCharFormat();
+        configFmt(buf.m_fmt, buf.m_fmtSpec);
+
+        redrawHall(m_mainText->document(), id);
+    }
+
+    SearchList::signalHighlightReconfigured();
+    DlgBookmarks::signalHighlightReconfigured();
+
+    m_mainWin->updateRcFile();
 }
 
-
-HiglId Highlighter::allocateNewId()
-{
-    return ++m_lastId;
-}
 
 /**
  * This function must be called when portions of the text in the main window
@@ -607,7 +665,7 @@ void Highlighter::adjustLineNums(int top_l, int bottom_l)
  */
 void Highlighter::highlightInit()
 {
-    if (m_patList.size() > 0)
+    if (m_patList.size() >= HIGL_ID_FIRST_USER_DEF)
     {
         // place a progress bar as overlay to the main window
         m_hipro->setValue(0);
@@ -618,10 +676,10 @@ void Highlighter::highlightInit()
         m_mainText->viewport()->setCursor(Qt::BusyCursor);
 
         // trigger highlighting for the 1st pattern in the background
-        tid_high_init->start([=](){ highlightInitBg(0, 0); });
+        tid_high_init->start([=](){ highlightInitBg(HIGL_ID_FIRST_USER_DEF, 0); });
 
-        // apply highlighting on the text in the visible area (this is quick)
-        // use the yview callback to redo highlighting in case the user scrolls
+        // immediately apply highlighting in the visible area (this is quick)
+        // and install a callback to redo visible area when the user scrolls
         highlightYviewRedirect();
     }
     else
@@ -637,27 +695,28 @@ void Highlighter::highlightInit()
  * the respective highlighting. The loop is broken up by installing each
  * new iteration as an idle event (and limiting each step to 100ms)
  */
-void Highlighter::highlightInitBg(int pat_idx, int startPos)
+void Highlighter::highlightInitBg(HiglId pat_id, int startPos)
 {
-    if ((size_t)pat_idx < m_patList.size())
+    if (pat_id < m_patList.size())
     {
+        highlightYviewHook();
+
         // here we do the actual work:
         // apply the tag to all matching lines of text
-        startPos = highlightLines(m_patList[pat_idx], startPos);
+        startPos = highlightLines(pat_id, startPos);
 
         if (startPos >= 0)
         {
             // not done yet - reschedule
-            tid_high_init->start([=](){ highlightInitBg(pat_idx, startPos); });
+            tid_high_init->start([=](){ highlightInitBg(pat_id, startPos); });
         }
         else
         {
             // trigger next tag
-            pat_idx += 1;
-            tid_high_init->start([=](){ highlightInitBg(pat_idx, 0); });
+            tid_high_init->start([=](){ highlightInitBg(pat_id + 1, 0); });
 
             // update the progress bar
-            m_hipro->setValue(100 * pat_idx / m_patList.size());
+            m_hipro->setValue(100 * pat_id / m_patList.size());
         }
     }
     else
@@ -675,9 +734,10 @@ void Highlighter::highlightInitBg(int pat_idx, int startPos)
  * last searched line.  In this case the caller must invoke the funtion again
  * (as an idle event, to allow user-interaction in-between.)
  */
-int Highlighter::highlightLines(const HiglPat& pat, int startPos)
+int Highlighter::highlightLines(HiglId pat_id, int startPos)
 {
     qint64 start_t = QDateTime::currentMSecsSinceEpoch();
+    const HiglPat& pat = m_patList.at(pat_id);
     auto finder = MainTextFind::create(m_mainText->document(), pat.m_srch, true, startPos);
 
     while (true)
@@ -687,7 +747,7 @@ int Highlighter::highlightLines(const HiglPat& pat, int startPos)
         if (finder->findNext(matchPos, matchLen, &block))
         {
             // match found, highlight this line
-            addSearchHall(block, pat.m_fmt, pat.m_id);
+            addSearchHall(block, pat.m_fmt, pat_id);
 
             // trigger the search result list dialog in case the line is included there too
             SearchList::signalHighlightLine(block.blockNumber());
@@ -731,8 +791,9 @@ void Highlighter::highlightAll(const HiglPat& pat, int startPos)
  * This function searches the currently visible text content for all lines
  * which contain the given sub-string and marks these lines with the given tag.
  */
-void Highlighter::highlightVisible(const HiglPat& pat)
+void Highlighter::highlightVisible(HiglId pat_id)
 {
+    const HiglPat& pat = m_patList.at(pat_id);
     auto view = m_mainText->viewport();
     auto c1 = m_mainText->cursorForPosition(QPoint(0, 0));
     auto c2 = m_mainText->cursorForPosition(QPoint(0, view->height()));
@@ -747,7 +808,7 @@ void Highlighter::highlightVisible(const HiglPat& pat)
         int matchPos, matchLen;
         if (finder->findNext(matchPos, matchLen, &block))
         {
-            addSearchHall(block, pat.m_fmt, pat.m_id);
+            addSearchHall(block, pat.m_fmt, pat_id);
         }
         else
             break;
@@ -764,15 +825,15 @@ void Highlighter::highlightYviewCallback(int)
 {
     if (tid_high_init->isActive())
     {
-        for (const HiglPat& pat : m_patList)
+        for (HiglId idx = HIGL_ID_FIRST_USER_DEF; idx < m_patList.size(); ++idx)
         {
-            highlightVisible(pat);
+            highlightVisible(idx);
         }
     }
 
     if (tid_search_hall->isActive())
     {
-        highlightVisible(m_hallPat);
+        highlightVisible(HIGL_ID_SEARCH);
     }
 
     // automatically remove the redirect if no longer needed
@@ -793,10 +854,30 @@ void Highlighter::highlightYviewRedirect()
 {
     if (m_yViewRedirected == false)
     {
+        m_yViewValue = -1;
+
+        highlightYviewCallback(0);
+
         // TODO/FIXME does not work when scrolling via keyboard control
         //  possible solution: override MainText::paintEvent()
         connect(m_mainText->verticalScrollBar(), &QAbstractSlider::valueChanged, this, &Highlighter::highlightYviewCallback);
         m_yViewRedirected = true;
+    }
+}
+
+/**
+ * This function is a work-around because QAbstractSlider::valueChanged()
+ * signal is not generated when scrolling is caused by cursor movement. Thus
+ * we need to detect view area changes via a hook in the background tasks.
+ */
+void Highlighter::highlightYviewHook()
+{
+    int curYView = m_mainText->verticalScrollBar()->value();
+
+    if (m_yViewValue != curYView)
+    {
+        m_yViewValue = curYView;
+        highlightYviewCallback(0);
     }
 }
 
@@ -810,10 +891,10 @@ void Highlighter::searchHighlightClear()
 {
     tid_search_hall->stop();
 
-    removeHall(m_mainText->document(), m_hallPat.m_id);
+    removeHall(m_mainText->document(), HIGL_ID_SEARCH);
     removeInc(m_mainText->document());
 
-    m_hallPat.m_srch.reset();
+    m_patList[HIGL_ID_SEARCH].m_srch.reset();
     m_hallPatComplete = false;
 
     m_mainText->viewport()->setCursor(Qt::ArrowCursor);
@@ -830,10 +911,10 @@ void Highlighter::searchHighlightClear()
  */
 void Highlighter::searchHighlightUpdate(const SearchPar& par, bool onlyVisible)
 {
-    if ((m_hallPat.m_srch != par) || (m_hallPatComplete == false))
+    if ((m_patList[HIGL_ID_SEARCH].m_srch != par) || (m_hallPatComplete == false))
     {
         // remember options for comparison
-        m_hallPat.m_srch = par;
+        m_patList[HIGL_ID_SEARCH].m_srch = par;
         m_hallPatComplete = false;
 
         if (!onlyVisible)
@@ -843,16 +924,12 @@ void Highlighter::searchHighlightUpdate(const SearchPar& par, bool onlyVisible)
 
             // implicitly kill background highlight process for obsolete pattern
             // start highlighting in the background
-            tid_search_hall->start([=](){ searchHighlightAll(m_hallPat, 0); });
+            tid_search_hall->start([=](){ searchHighlightAll(HIGL_ID_SEARCH, 0); });
         }
 
-        // apply highlighting on the text in the visible area (this is quick)
-        // (note this is required in addition to the redirect below)
-        m_hallYview = 0;
-        highlightVisible(m_hallPat);
-
-        // use the yview callback to redo highlighting in case the user scrolls
-        //highlightYviewRedirect();
+        // immediately apply highlighting in the visible area (this is quick)
+        // and install a callback to redo visible area when the user scrolls
+        highlightYviewRedirect();
     }
 }
 
@@ -860,19 +937,14 @@ void Highlighter::searchHighlightUpdate(const SearchPar& par, bool onlyVisible)
  * This helper function calls the global search highlight function until
  * highlighting is complete.
  */
-void Highlighter::searchHighlightAll(const HiglPat& pat, int startPos)
+void Highlighter::searchHighlightAll(HiglId pat_id, int startPos)
 {
-    // FIXME this is a work-around because highlightYviewRedirect does not work
-    if (m_hallYview != m_mainText->verticalScrollBar()->value())
-    {
-        m_hallYview = m_mainText->verticalScrollBar()->value();
-        highlightVisible(pat);
-    }
+    highlightYviewHook();
 
-    startPos = highlightLines(pat, startPos);
+    startPos = highlightLines(pat_id, startPos);
     if (startPos >= 0)
     {
-        tid_search_hall->start([=](){ searchHighlightAll(pat, startPos); });
+        tid_search_hall->start([=](){ searchHighlightAll(pat_id, startPos); });
     }
     else
     {
@@ -889,13 +961,13 @@ void Highlighter::searchHighlightAll(const HiglPat& pat, int startPos)
  */
 void Highlighter::searchHighlightMatch(QTextCursor& match)
 {
-    addSearchHall(match.block(), m_hallPat.m_fmt, m_hallPat.m_id);
+    addSearchHall(match.block(), m_patList[HIGL_ID_SEARCH].m_fmt, HIGL_ID_SEARCH);
     addSearchInc(match);
 }
 
 
 /**
- * This function adds or removes highlighting for a bookmarked lines.
+ * This function adds or removes highlighting for a bookmarked line.
  */
 void Highlighter::bookmarkHighlight(int line, bool enabled)
 {

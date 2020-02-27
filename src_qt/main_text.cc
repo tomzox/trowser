@@ -129,7 +129,7 @@ MainText::MainText(MainWin * mainWin, MainSearch * search, Bookmarks * bookmarks
     //bind .f1.t <Control-Alt-Delete> DebugDumpAllState
 }
 
-void MainText::keyPressEvent(QKeyEvent *e)
+void MainText::keyPressEvent(QKeyEvent *e)  /* virtual override */
 {
     if (e->modifiers() == Qt::ControlModifier)
     {
@@ -201,6 +201,17 @@ void MainText::keyPressEvent(QKeyEvent *e)
         default:
             break;
     }
+}
+
+
+/**
+ * This event handler overrides the default handler to block drag & drop of
+ * content, as the document is supposed to be read-only. After ignoring the
+ * "enter" event, no "move" or "drop" events should be generated.
+ */
+void MainText::dragEnterEvent(QDragEnterEvent *ev)  /* virtual override */
+{
+    ev->ignore();
 }
 
 /**

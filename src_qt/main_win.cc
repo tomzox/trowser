@@ -126,7 +126,7 @@ MainWin::MainWin(QApplication * app)
         f2->addWidget(f2_regexp);
 
     m_stline = new StatusLine(m_f1_t);
-    m_higl = new Highlighter(m_f1_t);
+    m_higl = new Highlighter(m_f1_t, this);
     m_search->connectWidgets(m_f1_t, m_higl, f2_e, f2_hall, f2_mcase, f2_regexp);
     m_bookmarks->connectWidgets(m_f1_t, m_higl);
     SearchList::connectWidgets(this, m_search, m_f1_t, m_higl, m_bookmarks);

@@ -80,14 +80,17 @@ public:
     virtual bool removeRows(int row, int count, const QModelIndex &parent = QModelIndex()) override;
     virtual bool moveRows(const QModelIndex &sourceParent, int sourceRow, int count,
                           const QModelIndex &destinationParent, int destinationChild) override;
-    virtual bool insertRowData(int row, const SearchPar& pat, const HiglFmtSpec& fmtSpec, HiglId id); /*non-override*/
+
+    virtual bool insertRowData(int row, const SearchPar& pat, const HiglFmtSpec& fmtSpec); /*non-override*/
     void setFmtData(int row, const HiglFmtSpec& fmtSpec);
     void forceRedraw(TblColIdx col);
 
+    // implementation of HighlightViewModelIf interfaces
     virtual QVariant higlModelData(const QModelIndex& index, int role = Qt::DisplayRole) const override;
 
 private:
     std::vector<HiglPatExport>  m_patList;
+    HiglId m_firstFreeId;
     bool m_modified;
 };
 
@@ -95,12 +98,13 @@ DlgHiglModel::DlgHiglModel(Highlighter * higl)
 {
     // get a copy of the pattern & highlighting format list
     higl->getPatList(m_patList);
+    m_firstFreeId = m_patList.size();
     m_modified = false;
 }
 
 void DlgHiglModel::saveData(Highlighter * higl)
 {
-    higl->setList(m_patList);
+    higl->setPatList(m_patList);
     m_modified = false;
 }
 
@@ -308,7 +312,7 @@ bool DlgHiglModel::moveRows(const QModelIndex& srcParent, int srcRow, int count,
     return result;
 }
 
-bool DlgHiglModel::insertRowData(int row, const SearchPar& pat, const HiglFmtSpec& fmtSpec, HiglId id)
+bool DlgHiglModel::insertRowData(int row, const SearchPar& pat, const HiglFmtSpec& fmtSpec)
 {
     bool result = false;
     if (size_t(row) <= m_patList.size())  // == OK: insert at end
@@ -316,7 +320,7 @@ bool DlgHiglModel::insertRowData(int row, const SearchPar& pat, const HiglFmtSpe
         HiglPatExport w;
         w.m_srch = pat;
         w.m_fmtSpec = fmtSpec;
-        w.m_id = id;
+        w.m_id = ++m_firstFreeId;
 
         this->beginInsertRows(QModelIndex(), row, row);
         m_patList.insert(m_patList.begin() + row, w);
@@ -730,7 +734,7 @@ void DlgHigl::cmdAdd(bool)
     HiglFmtSpec fmtSpec;
     fmtSpec.m_bgCol = 0xfffaee0a; //TODO s_colFind
 
-    m_model->insertRowData(row, pat, fmtSpec, m_higl->allocateNewId());
+    m_model->insertRowData(row, pat, fmtSpec);
 
     // select item and make it visible
     QModelIndex midx = m_model->index(row, DlgHiglModel::COL_IDX_PAT);
@@ -755,8 +759,7 @@ void DlgHigl::cmdDuplicate(bool)
     {
         auto midx = sel.front();
         m_model->insertRowData(midx.row(), m_model->getSearchPar(midx),
-                                           *m_model->getFmtSpec(midx),
-                                           m_higl->allocateNewId());
+                                           *m_model->getFmtSpec(midx));
 
         // select item and make it visible
         m_table->selectionModel()->select(midx, QItemSelectionModel::Clear);
