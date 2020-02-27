@@ -480,23 +480,20 @@ void MainWin::menuCmdDiscard(bool is_fwd)
     if (answer != QMessageBox::Ok)
         return;
 
-    //TODO if (SearchList_SearchAbort())
-    {
-        m_search->searchHighlightClear();
+    m_search->searchHighlightClear();
 
-        // perform the removal
-        c.removeSelectedText();
+    // perform the removal
+    c.removeSelectedText();
 
-        m_search->searchReset();
-        m_f1_t->cursorJumpStackReset();
+    m_search->searchReset();
+    m_f1_t->cursorJumpStackReset();
 
-        int top_l = (is_fwd ? 0 : curLine);
-        int bottom_l = (is_fwd ? curLine : -1);
+    int top_l = (is_fwd ? 0 : curLine);
+    int bottom_l = (is_fwd ? curLine : -1);
 
-        m_bookmarks->adjustLineNums(top_l, bottom_l);
-        m_higl->adjustLineNums(top_l, bottom_l);
-        SearchList::adjustLineNums(top_l, bottom_l);
-    }
+    m_bookmarks->adjustLineNums(top_l, bottom_l);
+    m_higl->adjustLineNums(top_l, bottom_l);
+    SearchList::adjustLineNums(top_l, bottom_l);
 }
 
 
@@ -576,13 +573,21 @@ void MainWin::closeEvent(QCloseEvent * event)
  */
 void MainWin::LoadFile(const QString& fileName)
 {
-    auto fh = new QFile(QString(fileName));
-    if (fh->open(QFile::ReadOnly | QFile::Text))
+    QFile fh(fileName);
+    if (fh.open(QFile::ReadOnly | QFile::Text))
     {
-        QTextStream readFile(fh);
-        m_f1_t->setPlainText(readFile.readAll());
+        QTextStream in(&fh);
+
+        // error handling
+        if (in.status() != QTextStream::Ok)
+        {
+            QString msg = QString("Error while reading the file: ") + fh.errorString();
+            QMessageBox::critical(this, "trowser", msg, QMessageBox::Ok);
+            return;
+        }
+
+        m_f1_t->setPlainText(in.readAll());
         //m_f1_t->setReadOnly(true);
-        delete fh;
 
         setWindowTitle(fileName + " - trowser");
         m_curFileName = fileName;
@@ -594,6 +599,8 @@ void MainWin::LoadFile(const QString& fileName)
 
         // start color highlighting in the background
         m_higl->highlightInit();
+
+        emit documentNameChanged();
     }
     else
     {

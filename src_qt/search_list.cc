@@ -1104,12 +1104,6 @@ void SearchListView::keyPressEvent(QKeyEvent *e)
  */
 SearchList::SearchList()
 {
-    const QString& fileName = s_mainWin->getFilename();
-    if (!fileName.isEmpty())
-      this->setWindowTitle("Search matches - " + fileName);
-    else
-      this->setWindowTitle("Search matches");
-
     auto central_wid = new QWidget();
         setCentralWidget(central_wid);
     auto layout_top = new QVBoxLayout(central_wid);
@@ -1164,6 +1158,8 @@ SearchList::SearchList()
         this->restoreState(s_winState);
 
     connect(s_mainWin, &MainWin::textFontChanged, this, &SearchList::mainFontChanged);
+    connect(s_mainWin, &MainWin::documentNameChanged, this, &SearchList::mainDocNameChanged);
+    mainDocNameChanged();  // set window title initially
 
     populateMenus();
 
@@ -1255,6 +1251,21 @@ void SearchList::mainFontChanged()
     m_table->verticalHeader()->setDefaultSectionSize(metrics.height());
 
     m_model->forceRedraw(SearchListModel::COL_IDX_TXT);
+}
+
+/**
+ * This slot is connected to notification of main document file changes. This
+ * is used to update the dialog window title. (Note before this event, the
+ * dialog is informed separately about discarding the content of the previous
+ * document.)
+ */
+void SearchList::mainDocNameChanged()
+{
+    const QString& fileName = s_mainWin->getFilename();
+    if (!fileName.isEmpty())
+      this->setWindowTitle("Search matches - " + fileName);
+    else
+      this->setWindowTitle("Search matches");
 }
 
 void SearchList::populateMenus()
@@ -2451,6 +2462,8 @@ void SearchList::selectionChanged(const QItemSelection& /*selected*/, const QIte
  */
 void SearchList::adjustLineNumsInt(int top_l, int bottom_l)
 {
+    searchAbort(false);
+
     m_model->adjustLineNums(top_l, bottom_l);
     m_undo->adjustLineNums(top_l, bottom_l);
 
@@ -2477,10 +2490,10 @@ void SearchList::adjustLineNums(int top_l, int bottom_l)  /*static*/
  */
 void SearchList::saveFile(const QString& fileName, bool lnum_only)
 {
-    auto fh = new QFile(QString(fileName));
+    auto fh = std::make_unique<QFile>(QString(fileName));
     if (fh->open(QFile::WriteOnly | QFile::Text))
     {
-        QTextStream out(fh);
+        QTextStream out(fh.get());
 
         if (lnum_only)
         {
@@ -2551,10 +2564,10 @@ void SearchList::cmdSaveFileAs(bool lnum_only)
 bool SearchList::loadLineList(const QString& fileName, std::set<int>& line_list)
 {
     bool result = false;
-    auto fh = new QFile(QString(fileName));
+    auto fh = std::make_unique<QFile>(QString(fileName));
     if (fh->open(QFile::ReadOnly | QFile::Text))
     {
-        QTextStream in(fh);
+        QTextStream in(fh.get());
 
         int max_line = s_mainText->document()->blockCount();
         int skipped = 0;

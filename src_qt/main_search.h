@@ -142,17 +142,17 @@ private:
 private:
     MainWin     * const m_mainWin;
     MainText    * m_mainText;
-    Highlighter * m_higl;
-    MainFindEnt * m_f2_e;
-    QCheckBox   * m_f2_hall;
-    QCheckBox   * m_f2_mcase;
-    QCheckBox   * m_f2_regexp;
+    Highlighter * m_higl = nullptr;
+    MainFindEnt * m_f2_e = nullptr;
+    QCheckBox   * m_f2_hall = nullptr;
+    QCheckBox   * m_f2_mcase = nullptr;
+    QCheckBox   * m_f2_regexp = nullptr;
 
-    BgTask      * m_timSearchInc;
+    BgTask      * m_timSearchInc = nullptr;
     QWidget     * tlb_last_wid = nullptr;
     bool          tlb_last_dir = true;
     SearchPar     tlb_find;
-    bool          tlb_hall;
+    bool          tlb_hall = false;
     bool          tlb_find_focus = false;
     int           tlb_inc_base = -1;
     int           tlb_inc_xview = 0;

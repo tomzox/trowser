@@ -62,6 +62,7 @@ public:
 
 signals:
     void textFontChanged();
+    void documentNameChanged();
 
 private:
     void closeEvent(QCloseEvent *event);

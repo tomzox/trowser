@@ -120,16 +120,20 @@ void BgTask::schedTimerExpired()  /*static*/
 void BgTask::start(const std::function<void()>& callback)
 {
     Q_ASSERT(!m_parent.isNull());  // timer not stopped before destruction
-    Q_ASSERT(!m_isActive);  // caller did not stop before rescheduling
-    Q_ASSERT(std::find(s_queue.begin(), s_queue.end(), this) == s_queue.end());
 
     m_callback = callback;
-    m_isActive = true;
-    s_queue.push_back(this);
 
-    if (!s_timer->isActive())
+    if (m_isActive == false)
     {
-        s_timer->start();
+        Q_ASSERT(std::find(s_queue.begin(), s_queue.end(), this) == s_queue.end());
+
+        s_queue.push_back(this);
+        m_isActive = true;
+
+        if (!s_timer->isActive())
+        {
+            s_timer->start();
+        }
     }
 }
 

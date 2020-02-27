@@ -474,7 +474,7 @@ ParseFramePtr ParseFrame::create(QTextDocument* doc, const ParseSpec& spec)  /*s
         ptr = std::make_unique<ParseFrameLinear>(doc, spec);
     }
 
-    if (ptr->isValid() == false)
+    if (ptr && !ptr->isValid())
         ptr.reset();
 
     return ptr;

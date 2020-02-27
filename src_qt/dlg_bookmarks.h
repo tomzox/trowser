@@ -69,6 +69,7 @@ private:
     void showContextMenu(const QPoint& pos);
     void cmdClose(bool);
     void mainFontChanged();
+    void mainDocNameChanged();
     void cmdButton(QAbstractButton * button);
     void cmdRemove(bool);
     void cmdCopyToMain(bool);

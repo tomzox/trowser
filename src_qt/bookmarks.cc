@@ -157,9 +157,9 @@ void Bookmarks::getLineList(std::vector<int>& lineList)
  * have a bookmark; the function never returns the given line as result.) The
  * function returns -1 if there if no such bookmark is found.
  */
-int Bookmarks::getNextLine(int line, bool is_fwd) const
+int Bookmarks::getNextLine(int line, bool isFwd) const
 {
-    if (is_fwd)
+    if (isFwd)
     {
         for (auto it = m_bookmarks.cbegin(); it != m_bookmarks.cend(); ++it)
             if (it->first > line)
@@ -184,10 +184,10 @@ int Bookmarks::getNextLine(int line, bool is_fwd) const
 void Bookmarks::readFile(QWidget * parent, const QString& fileName)
 {
     bool result = false;
-    auto fh = new QFile(QString(fileName));
-    if (fh->open(QFile::ReadOnly | QFile::Text))
+    QFile fh(fileName);
+    if (fh.open(QFile::ReadOnly | QFile::Text))
     {
-        QTextStream in(fh);
+        QTextStream in(&fh);
         int max_line = m_mainText->document()->blockCount();
         int skipped = 0;
         int synerr = 0;
@@ -226,7 +226,7 @@ void Bookmarks::readFile(QWidget * parent, const QString& fileName)
         // error handling
         if (in.status() != QTextStream::Ok)
         {
-            QString msg = QString("Error while reading bookmark file ") + fileName + ": " + fh->errorString();
+            QString msg = QString("Error while reading bookmark file ") + fileName + ": " + fh.errorString();
             QMessageBox::warning(parent, "trowser", msg, QMessageBox::Ok);
         }
         else if ((skipped > 0) || (synerr > 0))
@@ -291,7 +291,7 @@ void Bookmarks::readFile(QWidget * parent, const QString& fileName)
     }
     else
     {
-        QString msg = QString("Error opening bookmark file ") + fileName + ": " + fh->errorString();
+        QString msg = QString("Error opening bookmark file ") + fileName + ": " + fh.errorString();
         QMessageBox::critical(parent, "trowser", msg, QMessageBox::Ok);
     }
 }
@@ -302,10 +302,10 @@ void Bookmarks::readFile(QWidget * parent, const QString& fileName)
 bool Bookmarks::saveFile(QWidget * parent, const QString& fileName)
 {
     bool result = false;
-    auto fh = new QFile(QString(fileName));
-    if (fh->open(QFile::WriteOnly | QFile::Text))
+    QFile fh(fileName);
+    if (fh.open(QFile::WriteOnly | QFile::Text))
     {
-        QTextStream out(fh);
+        QTextStream out(&fh);
 
         for (const auto& it : m_bookmarks)
             out << (it.first + 1) << " " << it.second << "\n";
@@ -313,7 +313,7 @@ bool Bookmarks::saveFile(QWidget * parent, const QString& fileName)
         out << flush;
         if (out.status() != QTextStream::Ok)
         {
-            QString msg = QString("Error writing bookmark file ") + fileName + ": " + fh->errorString();
+            QString msg = QString("Error writing bookmark file ") + fileName + ": " + fh.errorString();
             QMessageBox::warning(parent, "trowser", msg, QMessageBox::Ok);
         }
         else
@@ -321,7 +321,7 @@ bool Bookmarks::saveFile(QWidget * parent, const QString& fileName)
     }
     else
     {
-        QString msg = QString("Error creating bookmark file ") + fileName + ": " + fh->errorString();
+        QString msg = QString("Error creating bookmark file ") + fileName + ": " + fh.errorString();
         QMessageBox::critical(parent, "trowser", msg, QMessageBox::Ok);
     }
     return result;
@@ -338,7 +338,7 @@ void Bookmarks::readFileFrom(QWidget * parent)
         defaultName = ".";
 
     QString fileName = QFileDialog::getOpenFileName(parent, "Select bookmark file",
-                                       defaultName, "Trace Files (out.*);;Any (*)");
+                                       defaultName, "Bookmarks (*.bok);;Any (*)");
     if (fileName.isEmpty() == false)
     {
         readFile(parent, fileName);
@@ -362,34 +362,35 @@ void Bookmarks::readFileAuto(QWidget * parent)
             readFile(parent, defaultName);
         }
         else
-            m_mainWin->mainStatusLine()->showWarning("bookmarks", "Bookmark file " + defaultName +
-                                   " is older than content - not loaded");
+            m_mainWin->mainStatusLine()->showWarning(
+                        "bookmarks", "Bookmark file " + defaultName +
+                        " is older than content - not loaded");
     }
 }
 
 
 /**
  * This helper function determines the default file name for reading bookmarks.
- * Default is the trace file name or base file name plus ".bok". The name is
- * only returned if a file with this name actually exists and is not older
- * than the trace file.
+ * Default is the main document file name or base file name plus ".bok". The
+ * name is only returned if a file with this name actually exists and is not
+ * older than the document file.
  */
-QString Bookmarks::getDefaultFileName(const QString& trace_name, bool *isOlder)
+QString Bookmarks::getDefaultFileName(const QString& docName, bool *isOlder)
 {
-    QString bok_name;
-    if (trace_name.isEmpty() == false)
+    QString bokName;
+    if (docName.isEmpty() == false)
     {
-        QFileInfo traceFinfo(trace_name);
+        QFileInfo traceFinfo(docName);
         if (traceFinfo.isFile())
         {
-            QString tmpName = trace_name + ".bok";
+            QString tmpName = docName + ".bok";
             QFileInfo bokFinfo(tmpName);
 
             if (bokFinfo.isFile() == false)
             {
-                QString name2(trace_name);
+                QString name2(docName);
                 name2.replace("\\.[^\\.]+$", ".bok");
-                if (name2 != trace_name)
+                if (name2 != docName)
                 {
                     QFileInfo name2Finfo(name2);
                     if (name2Finfo.isFile())
@@ -408,11 +409,11 @@ QString Bookmarks::getDefaultFileName(const QString& trace_name, bool *isOlder)
 
                     *isOlder = (bok_mtime < cur_mtime);
                 }
-                bok_name = tmpName;
+                bokName = tmpName;
             }
         }
     }
-    return bok_name;
+    return bokName;
 }
 
 

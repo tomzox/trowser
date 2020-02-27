@@ -90,6 +90,7 @@ private:
 
     void cmdClose(bool);
     void mainFontChanged();
+    void mainDocNameChanged();
     void editMenuAboutToShow();
     void configureColumnVisibility();
     void cmdToggleShowLineNumber(bool checked);

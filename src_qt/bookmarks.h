@@ -46,7 +46,7 @@ public:
         return (it != m_bookmarks.end());
     }
     const QString& getText(int line) const;
-    int getNextLine(int line, bool is_fwd) const;
+    int getNextLine(int line, bool isFwd) const;
     void getLineList(std::vector<int>& lineList);
     bool validFileName() const { return !m_loadedFileName.isEmpty(); }
 
@@ -64,7 +64,7 @@ public:
 private:
     void readFile(QWidget * parent, const QString& fileName);
     bool saveFile(QWidget * parent, const QString& fileName);
-    QString getDefaultFileName(const QString& trace_name, bool *isOlder = nullptr);
+    QString getDefaultFileName(const QString& docName, bool *isOlder = nullptr);
 
 private:
     MainWin * const m_mainWin;

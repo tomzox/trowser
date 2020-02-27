@@ -302,12 +302,6 @@ void DlgBookmarkView::keyPressEvent(QKeyEvent *e)
  */
 DlgBookmarks::DlgBookmarks()
 {
-    const QString& fileName = s_mainWin->getFilename();
-    if (!fileName.isEmpty())
-      this->setWindowTitle("Bookmark list - " + fileName);
-    else
-      this->setWindowTitle("Bookmark list");
-
     auto central_wid = new QWidget();
         setCentralWidget(central_wid);
     auto layout_top = new QVBoxLayout(central_wid);
@@ -351,6 +345,8 @@ DlgBookmarks::DlgBookmarks()
     layout_top->addWidget(m_cmdButs);
 
     connect(s_mainWin, &MainWin::textFontChanged, this, &DlgBookmarks::mainFontChanged);
+    connect(s_mainWin, &MainWin::documentNameChanged, this, &DlgBookmarks::mainDocNameChanged);
+    mainDocNameChanged();  // set window title initially
 
     act = new QAction(central_wid);
         act->setShortcut(QKeySequence(Qt::Key_Delete));
@@ -421,6 +417,21 @@ void DlgBookmarks::mainFontChanged()
     m_model->forceRedraw(DlgBookmarkModel::COL_IDX_TEXT);
 }
 
+
+/**
+ * This slot is connected to notification of main document file changes. This
+ * is used to update the dialog window title. (Note before this event, the
+ * dialog is informed separately about discarding the content of the previous
+ * document.)
+ */
+void DlgBookmarks::mainDocNameChanged()
+{
+    const QString& fileName = s_mainWin->getFilename();
+    if (!fileName.isEmpty())
+      this->setWindowTitle("Bookmark list - " + fileName);
+    else
+      this->setWindowTitle("Bookmark list");
+}
 
 /**
  * This slot is bound to the main command buttons: In this dialog this is only
