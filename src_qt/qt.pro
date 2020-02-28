@@ -34,10 +34,10 @@ OBJECTS_DIR = build
 
 # Input
 HEADERS += main_win.h main_text.h main_search.h bg_task.h text_block_find.h \
-           highlighter.h bookmarks.h status_line.h search_list.h \
+           highlighter.h bookmarks.h status_line.h load_pipe.h search_list.h \
            highl_view_dlg.h dlg_higl.h dlg_history.h dlg_bookmarks.h \
            dlg_markup.h dlg_markup_sa.h parse_frame.h dlg_parser.h
 SOURCES += main_win.cc main_text.cc main_search.cc bg_task.cc text_block_find.cc \
-           highlighter.cc bookmarks.cc status_line.cc search_list.cc \
+           highlighter.cc bookmarks.cc status_line.cc load_pipe.cc search_list.cc \
            highl_view_dlg.cc dlg_higl.cc dlg_history.cc dlg_bookmarks.cc \
            dlg_markup.cc dlg_markup_sa.cc parse_frame.cc dlg_parser.cc

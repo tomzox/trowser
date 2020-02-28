@@ -34,8 +34,11 @@ class MainSearch;
 class StatusLine;
 class Highlighter;
 class Bookmarks;
+class LoadPipe;
 
 // ----------------------------------------------------------------------------
+
+enum class LoadMode { Head, Tail };
 
 class MainWin : public QMainWindow
 {
@@ -59,6 +62,7 @@ public:
     void menuCmdDisplayLineNo();
     void keyCmdZoomFontSize(bool zoomIn);
     void LoadFile(const QString& fileName);
+    void LoadFromPipe();
 
 signals:
     void textFontChanged();
@@ -77,19 +81,19 @@ private:
     void menuCmdGotoLine(bool checked);
     void menuCmdBookmarkDeleteAll(bool checked);
     void menuCmdAbout(bool checked);
+    void loadPipeDone();
 
 private:
     QApplication* const m_mainApp;
-    QMenu       * m_menubar_ctrl = nullptr;
-    QMenu       * m_menubar_srch = nullptr;
-    QMenu       * m_menubar_mark = nullptr;
-    QMenu       * m_menubar_help = nullptr;
+
+    QAction     * m_actFileReload = nullptr;
 
     MainText    * m_f1_t = nullptr;
     StatusLine  * m_stline = nullptr;
     MainSearch  * m_search = nullptr;
     Highlighter * m_higl = nullptr;
     Bookmarks   * m_bookmarks = nullptr;
+    LoadPipe    * m_loadPipe = nullptr;
 
     QTimer      * m_timUpdateRc = nullptr;
     qint64        m_tsUpdateRc = 0;

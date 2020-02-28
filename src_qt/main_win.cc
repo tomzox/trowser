@@ -57,13 +57,14 @@
 #include "bookmarks.h"
 #include "status_line.h"
 #include "search_list.h"
+#include "load_pipe.h"
 #include "dlg_higl.h"
 #include "dlg_history.h"
 #include "dlg_bookmarks.h"
 #include "dlg_markup_sa.h"
 
-static int load_file_mode = 0;
-static int load_buf_size = 0x10000000;
+static LoadMode load_file_mode = LoadMode::Head;
+static size_t load_buf_size = 20*1024*1024;
 static const char * myrcfile = ".trowserc.qt";
 static const char * const DEFAULT_FONT_FAM = "DejaVu Sans Mono";
 static const int DEFAULT_FONT_SZ = 9;
@@ -171,81 +172,81 @@ MainWin::~MainWin()
     delete m_search;
     delete m_bookmarks;
     delete m_stline;
+    delete m_loadPipe;
 }
 
 void MainWin::populateMenus()
 {
     QAction * act;
 
-    m_menubar_ctrl = menuBar()->addMenu("&Control");
-    act = m_menubar_ctrl->addAction("Open file...");
+    auto menubar_ctrl = menuBar()->addMenu("&Control");
+    act = menubar_ctrl->addAction("Open file...");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdFileOpen);
-    act = m_menubar_ctrl->addAction("Reload current file");
-        //TODO "Continue loading STDIN..." when loading through pipe
-        connect(act, &QAction::triggered, this, &MainWin::menuCmdReload);
-    m_menubar_ctrl->addSeparator();
-    act = m_menubar_ctrl->addAction("Discard above cursor...");
+    m_actFileReload = menubar_ctrl->addAction("Reload current file");
+        connect(m_actFileReload, &QAction::triggered, this, &MainWin::menuCmdReload);
+    menubar_ctrl->addSeparator();
+    act = menubar_ctrl->addAction("Discard above cursor...");
         connect(act, &QAction::triggered, [=](){ MainWin::menuCmdDiscard(false); });
-    act = m_menubar_ctrl->addAction("Discard below cursor...");
+    act = menubar_ctrl->addAction("Discard below cursor...");
         connect(act, &QAction::triggered, [=](){ MainWin::menuCmdDiscard(true); });
-    m_menubar_ctrl->addSeparator();
-    act = m_menubar_ctrl->addAction("Toggle line wrap");
+    menubar_ctrl->addSeparator();
+    act = menubar_ctrl->addAction("Toggle line wrap");
         act->setCheckable(true);
         connect(act, &QAction::toggled, this, &MainWin::menuCmdToggleLineWrap);
-    act = m_menubar_ctrl->addAction("Font selection...");
+    act = menubar_ctrl->addAction("Font selection...");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdSelectFont);
-    QMenu *sub = m_menubar_ctrl->addMenu("Mark-up configuration");
+    QMenu *sub = menubar_ctrl->addMenu("Mark-up configuration");
         act = sub->addAction("Search results...");
             connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editSearchFmt(m_higl, this); });
         act = sub->addAction("Search increment...");
             connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editSearchIncFmt(m_higl, this); });
         act = sub->addAction("Bookmarks...");
             connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editBookmarkFmt(m_higl, this); });
-    m_menubar_ctrl->addSeparator();
-    act = m_menubar_ctrl->addAction("Quit");
+    menubar_ctrl->addSeparator();
+    act = menubar_ctrl->addAction("Quit");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdFileQuit);
 
-    m_menubar_srch = menuBar()->addMenu("&Search");
-    act = m_menubar_srch->addAction("Search history...");
+    auto menubar_srch = menuBar()->addMenu("&Search");
+    act = menubar_srch->addAction("Search history...");
         connect(act, &QAction::triggered, [=](){ DlgHistory::openDialog(); });
-    act = m_menubar_srch->addAction("Edit highlight patterns...");
+    act = menubar_srch->addAction("Edit highlight patterns...");
         connect(act, &QAction::triggered, [=](){ DlgHigl::openDialog(m_higl, m_search, this); });
-    m_menubar_srch->addSeparator();
-    act = m_menubar_srch->addAction("List all search matches...");
+    menubar_srch->addSeparator();
+    act = menubar_srch->addAction("List all search matches...");
         connect(act, &QAction::triggered, [=](){ m_search->searchAll(true, 0); });
-    act = m_menubar_srch->addAction("List all matches above...");
+    act = menubar_srch->addAction("List all matches above...");
         connect(act, &QAction::triggered, [=](){ m_search->searchAll(true, -1); });
-    act = m_menubar_srch->addAction("List all matches below...");
+    act = menubar_srch->addAction("List all matches below...");
         connect(act, &QAction::triggered, [=](){ m_search->searchAll(true, 1); });
-    m_menubar_srch->addSeparator();
-    act = m_menubar_srch->addAction("Clear search highlight");
+    menubar_srch->addSeparator();
+    act = menubar_srch->addAction("Clear search highlight");
         connect(act, &QAction::triggered, m_search, &MainSearch::searchHighlightClear);
-    m_menubar_srch->addSeparator();
-    act = m_menubar_srch->addAction("Goto line number...");
+    menubar_srch->addSeparator();
+    act = menubar_srch->addAction("Goto line number...");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdGotoLine);
 
-    m_menubar_mark = menuBar()->addMenu("&Bookmarks");
-    act = m_menubar_mark->addAction("Toggle bookmark");
+    auto menubar_mark = menuBar()->addMenu("&Bookmarks");
+    act = menubar_mark->addAction("Toggle bookmark");
         connect(act, &QAction::triggered, [=](){ m_f1_t->toggleBookmark(); });
-    act = m_menubar_mark->addAction("List bookmarks");
+    act = menubar_mark->addAction("List bookmarks");
         connect(act, &QAction::triggered, [=](){ DlgBookmarks::openDialog(); });
-    act = m_menubar_mark->addAction("Delete all bookmarks");
+    act = menubar_mark->addAction("Delete all bookmarks");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdBookmarkDeleteAll);
-    m_menubar_mark->addSeparator();
-    act = m_menubar_mark->addAction("Jump to prev. bookmark");
+    menubar_mark->addSeparator();
+    act = menubar_mark->addAction("Jump to prev. bookmark");
         connect(act, &QAction::triggered, [=](){ m_f1_t->jumpToNextBookmark(false); });
-    act = m_menubar_mark->addAction("Jump to next bookmark");
+    act = menubar_mark->addAction("Jump to next bookmark");
         connect(act, &QAction::triggered, [=](){ m_f1_t->jumpToNextBookmark(true); });
-    m_menubar_mark->addSeparator();
-    act = m_menubar_mark->addAction("Read bookmarks from file...");
+    menubar_mark->addSeparator();
+    act = menubar_mark->addAction("Read bookmarks from file...");
         connect(act, &QAction::triggered, [=](){ m_bookmarks->readFileFrom(this); });
-    act = m_menubar_mark->addAction("Save bookmarks to file...");
+    act = menubar_mark->addAction("Save bookmarks to file...");
         connect(act, &QAction::triggered, [=](){ m_bookmarks->saveFileAs(this, false); });
 
-    m_menubar_help = menuBar()->addMenu("Help");
-    act = m_menubar_help->addAction("About trowser...");
+    auto menubar_help = menuBar()->addMenu("Help");
+    act = menubar_help->addAction("About trowser...");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdAbout);
-    act = m_menubar_help->addAction("About Qt...");
+    act = menubar_help->addAction("About Qt...");
         connect(act, &QAction::triggered, m_mainApp, &QApplication::aboutQt);
 }
 
@@ -502,14 +503,12 @@ void MainWin::menuCmdDiscard(bool is_fwd)
  */
 void MainWin::menuCmdReload(bool)
 {
-#if 0 //TODO
-    if (load_pipe)
+    if (m_loadPipe != nullptr)
     {
         discardContent();
-        load_pipe.LoadPipe_Start();
+        LoadFromPipe();
     }
     else
-#endif
     {
         if (m_bookmarks->offerSave(this))
         {
@@ -610,6 +609,43 @@ void MainWin::LoadFile(const QString& fileName)
     }
 }
 
+void MainWin::LoadFromPipe()
+{
+    if (m_loadPipe == nullptr)
+    {
+        m_loadPipe = new LoadPipe(this, m_f1_t, load_file_mode, load_buf_size);
+        connect(m_loadPipe, &LoadPipe::pipeLoaded, this, &MainWin::loadPipeDone);
+
+        m_actFileReload->setText("Continue loading STDIN...");
+    }
+    else
+        m_loadPipe->continueReading();
+
+    m_f1_t->viewport()->setCursor(Qt::BusyCursor);
+}
+
+void MainWin::loadPipeDone()
+{
+    std::vector<QByteArray> dataBuf;
+    m_loadPipe->getLoadedData(dataBuf);
+
+    // insert the data into the text widget
+    for (auto& data : dataBuf)
+    {
+        m_f1_t->textCursor().movePosition(QTextCursor::End);
+        m_f1_t->insertPlainText(data);
+    }
+
+    // finally initiate color highlighting etc.
+    //TODO InitContent()
+    m_f1_t->viewport()->setCursor(Qt::ArrowCursor);
+    m_higl->highlightInit();
+
+    m_actFileReload->setEnabled(!m_loadPipe->isEof());
+    load_buf_size = m_loadPipe->getLoadBufferSize();
+    updateRcAfterIdle();
+}
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -642,6 +678,8 @@ void MainWin::loadRcFile()
             if (doc.isObject())
             {
                 QJsonObject obj = doc.object();
+                int load_buf_size_lsb = 0, load_buf_size_msb = 0;
+
                 for (auto it = obj.begin(); it != obj.end(); ++it)
                 {
                     const QString& var = it.key();
@@ -656,7 +694,8 @@ void MainWin::loadRcFile()
                     //else if (var == "fmt_selection")      fmt_selection = val;
                     //else if (var == "fmt_find")           fmt_find = val;
                     //else if (var == "fmt_findinc")        fmt_findinc = val;
-                    else if (var == "load_buf_size")        load_buf_size = val.toInt();
+                    else if (var == "load_buf_size_lsb")    load_buf_size_lsb = val.toInt();
+                    else if (var == "load_buf_size_msb")    load_buf_size_msb = val.toInt();
                     //else if (var == "rcfile_version")     rcfile_version = val;
                     //else if (var == "rc_compat_version")  rc_compat_version = val;
                     //else if (var == "rc_timestamp")       { /* nop */ }
@@ -670,6 +709,9 @@ void MainWin::loadRcFile()
                         fprintf(stderr, "trowser: ignoring unknown keyword in rcfile: %s\n", var.toLatin1().data());
                 }
                 m_f1_t->setFont(m_fontContent);
+
+                if (load_buf_size_lsb || load_buf_size_msb)
+                    load_buf_size = size_t(load_buf_size_lsb) | (size_t(load_buf_size_msb) << 32);
             }
         }
         else
@@ -732,7 +774,8 @@ void MainWin::updateRcFile()
     //puts $rcfile [list set fmt_selection $fmt_selection]
 
     // misc (note the head/tail mode is omitted intentionally)
-    obj.insert("load_buf_size", QJsonValue(load_buf_size));
+    obj.insert("load_buf_size_lsb", QJsonValue(int(load_buf_size & 0xFFFFFFU)));
+    obj.insert("load_buf_size_msb", QJsonValue(int(load_buf_size >> 32)));
 
     QJsonDocument doc;
     doc.setObject(obj);
@@ -889,14 +932,14 @@ void ParseArgv(int argc, const char * const argv[])
                 ParseArgvLenCheck(argc, argv, arg_idx);
                 arg_idx += 1;
                 load_buf_size = ParseArgInt(argv, arg_idx, argv[arg_idx]);
-                load_file_mode = 1;
+                load_file_mode = LoadMode::Tail;
             }
             else if (strncmp(arg, "--tail", 6) == 0)
             {
                 if ((arg[6] == '=') && (arg[6+1] != 0))
                 {
                     load_buf_size = ParseArgInt(argv, arg_idx, arg + 6+1);
-                    load_file_mode = 1;
+                    load_file_mode = LoadMode::Tail;
                 }
                 else
                     PrintUsage(argv, arg_idx, "requires a numerical argument (e.g. --tail=10000000)");
@@ -906,14 +949,14 @@ void ParseArgv(int argc, const char * const argv[])
                 ParseArgvLenCheck(argc, argv, arg_idx);
                 arg_idx += 1;
                 load_buf_size = ParseArgInt(argv, arg_idx, argv[arg_idx]);
-                load_file_mode = 0;
+                load_file_mode = LoadMode::Head;
             }
             else if (strncmp(arg, "--head", 6) == 0)
             {
                 if ((arg[6] == '=') && (arg[6+1] != 0))
                 {
                     load_buf_size = ParseArgInt(argv, arg_idx, arg + 6+1);
-                    load_file_mode = 0;
+                    load_file_mode = LoadMode::Head;
                 }
                 else
                     PrintUsage(argv, arg_idx, "requires a numerical argument (e.g. --head=10000000)");
@@ -974,8 +1017,12 @@ int main(int argc, char *argv[])
 
     MainWin main(&app);
     main.loadRcFile();
-    main.LoadFile(argv[argc - 1]);
-
     main.show();
+
+    if (strcmp(argv[argc - 1], "-") == 0)
+        main.LoadFromPipe();
+    else
+        main.LoadFile(argv[argc - 1]);
+
     return app.exec();
 }
