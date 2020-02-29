@@ -14,6 +14,26 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This module implements a configuration dialog for "custom columns" in the
+ * search list. This dialogs allows entering regular expressions ("patterns")
+ * that are then applied for extracting data from adjacent text lines around
+ * each line displayed in the search list. When enabled, extracted data is then
+ * displayed in two optional columns within the search list.
+ *
+ * For example, this can be used to display a timestamp or timestamp delta for
+ * each line, so that one can determine easily if two adjacent lines in the
+ * search list actually are related. Or, for event or interrupt driven
+ * applications, the parser can be used to search backwards for the last
+ * message that indicates event reception and extract an event ID. Thus all
+ * lines related to the same event can be identified easily.
+ *
+ * The module incorporates a small modal dialog for displaying test results.
+ * This allows applying the parser to single selected lines before saving,
+ * plus getting feed back from where the extracted data originates. This helps
+ * the user in debugging the search patterns.
  */
 
 #include <QWidget>
@@ -45,10 +65,18 @@
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This helper class implements a modal dialog that displays results of a
+ * test-run of the parser on a single line. The information consists of two
+ * parts: At the top of the dialog the extracted data is shown as it would
+ * appear in the search list columns. In the text box at the bottom, the
+ * dialog shows the lines from where the data was extracted.
+ */
 class DlgParserTest : public QDialog
 {
 public:
     DlgParserTest(QWidget * parent);
+    virtual ~DlgParserTest() = default;
     void showResults(const ParseSpec& spec, MainText * mainText);
 private:
     void insertLine(MainText * mainText, int line, const QString& desc);
@@ -58,6 +86,10 @@ private:
     QPlainTextEdit      * m_txtWid = nullptr;
 };
 
+/**
+ * This constructor function creates the dialog. Afterward the caller should
+ * call the showResults(), which will fill in data and make it visible.
+ */
 DlgParserTest::DlgParserTest(QWidget * parent)
     : QDialog(parent, Qt::Dialog)
 {
@@ -82,6 +114,12 @@ DlgParserTest::DlgParserTest(QWidget * parent)
         layout_grid->addWidget(cmdBut, 2, 0, 1, 2);
 }
 
+/**
+ * This interface function runs the parser with the given configuration on the
+ * line currently selected in the main window (i.e. current cursor position).
+ * Results are inserted into the text widgets in the dialog, then the dialog
+ * is executed modally. The function returns only after the user has clicked "OK".
+ */
 void DlgParserTest::showResults(const ParseSpec& spec, MainText * mainText)
 {
     int line = mainText->textCursor().blockNumber();
@@ -292,14 +330,13 @@ DlgParser::DlgParser(MainWin * mainWin, MainText * mainText, const ParseSpec& sp
     this->show();
 }
 
-DlgParser::~DlgParser()
-{
-}
-
 
 /**
  * This function is bound to destruction of the dialog window. The event is
- * also sent artificially upon the "Cancel" button.
+ * also sent artificially upon the "Cancel" button. If the configuration was
+ * modified the user is asked to confirm. Then the dialog is closed and the
+ * owner of the dialog is notified; notification contains a flag indicating
+ * that configuration changes shall not be applied.
  */
 void DlgParser::closeEvent(QCloseEvent * event)
 {
@@ -324,7 +361,8 @@ void DlgParser::closeEvent(QCloseEvent * event)
 
 /**
  * This slot is connected to the OK button, which validates & saves the data
- * and if successful, closes the dialog.
+ * and if successful, closes the dialog. The dialog owner is notified that the
+ * configuration can be extracted and the dialog be deleted.
  */
 void DlgParser::cmdOk(bool)
 {
@@ -333,14 +371,8 @@ void DlgParser::cmdOk(bool)
 
     if (isModified)
     {
-        QString msg = validateInput(m_spec, true);
-        if (!msg.isEmpty())
-        {
-            QMessageBox::critical(this, "trowser",
-                                  "Cannot save this configuration due to validation error: " + msg,
-                                  QMessageBox::Ok);
+        if (!validateInput(m_spec, true, "save"))
             return;
-        }
     }
     m_closed = true;
     this->close();
@@ -348,24 +380,26 @@ void DlgParser::cmdOk(bool)
     emit dlgClosed(isModified);
 }
 
+/**
+ * This slot is connected to the "Test" button, which opens a modal dialog
+ * showing results of a test-run of the current configuration, using the
+ * DlgParserTest helper class.
+ */
 void DlgParser::cmdTest(bool)
 {
     getInputFromWidgets();
-    QString msg = validateInput(m_spec, false);
-    if (!msg.isEmpty())
+    if (validateInput(m_spec, false, "test"))
     {
-        QMessageBox::critical(this, "trowser",
-                              "Cannot test this configuration due to validation error: " + msg,
-                              QMessageBox::Ok);
-        return;
+        auto msgDlg = std::make_unique<DlgParserTest>(this);
+        msgDlg->showResults(m_spec, m_mainText);
+        // above function returns only after dialog is closed; dialog is deleted via scope
     }
-
-    //auto msgDlg = std::make_unique<QMessageBox>(QMessageBox::Information, "trowser", msg, QMessageBox::Ok, this);
-    auto msgDlg = std::make_unique<DlgParserTest>(this);
-    msgDlg->showResults(m_spec, m_mainText);
-
 }
 
+/**
+ * This internal helper function enables or disables entry widgets that depend
+ * on content of other widgets.
+ */
 void DlgParser::updateWidgetState()
 {
     bool enaFrm = false;
@@ -384,6 +418,11 @@ void DlgParser::updateWidgetState()
     m_frmDeltaChk->setEnabled(enaCapt);
 }
 
+/**
+ * This internal helper function polls all input widgets for current settings
+ * and updates a configuration structure with these parameters. This function
+ * has to be called by all functions that depend on current settings.
+ */
 void DlgParser::getInputFromWidgets()
 {
     m_spec.m_valPat = m_valPatEnt->text();
@@ -398,7 +437,12 @@ void DlgParser::getInputFromWidgets()
     m_spec.m_frmDelta = m_frmDeltaChk->isChecked();
 }
 
-QString DlgParser::validateInput(const ParseSpec& spec, bool checkLabels)
+/**
+ * This function checks validity and consistency of current parameters. If a
+ * problem is found the user is notified via message and failure is indicated
+ * to the calling function.
+ */
+bool DlgParser::validateInput(const ParseSpec& spec, bool checkLabels, const QString& opDesc)
 {
     QString msg;
     QRegularExpression valExpr(spec.m_valPat);
@@ -428,5 +472,32 @@ QString DlgParser::validateInput(const ParseSpec& spec, bool checkLabels)
             msg = QString("The column header for frame label is empty.");
         }
     }
-    return msg;
+
+    if (!msg.isEmpty())
+    {
+        QMessageBox::critical(this, "trowser",
+                              "Cannot " + opDesc +" this configuration due to validation error: " + msg,
+                              QMessageBox::Ok);
+        return false;
+    }
+
+    if (spec.m_valPat.indexOf('(') < 0)
+    {
+        auto answer = QMessageBox::warning(this, "trowser",
+                              "Extraction pattern contains no parenthesis, so that capturing will fail most likely. "
+                              "For capturing the entire matching text, please enclose the pattern in parenthesis.",
+                              QMessageBox::Ignore | QMessageBox::Cancel);
+        return (answer == QMessageBox::Ignore);
+    }
+    if (   !spec.m_frmPat.isEmpty() && spec.m_frmCapture
+        && spec.m_frmPat.indexOf('(') < 0)
+    {
+        auto answer = QMessageBox::warning(this, "trowser",
+                              "You have enabled value extraction from the frame boundary pattern, "
+                              "yet it contains no parenthesis. Thus capturing will fail most likely. "
+                              "For capturing the entire matching text, please enclose the pattern in parenthesis.",
+                              QMessageBox::Ignore | QMessageBox::Cancel);
+        return (answer == QMessageBox::Ignore);
+    }
+    return true;
 }

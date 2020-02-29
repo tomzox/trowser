@@ -60,7 +60,7 @@ public:
 private:
     // constructor can only be invoked via the static interface
     DlgBookmarks();
-    ~DlgBookmarks();
+    virtual ~DlgBookmarks();
 
     virtual void closeEvent(QCloseEvent *) override;
     void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected);

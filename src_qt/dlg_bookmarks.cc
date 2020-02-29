@@ -75,9 +75,7 @@ public:
     {
         m_bookmarks->getLineList(m_lines);
     }
-    virtual ~DlgBookmarkModel()
-    {
-    }
+    virtual ~DlgBookmarkModel() = default;
     virtual QModelIndex index(int row, int column, const QModelIndex& parent __attribute__((unused)) = QModelIndex()) const override
     {
         return createIndex(row, column);
@@ -115,12 +113,12 @@ public:
     int getLineIdx(int line) const
     {
         auto it = std::find(m_lines.begin(), m_lines.end(), line);
-        return ((it != m_lines.end()) ? *it : -1);
+        return ((it != m_lines.end()) ? (it - m_lines.begin()) : -1);
     }
     bool getLineIdx(int line, int &idx) const
     {
         auto it = std::find(m_lines.begin(), m_lines.end(), line);
-        idx = ((it != m_lines.end()) ? *it : -1);
+        idx = ((it != m_lines.end()) ? (it - m_lines.begin()) : -1);
         return (it != m_lines.end());
     }
     // reverse lookup of getLineIdx
@@ -366,6 +364,10 @@ DlgBookmarks::DlgBookmarks()
     this->show();
 }
 
+
+/**
+ * Destructor: Freeing resources not automatically deleted via widget tree
+ */
 DlgBookmarks::~DlgBookmarks()
 {
     delete m_model;
@@ -379,7 +381,6 @@ DlgBookmarks::~DlgBookmarks()
  */
 void DlgBookmarks::closeEvent(QCloseEvent * event)
 {
-    // TODO? override resizeEvent(QResizeEvent *event) to call updateRcAfterIdle() (needed in case user terminates app via CTRL-C while window still open)
     s_winGeometry = this->saveGeometry();
     s_winState = this->saveState();
     s_mainWin->updateRcAfterIdle();
@@ -428,9 +429,9 @@ void DlgBookmarks::mainDocNameChanged()
 {
     const QString& fileName = s_mainWin->getFilename();
     if (!fileName.isEmpty())
-      this->setWindowTitle("Bookmark list - " + fileName);
+        this->setWindowTitle("Bookmark list - " + fileName);
     else
-      this->setWindowTitle("Bookmark list");
+        this->setWindowTitle("Bookmark list - trowser");
 }
 
 /**
@@ -469,7 +470,7 @@ void DlgBookmarks::showContextMenu(const QPoint& pos)
 
 
 /**
- * This external interface function is called out of the main window's
+ * This external static interface function is called out of the main window's
  * highlight loop for every line to which a search-match highlight is applied.
  * If the search list dialog is not open the function does nothing. Else it
  * forces a redraw of the text column in the given line so that the changed
@@ -480,15 +481,18 @@ void DlgBookmarks::signalHighlightLine(int line)  /*static*/
 {
     if (s_instance != nullptr)
     {
-        //TODO filter search highlight?
         s_instance->m_model->forceRedraw(DlgBookmarkModel::COL_IDX_TEXT, line);
     }
 }
 
 
 /**
- * This function is bound to the "Toggle highlight" checkbutton in the
- * search list dialog's menu.  The function enables or disables search highlight.
+ * This external static interface is called by the highlighting class after a
+ * global change to highlighting (i.e. either global search highlight on/off,
+ * or change of mark-up). The notification is ignored if the bookmark dialog is
+ * not open; else it forces a refresh of the text column. (The model
+ * internally queries the main window highlighting database so no local state
+ * change is required.)
  */
 void DlgBookmarks::signalHighlightReconfigured()  /*static*/
 {
@@ -514,7 +518,6 @@ void DlgBookmarks::refreshContents()
     m_model->refreshContents();
 
     QItemSelection sel;
-    //QSet<QString>  newSelPats;
     QModelIndex first;
     for (int row = 0; row < m_model->rowCount(); ++row)
     {
@@ -541,6 +544,11 @@ void DlgBookmarks::refreshContents()
 }
 
 
+/**
+ * This external static interface is called by the Bookmarks management class
+ * for every addition or removal of a bookmark. Currently this simply forces a
+ * complete refresh (see explanation above).
+ */
 void DlgBookmarks::signalBookmarkListChanged()  /*static*/
 {
     if (s_instance != nullptr)
@@ -552,12 +560,12 @@ void DlgBookmarks::signalBookmarkListChanged()  /*static*/
 
 /**
  * This function adjusts the view in the bookmark list so that the given text
- * line becomes visible.
+ * line becomes visible. Nothing happens if the line is not in the list.
  */
 void DlgBookmarks::matchViewInt(int line)
 {
-    int idx = m_model->getLineIdx(line);
-    if (idx != -1)
+    int idx;
+    if (m_model->getLineIdx(line, idx))
     {
         // ignore selection chage callback triggered by following sel. changes
         m_ignoreSelCb = idx;
@@ -569,7 +577,13 @@ void DlgBookmarks::matchViewInt(int line)
 }
 
 
-void DlgBookmarks::matchView(int line) /*static*/
+/**
+ * This external static interface is called by search list and certain cursor
+ * placement functions in the main text window to synchronize the view in the
+ * bookmarks list with theirs. Specifically, it places the cursor (selection)
+ * onto the same line, if it is in the bookmark list.
+ */
+void DlgBookmarks::matchView(int line)  /*static*/
 {
     if (s_instance != 0)
     {
@@ -661,8 +675,8 @@ QJsonObject DlgBookmarks::getRcValues()  /*static*/
 
     if (s_instance)
     {
-      s_winGeometry = s_instance->saveGeometry();
-      s_winState = s_instance->saveState();
+        s_winGeometry = s_instance->saveGeometry();
+        s_winState = s_instance->saveState();
     }
 
     obj.insert("win_geom", QJsonValue(QString(s_winGeometry.toHex())));

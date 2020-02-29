@@ -84,6 +84,7 @@ class Highlighter : public QWidget
 
 public:
     Highlighter(MainText * textWid, MainWin * mainWin);
+    ~Highlighter();
     QJsonArray getRcValues();
     void setRcValues(const QJsonValue& val);
     void removeInc(QTextDocument * doc);

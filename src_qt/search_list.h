@@ -63,7 +63,7 @@ public:
     static bool isDialogOpen();
     static void openDialog(bool raiseWin);
 
-    // static interfaces (ignored when dialog window is not open)
+    // static notification interfaces (ignored when dialog window is not open)
     static void matchView(int line);
     static void extUndo();
     static void extRedo();
@@ -72,7 +72,7 @@ public:
     static void signalHighlightReconfigured();
     static void adjustLineNums(int top_l, int bottom_l);
 
-    // external interfaces (invoked via getInstance() result)
+    // static external interfaces (invoked via getInstance() result)
     void copyCurrentLine(bool doAdd);
     void searchMatches(bool do_add, int direction, const SearchPar& par);
     void searchMatches(bool do_add, int direction, const std::vector<SearchPar>& pat_list);
@@ -80,7 +80,7 @@ public:
 private:
     // constructor can only be invoked via the static interface
     SearchList();
-    ~SearchList();
+    virtual ~SearchList();
 
     void populateMenus();
     void configureCustomMenuActions();
@@ -143,6 +143,16 @@ private:
     static QString      s_prevFileName;
     static ParseSpec    s_parseSpec;
 
+    struct SearchListShowCfg
+    {
+        bool            srchHall = true;
+        bool            bookmarkMarkup = false;
+        bool            lineIdx = false;
+        bool            lineDelta = false;
+        ParseColumns    custom = 0;
+    };
+    static SearchListShowCfg s_prevShowCfg;
+
     SearchListView    * m_table = nullptr;
     SearchListModel   * m_model = nullptr;
     HighlightViewDelegate * m_draw = nullptr;
@@ -151,6 +161,9 @@ private:
     QProgressBar      * m_hipro = nullptr;
     StatusLine        * m_stline = nullptr;
     QMessageBox       * m_abortDialog = nullptr;
+    DlgParser         * m_dlgParser = nullptr;
+    SearchListShowCfg   m_showCfg;
+
     QAction           * m_menActUndo = nullptr;
     QAction           * m_menActRedo = nullptr;
     QAction           * m_menActAbort = nullptr;
@@ -162,15 +175,9 @@ private:
     QAction           * m_actShowCustomFrmDelta = nullptr;
     QAction           * m_actRootCustomValDelta = nullptr;
     QAction           * m_actRootCustomFrmDelta = nullptr;
+
     BgTask            * tid_search_list = nullptr;
     int                 m_ignoreSelCb = -1;
-    DlgParser         * m_dlgParser = nullptr;
-
-    bool                m_showSrchHall = true;
-    bool                m_showBookmarkMarkup = false;
-    bool                m_showLineIdx = false;
-    bool                m_showLineDelta = false;
-    ParseColumns        m_showCustom = 0;
 };
 
 #endif /* _SEARCH_LIST_H */

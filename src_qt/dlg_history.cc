@@ -220,15 +220,14 @@ void DlgHistoryView::keyPressEvent(QKeyEvent *e)
 // ----------------------------------------------------------------------------
 
 /**
- * This function creates the dialog window.
+ * This function creates the dialog window. The window consists of a table
+ * showing the search history, and two toolbars.
  */
 DlgHistory::DlgHistory()
 {
-    this->setWindowTitle("Search history"); //TODO + cur_filename
     auto central_wid = new QWidget();
         setCentralWidget(central_wid);
     auto layout_top = new QVBoxLayout(central_wid);
-        //layout_top->setContentsMargins(0, 0, 0, 0);
 
     m_model = new DlgHistoryModel(s_search);
 
@@ -291,6 +290,9 @@ DlgHistory::DlgHistory()
     // note this can only be used as long as editing is disabled
     connect(m_table, &QTableView::doubleClicked, this, &DlgHistory::mouseTrigger);
 
+    connect(s_mainWin, &MainWin::documentNameChanged, this, &DlgHistory::mainDocNameChanged);
+    mainDocNameChanged();  // set window title initially
+
     if (!s_winGeometry.isEmpty())
         this->restoreGeometry(s_winGeometry);
     if (!s_winState.isEmpty())
@@ -300,6 +302,10 @@ DlgHistory::DlgHistory()
     this->show();
 }
 
+
+/**
+ * Destructor: Freeing resources not automatically deleted via widget tree
+ */
 DlgHistory::~DlgHistory()
 {
     delete m_model;
@@ -312,7 +318,6 @@ DlgHistory::~DlgHistory()
  */
 void DlgHistory::closeEvent(QCloseEvent * event)
 {
-    // TODO? override resizeEvent(QResizeEvent *event) to call updateRcAfterIdle() (needed in case user terminates app via CTRL-C while window still open)
     s_winGeometry = this->saveGeometry();
     s_winState = this->saveState();
     s_mainWin->updateRcAfterIdle();
@@ -321,11 +326,6 @@ void DlgHistory::closeEvent(QCloseEvent * event)
 
     s_instance->deleteLater();
     s_instance = nullptr;
-}
-
-void DlgHistory::cmdClose(bool)
-{
-    QCoreApplication::postEvent(this, new QCloseEvent());
 }
 
 
@@ -374,6 +374,22 @@ void DlgHistory::selectionChanged(const QItemSelection& /*selected*/, const QIte
 }
 
 /**
+ * This slot is connected to notification of main document file changes. This
+ * is used to update the dialog window title. (Note before this event, the
+ * dialog is informed separately about discarding the content of the previous
+ * document.)
+ */
+void DlgHistory::mainDocNameChanged()
+{
+    const QString& fileName = s_mainWin->getFilename();
+    if (!fileName.isEmpty())
+        this->setWindowTitle("Search history - " + fileName);
+    else
+        this->setWindowTitle("Search history - trowser");
+}
+
+
+/**
  * This slot is bound to the main command buttons: In this dialog this is only
  * the "Close" button.
  */
@@ -383,6 +399,16 @@ void DlgHistory::cmdButton(QAbstractButton * button)
     {
         QCoreApplication::postEvent(this, new QCloseEvent());
     }
+}
+
+
+/**
+ * This slot is connected to the Escape-key shortcut, which is equivalent to
+ * clicking "Close".
+ */
+void DlgHistory::cmdClose(bool)
+{
+    QCoreApplication::postEvent(this, new QCloseEvent());
 }
 
 
@@ -429,6 +455,12 @@ void DlgHistory::refreshContents()
     }
 }
 
+
+/**
+ * This external interface function is called by the main search class when the
+ * history was changed. The signal is ignored if the dialog is not open; else
+ * it refreshes the history list in the dialog to reflect the new content.
+ */
 void DlgHistory::signalHistoryChanged()  /*static*/
 {
     if (s_instance != nullptr)

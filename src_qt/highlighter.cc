@@ -91,6 +91,16 @@ Highlighter::Highlighter(MainText * textWid, MainWin * mainWin)
     tid_search_hall = new BgTask(m_mainText, BG_PRIO_HIGHLIGHT_SEARCH);
 }
 
+
+/**
+ * Destructor
+ */
+Highlighter::~Highlighter()
+{
+    delete tid_high_init;
+    delete tid_search_hall;
+}
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 // mark the matching portion of a line of text

@@ -516,6 +516,10 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
     this->show();
 }
 
+
+/**
+ * Destructor: Freeing resources not automatically deleted via widget tree
+ */
 DlgHigl::~DlgHigl()
 {
     delete m_model;

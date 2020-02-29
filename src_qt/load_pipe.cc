@@ -14,6 +14,20 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This module implements a dialog and background processing for reading data
+ * from an input stream. Specifically the dialog is created when the user
+ * specifies input file "-". The main purposes of the dialog are firstly
+ * showing a progress bar during the delay of buffering data and secondly for
+ * allowing selection between "head" and "tail" mode. In the first mode data is
+ * read from the start of the stream up to a given limit. Then that portion of
+ * text can be loaded into the main window; the used can later continue loading
+ * more data via the File menu. In "tail" mode, the entire stream is read until
+ * reaching EOF and then the specified amount of text from the end of the
+ * stream is loaded into display. During the latter excess data is discarded
+ * automatically so that not the entire data needs to be kept in memory.
  */
 
 #include <QApplication>
@@ -40,8 +54,44 @@
 
 // ----------------------------------------------------------------------------
 
-LoadPipeWorker::LoadPipeWorker()
+/**
+ * This helper class is instantiated in a separate thread for reading a text
+ * document from an input stream (STDIN). A separate thread is required, as Qt
+ * does not support non-blocking I/O for regular files.  The functionality in
+ * this class is reduced the the minimum required, namely reading the stream in
+ * chunks of 64kB and forwarding that data to the main thread via signals.
+ * Loading stops automatically after a limit given by the controlling main
+ * thread, or latest upon reaching EoF. The protocol between worker and
+ * controller instances is entirely message based, i.e. not using shared
+ * memory.
+ *
+ * Three signals are used for controlling the instance. Initially the instance
+ * is in inactive mode and will not load any data. (1) The start message
+ * contains mode and size parameters: In "tail" mode data is loaded until
+ * reaching EOF; In Head mode the given amount of data is forwarded, then the
+ * worker instance automatically switches into inactive mode. When entering
+ * inactive mode, the controller is notified. (2) The reconfiguration message
+ * allows changing the two parameters of the start message while still active.
+ * The message is ignored when already inactive (crossing case; in that case
+ * the controller will receive a completion message (see below) and shall
+ * follow-up with a "start" request if still more data is needed). Thus in
+ * "head" mode the newly given limit replaces the old limit. If already more
+ * data was loaded, the worker becomes inactive immediately and notifies the
+ * controller.  (3) The stop message immediately discontinues loading and
+ * notifies the controller. NOTE: Since the worker uses blocking read on the
+ * input stream, it cannot react on new messages until that read returns.
+ * Specifically, new messages are evaluated only after forwarding the last read
+ * block of data.
+ *
+ * Two signals are produced by the worker instance: (1) The data message is
+ * sent for each read operation. The message contains a copy of the data. (2) A
+ * complettion indication message is sent when entering inactive mode. This
+ * message contains an indication of EOF and an error description when reading
+ * failed for other reasons than EOF.
+ */
+LoadPipeWorker::LoadPipeWorker(QThread * thread)
     : QObject(nullptr)
+    , m_thread(thread)
     , m_stream(this)
     , m_timer(this)
 {
@@ -55,6 +105,26 @@ LoadPipeWorker::LoadPipeWorker()
     }
 }
 
+/**
+ * This destructor has to be connected to the "finished" signal of the
+ * associated thread, which is initiated by the controller invoking the quit()
+ * slot. The destructor arranges for deletion of the thread object (which is
+ * not possible before the thread has terminated). Note as the thread uses
+ * blocking I/O, it is possible that the worker object is actually not
+ * destroyed upon exit of the application; this causes no issue as the thread
+ * will be terminated by the OS anyway.
+ */
+LoadPipeWorker::~LoadPipeWorker()
+{
+    m_thread->deleteLater();
+}
+
+/**
+ * This slot handles the "start" message sent by the controller. The given
+ * parameters are copied and reading of data is activated by starting a
+ * zero-delay timer. (A timer needs to be used so that control messages can be
+ * processed between reading chunks of data.)
+ */
 void LoadPipeWorker::startLoading(LoadMode loadMode, size_t loadSize)
 {
     m_loadMode = loadMode;
@@ -64,6 +134,13 @@ void LoadPipeWorker::startLoading(LoadMode loadMode, size_t loadSize)
     m_timer.start();
 }
 
+/**
+ * This slot handles the "reconfiguration" message sent by the controller. The
+ * given parameters replace the ones of the start message. When the new
+ * parameters indicate a lower limit for "head" mode, the timer for scheduling
+ * data reading is stopped immediately and controller is notified. The message
+ * is ignored if not active.
+ */
 void LoadPipeWorker::reconfLoading(LoadMode loadMode, size_t loadSize)
 {
     if (m_isActive)
@@ -80,12 +157,29 @@ void LoadPipeWorker::reconfLoading(LoadMode loadMode, size_t loadSize)
     }
 }
 
+/**
+ * This slot handles the "pause" message sent by the controller. Reading data
+ * is stopped immediately and the controller is notified. If not in active
+ * mode, the message is ignored (as the controller will already have received a
+ * completion indication message).
+ */
 void LoadPipeWorker::pauseLoading()
 {
-    m_isActive = false;
-    m_timer.stop();
+    if (m_isActive)
+    {
+        m_isActive = false;
+        m_timer.stop();
+        emit dataComplete(false, "");
+    }
 }
 
+/**
+ * This slot handles expire of the internal timer that drives reading of data.
+ * The function simply reads a chunk of data and forwards it to the controller.
+ * When the limit indicated by the controller is reached, or an I/O error is
+ * detected, the worker enters inactive mode and notifies the controller. Else
+ * the timer is restarted.
+ */
 void LoadPipeWorker::loadNextChunk()
 {
     Q_ASSERT(m_isActive);
@@ -123,6 +217,20 @@ void LoadPipeWorker::loadNextChunk()
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This class implements both a dialog window, and the controller instance for
+ * the worker thread. The dialog is shown always when starting to read data
+ * from an input stream. The dialog showns current status (i.e. progress and
+ * amount of data loaded) and allows the user to modify buffer size and
+ * head/tail modes.  The initial values for these parameters can be specified
+ * on the command line.  When all data is loaded, the dialog waits for the user
+ * to press "OK".  Alternatively the user can stop loading at any time using
+ * the respective button; in that case only the data aready loaded from the
+ * input strea, up to that time is forwarded into the text display and the
+ * background worker is stopped. While loading is stopped, the dialog is made
+ * invisible, but not destroyed. It will be shown again when the user requests
+ * loading more data.
+ */
 LoadPipe::LoadPipe(MainWin * mainWin, MainText * mainText, LoadMode loadMode, size_t bufSize)
     : QDialog(mainWin, Qt::Dialog)
     , m_mainWin(mainWin)
@@ -136,32 +244,43 @@ LoadPipe::LoadPipe(MainWin * mainWin, MainText * mainText, LoadMode loadMode, si
     createDialog();
     updateStatus();
 
+    this->setModal(true);
+    this->show();
+
     qRegisterMetaType<size_t>("size_t");
     qRegisterMetaType<LoadMode>("LoadMode");
 
     // thread object needs to be on heap as it may not terminate prior to exit
     m_workerThread = new QThread();
 
-    m_workerObj = new LoadPipeWorker();
+    // create a worker instance
+    m_workerObj = new LoadPipeWorker(m_workerThread);
     m_workerObj->moveToThread(m_workerThread);
     connect(m_workerThread, &QThread::finished, m_workerObj, &QObject::deleteLater);
+    // connect control messages sent to the worker
     connect(this, &LoadPipe::workerStart, m_workerObj, &LoadPipeWorker::startLoading);
     connect(this, &LoadPipe::workerReconfigure, m_workerObj, &LoadPipeWorker::reconfLoading);
     connect(this, &LoadPipe::workerPause, m_workerObj, &LoadPipeWorker::pauseLoading);
+    // connect data and status indications sent to the controller
     connect(m_workerObj, &LoadPipeWorker::dataBuffered, this, &LoadPipe::signalDataBuffered);
     connect(m_workerObj, &LoadPipeWorker::dataComplete, this, &LoadPipe::signalDataComplete);
     m_workerThread->start();
 
+    // start loading data
     m_workerActive = true;
     emit workerStart(m_loadMode, m_bufSize);
 }
 
+/**
+ * This destructor is expected to be called only upon program termination, or
+ * optionally after reaching EOF. The user frees all resources, except for the
+ * worker thread
+ */
 LoadPipe::~LoadPipe()
 {
-    if (m_workerActive)
-        emit workerPause();
-    m_workerObj->deleteLater();
-    //m_workerThread gets deleted via "finished" signal
+    m_workerThread->quit();
+    //m_workerObj gets deleted via QThread "finished" signal
+    //m_workerThread gets deleted by destructor of m_workerObj
 }
 
 void LoadPipe::continueReading()
@@ -173,7 +292,8 @@ void LoadPipe::continueReading()
 
 
 /**
- * This function opens the "Loading from STDIN" status dialog.
+ * This function is used by the constructor for creating the "Loading from
+ * STDIN" dialog.
  */
 void LoadPipe::createDialog()
 {
@@ -247,15 +367,6 @@ void LoadPipe::createDialog()
         connect(radb, &QRadioButton::toggled, [=](bool){ loadModeChanged(LoadMode::Tail); });
         layout_grid->addWidget(radb, row, 2);
 
-#if 0
-    lab = new QLabel("Close file:", f1);
-        layout_grid->addWidget(lab, ++row, 0);
-    auto chkb = new QCheckButton("close after read", f1);
-        //variable=opt_file_close
-        layout_grid->addWidget(chkb, row, 1, 1, 2);
-#endif
-
-    // Note button texts are modified to Abort/Ok while reading from file is stopped
     auto cmdButs = new QDialogButtonBox(QDialogButtonBox::Cancel |
                                         QDialogButtonBox::Ok,
                                         Qt::Horizontal, this);
@@ -266,15 +377,13 @@ void LoadPipe::createDialog()
         connect(m_butStop, &QPushButton::clicked, this, &LoadPipe::cmdStop);
         connect(m_butOk, &QPushButton::clicked, this, &LoadPipe::cmdOk);
         layout_grid->addWidget(cmdButs, ++row, 0, 1, 3);
-
-    this->setModal(true);
-    this->show();
 }
 
 
 /**
- * This function is bound to destruction of the dialog window. The event is
- * also sent artificially upon the "Cancel" button.
+ * This function is bound to destruction of the dialog window. As this is a
+ * modal dialog, this should never happen, so the signal is ignored. The user
+ * can instead close the dialog via "Stop" or "Ok" buttons.
  */
 void LoadPipe::closeEvent(QCloseEvent * event)
 {
@@ -282,6 +391,9 @@ void LoadPipe::closeEvent(QCloseEvent * event)
 }
 
 /**
+ * This slot is connected to clicks on the "Stop" button. The function aborts
+ * loading of data, hides the dialog and notifies the owner of the dialog that
+ * it is finished. See also description of the "OK" slot.
  */
 void LoadPipe::cmdStop(bool)
 {
@@ -297,6 +409,11 @@ void LoadPipe::cmdStop(bool)
 
 
 /**
+ * This slot is connected to clicks on the "OK" button. The function hides the
+ * dialog and notifies the owner of the dialog that it is finished. The owner
+ * then can retrieve the data from the buffer and forward it into the text
+ * widget in the main window. The owner also should query the EOF status to
+ * prevent further attempts of loading data when reaching EOF.
  */
 void LoadPipe::cmdOk(bool)
 {
@@ -305,6 +422,11 @@ void LoadPipe::cmdOk(bool)
 }
 
 
+/**
+ * This slot is connected to changes of the head/tail radio buttons. The
+ * function reconfigures the worker object and updates display (which is needed
+ * as representation of the progress bar may have to be adapted).
+ */
 void LoadPipe::loadModeChanged(LoadMode newMode)
 {
     m_loadMode = newMode;
@@ -312,6 +434,11 @@ void LoadPipe::loadModeChanged(LoadMode newMode)
     updateWorker();
 }
 
+/**
+ * This slot is connected to changes of the buffer size value via spinbox. The
+ * function reconfigures the worker object and updates display (which is needed
+ * as progress bar needs to be adjusted for the new target value).
+ */
 void LoadPipe::bufSizeChanged(int newSizeMB)
 {
     int64_t newSize = int64_t(newSizeMB) * 1024*1024;
@@ -326,6 +453,12 @@ void LoadPipe::bufSizeChanged(int newSizeMB)
     }
 }
 
+/**
+ * This slot is connected to data indications sent by the worker object.  The
+ * data is pushed to an internal queue and display status is updated.  The
+ * latter may include enabling the "OK" button in case all requested data has
+ * been loaded.
+ */
 void LoadPipe::signalDataBuffered(QByteArray data)
 {
     m_readTotal += data.size();
@@ -336,6 +469,13 @@ void LoadPipe::signalDataBuffered(QByteArray data)
     updateStatus();
 }
 
+/**
+ * This slot is connected to completion indications sent by the worker object.
+ * The main purpose is updating the "EOF" flag. Additionally, the function
+ * handles crossing case of a preceding reconfiguration of buffer size or mode
+ * and completion within the asynchronous worker thread. In such cases the
+ * worker object may get restarted to load the remaining portion of data.
+ */
 void LoadPipe::signalDataComplete(bool isEof, QString errorMsg)
 {
     m_isEof = isEof;
@@ -350,6 +490,11 @@ void LoadPipe::signalDataComplete(bool isEof, QString errorMsg)
     updateWorker();
 }
 
+/**
+ * This internal helper function starts or reconfigures the worker object for
+ * loading data according to current buffer size and mode parameters. It is called
+ * upon initial start and whenever parameters are changed by the user.
+ */
 void LoadPipe::updateWorker()
 {
     if (!m_isEof)
@@ -371,6 +516,10 @@ void LoadPipe::updateWorker()
     }
 }
 
+/**
+ * This internal helper function updates the progress bar, statistics about
+ * loaded data, and status of the mutually exclusive Stop/Ok buttons.
+ */
 void LoadPipe::updateStatus()
 {
     for (auto& v : { std::make_pair(m_readTotal, m_labReadLen),
@@ -409,11 +558,10 @@ void LoadPipe::updateStatus()
 }
 
 /**
- * This function discards data in the load buffer queue if the length
- * limit is exceeded.  The buffer queue is an array of character strings
- * (each string the result of a "read" command.)  The function is called
- * after each read in tail mode, so it must be efficient (i.e. esp. avoid
- * copying large buffers.)
+ * This function is used in "tail" mode to discard excessive data at the
+ * beginning of the load buffer queue.  The buffer queue is an array of raw
+ * byte buffers of fixed size (i.e. each array element stores the result of one
+ * "read" command.)
  */
 void LoadPipe::limitData(bool exact)
 {
@@ -431,7 +579,8 @@ void LoadPipe::limitData(bool exact)
             m_dataBuf.erase(m_dataBuf.begin());
         }
 
-        // truncate the last data buffer in the queue (only if exact limit is requested)
+        // truncate the oldest data buffer in the queue to reach exact limit;
+        // for performance reasons this is only done after end of loading
         if (exact && (rest > 0) && !m_dataBuf.empty())
         {
             m_dataBuf[0].remove(0, rest);
@@ -448,6 +597,10 @@ void LoadPipe::limitData(bool exact)
 void LoadPipe::getLoadedData(std::vector<QByteArray>& resultBuf)
 {
     ssize_t rest = m_bufSize;
+
+    // finalize trimming data for tail mode
+    // done only now as data may still arrive from worker before reaching here
+    limitData(true);
 
     // unhook complete data buffers from the queue
     while ((rest > 0) && !m_dataBuf.empty() && (m_dataBuf[0].size() <= rest))

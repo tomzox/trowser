@@ -46,7 +46,8 @@ class LoadPipeWorker : public QObject
     Q_OBJECT
 
 public:
-    LoadPipeWorker();
+    LoadPipeWorker(QThread * thread);
+    virtual ~LoadPipeWorker();
 
 /* public slot */
     void startLoading(LoadMode loadMode, size_t loadSize);
@@ -63,6 +64,7 @@ private:
 private:
     static const size_t LOAD_CHUNK_SIZE = 64*1024;
 
+    QThread     * const m_thread;
     QFile               m_stream;
     QTimer              m_timer;
     LoadMode            m_loadMode = LoadMode::Head;
@@ -79,7 +81,7 @@ class LoadPipe : public QDialog
 
 public:
     LoadPipe(MainWin * mainWin, MainText * mainText, LoadMode loadMode, size_t bufSize);
-    ~LoadPipe();
+    virtual ~LoadPipe();
     void continueReading();
     bool isEof() const { return m_isEof; }
     size_t getLoadBufferSize() const { return m_bufSize; }
@@ -108,8 +110,6 @@ signals:
 private:
     MainWin     * const m_mainWin;
     MainText    * const m_mainText;
-    LoadMode            m_loadMode;
-    size_t              m_bufSize;
 
     QProgressBar      * m_loadProgress = nullptr;
     QLabel            * m_labReadLen = nullptr;
@@ -121,10 +121,12 @@ private:
     LoadPipeWorker    * m_workerObj = nullptr;
     bool                m_workerActive = false;
 
-    std::vector<QByteArray> m_dataBuf;  // buffer for data read from file
-    size_t m_readTotal = 0;       // number of bytes read from file; may grow beyond 32 bit!
-    size_t m_readBuffered = 0;    // number of bytes read & still in buffer
-    bool m_isEof = false;         // true once file.read() returned EOF
+    std::vector<QByteArray> m_dataBuf;
+    LoadMode            m_loadMode;
+    size_t              m_bufSize;
+    size_t              m_readTotal = 0;
+    size_t              m_readBuffered = 0;
+    bool                m_isEof = false;
 };
 
 #endif // _LOAD_PIPE_H

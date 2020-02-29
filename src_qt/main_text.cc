@@ -32,6 +32,7 @@
 #include "main_search.h"
 #include "status_line.h"
 #include "bookmarks.h"
+#include "dlg_bookmarks.h"
 #include "search_list.h"
 
 // ----------------------------------------------------------------------------
@@ -147,7 +148,9 @@ void MainText::keyPressEvent(QKeyEvent *e)  /* virtual override */
             || (e->text().length() == 1)) )
     {
         wchar_t chr = (e->key() == Qt::Key_Return) ? '\r' : e->text()[0].unicode();
-        if (keyCmdText(chr))
+        if (chr == 27)  // Key_Escape
+            keyCmdClear();
+        else if (keyCmdText(chr))
             return;
     }
 
@@ -898,12 +901,19 @@ void MainText::cursorJumpHistory(int rel)
         m_mainWin->mainStatusLine()->showError("keycmd", "Jump stack is empty.");
 }
 
+/**
+ * This external interface clears the jump stack. This is only used when
+ * loading a new document.
+ */
 void MainText::cursorJumpStackReset()
 {
     cur_jump_stack.clear();
     cur_jump_idx = -1;
 }
 
+/**
+ * This function set or removes a bookmarks in the line of the cursor.
+ */
 void MainText::toggleBookmark()
 {
     auto c = this->textCursor();
@@ -923,6 +933,7 @@ void MainText::jumpToNextBookmark(bool is_fwd)
     if (line != -1)
     {
         jumpToLine(line);
+        DlgBookmarks::matchView(line);
     }
     else
     {
@@ -935,6 +946,9 @@ void MainText::jumpToNextBookmark(bool is_fwd)
     }
 }
 
+/**
+ * This function moves the cursor onto the first column of the given line.
+ */
 void MainText::jumpToLine(int line)
 {
     QTextBlock blk = this->document()->findBlockByNumber(line);

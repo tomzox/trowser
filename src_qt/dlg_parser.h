@@ -41,7 +41,7 @@ class DlgParser : public QMainWindow
 
 public:
     DlgParser(MainWin * mainWin, MainText * mainText, const ParseSpec& spec);
-    ~DlgParser();
+    virtual ~DlgParser() = default;
     void getSpec(ParseSpec& spec) const { spec = m_spec; }
 
 signals:
@@ -53,7 +53,7 @@ private:
     void cmdTest(bool);
     void updateWidgetState();
     void getInputFromWidgets();
-    QString validateInput(const ParseSpec& spec, bool checkLabels);
+    bool validateInput(const ParseSpec& spec, bool checkLabels, const QString& opDesc);
 
 private:
     MainWin * const     m_mainWin;

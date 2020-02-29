@@ -53,12 +53,13 @@ public:
 private:
     // constructor can only be invoked via the static interface
     DlgHistory();
-    ~DlgHistory();
+    virtual ~DlgHistory();
 
     virtual void closeEvent(QCloseEvent *) override;
     void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected);
     void refreshContents();
     void showContextMenu(const QPoint& pos);
+    void mainDocNameChanged();
     void cmdClose(bool);
     void cmdButton(QAbstractButton * button);
     void cmdRemove(bool);

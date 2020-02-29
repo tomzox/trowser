@@ -586,7 +586,15 @@ void MainWin::LoadFile(const QString& fileName)
         }
 
         m_f1_t->setPlainText(in.readAll());
-        //m_f1_t->setReadOnly(true);
+
+        // adapt text of the "reload file" menu entry, in case pipe was used previously
+        m_actFileReload->setText("Reload current file");
+        m_actFileReload->setEnabled(true);
+        if (m_loadPipe != nullptr)
+        {
+            delete m_loadPipe;
+            m_loadPipe = nullptr;
+        }
 
         setWindowTitle(fileName + " - trowser");
         m_curFileName = fileName;
@@ -609,14 +617,23 @@ void MainWin::LoadFile(const QString& fileName)
     }
 }
 
+/**
+ * This function is called after start-up when loading data from STDIN, as
+ * specified on the command line via pseudo-filename "-". It may also be called
+ * again later via the "Continue loading" menu entry, as long as EOF was not
+ * reached previously (which is prevented by disabling the respective menu
+ * entry). This function only triggers showing a progress dialog and initiating
+ * loading of data via the LoadPipe class. The function then returns to the
+ * main loop while data is loaded in the background. After completion, actual
+ * loading of that data into the display is triggered by a signal sent by the
+ * LoadPipe class (see next function.)
+ */
 void MainWin::LoadFromPipe()
 {
     if (m_loadPipe == nullptr)
     {
         m_loadPipe = new LoadPipe(this, m_f1_t, load_file_mode, load_buf_size);
         connect(m_loadPipe, &LoadPipe::pipeLoaded, this, &MainWin::loadPipeDone);
-
-        m_actFileReload->setText("Continue loading STDIN...");
     }
     else
         m_loadPipe->continueReading();
@@ -624,6 +641,11 @@ void MainWin::LoadFromPipe()
     m_f1_t->viewport()->setCursor(Qt::BusyCursor);
 }
 
+/**
+ * This slot is connected to a completion message sent by the LoadPipe class
+ * when text data is available for display. The function retrieves the data,
+ * inserts it to the text widget and then starts initial highlighting.
+ */
 void MainWin::loadPipeDone()
 {
     std::vector<QByteArray> dataBuf;
@@ -641,9 +663,19 @@ void MainWin::loadPipeDone()
     m_f1_t->viewport()->setCursor(Qt::ArrowCursor);
     m_higl->highlightInit();
 
+    // adapt text of the "reload file" menu entry
+    m_actFileReload->setText("Continue loading STDIN...");
     m_actFileReload->setEnabled(!m_loadPipe->isEof());
+
+    // store buffer size parameter specified in the dialog in the RC file
     load_buf_size = m_loadPipe->getLoadBufferSize();
     updateRcAfterIdle();
+
+    if (m_loadPipe->isEof())
+    {
+        delete m_loadPipe;
+        m_loadPipe = nullptr;
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -687,13 +719,7 @@ void MainWin::loadRcFile()
 
                     if (var == "main_search")               m_search->setRcValues(val.toObject());
                     else if (var == "highlight")            m_higl->setRcValues(val);
-                    //else if (var == "tick_pat_sep")       tick_pat_sep = val;
-                    //else if (var == "tick_pat_num")       tick_pat_num = val;
-                    //else if (var == "tick_str_prefix")    tick_str_prefix = val;
                     else if (var == "font_content")         m_fontContent.fromString(val.toString());
-                    //else if (var == "fmt_selection")      fmt_selection = val;
-                    //else if (var == "fmt_find")           fmt_find = val;
-                    //else if (var == "fmt_findinc")        fmt_findinc = val;
                     else if (var == "load_buf_size_lsb")    load_buf_size_lsb = val.toInt();
                     else if (var == "load_buf_size_msb")    load_buf_size_msb = val.toInt();
                     //else if (var == "rcfile_version")     rcfile_version = val;
@@ -747,11 +773,6 @@ void MainWin::updateRcFile()
     //puts $rcfile [list set rc_compat_version $rcfile_compat]
     //puts $rcfile [list set rc_timestamp [clock seconds]]
 
-    // frame number parser patterns
-    //puts $rcfile [list set tick_pat_sep $tick_pat_sep]
-    //puts $rcfile [list set tick_pat_num $tick_pat_num]
-    //puts $rcfile [list set tick_str_prefix $tick_str_prefix]
-
     // dump search history
     obj.insert("main_search", m_search->getRcValues());
 
@@ -762,6 +783,8 @@ void MainWin::updateRcFile()
     obj.insert("dlg_highlight", DlgHigl::getRcValues());
     obj.insert("dlg_history", DlgHistory::getRcValues());
     obj.insert("dlg_bookmarks", DlgBookmarks::getRcValues());
+
+    // search list options & custom column parser configuration
     obj.insert("search_list", SearchList::getRcValues());
 
     obj.insert("main_win_geom", QJsonValue(QString(this->saveGeometry().toHex())));
@@ -769,9 +792,6 @@ void MainWin::updateRcFile()
 
     // font and color settings
     obj.insert("font_content", QJsonValue(m_fontContent.toString()));
-    //puts $rcfile [list set fmt_find $fmt_find]
-    //puts $rcfile [list set fmt_findinc $fmt_findinc]
-    //puts $rcfile [list set fmt_selection $fmt_selection]
 
     // misc (note the head/tail mode is omitted intentionally)
     obj.insert("load_buf_size_lsb", QJsonValue(int(load_buf_size & 0xFFFFFFU)));

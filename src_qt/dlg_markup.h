@@ -42,7 +42,7 @@ class DlgMarkup : public QMainWindow
 public:
     DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec,
               Highlighter * higl, MainWin * mainWin);
-    ~DlgMarkup();
+    virtual ~DlgMarkup();
     const HiglFmtSpec& getFmtSpec() const { return m_fmtSpec; }
     HiglId getFmtId() const { return m_id; }
     void resetModified();
@@ -58,7 +58,7 @@ private:
     void cmdResetColor(QRgb * col);
     void cmdSelectColor(QRgb * col, const QString& desc);
     void cmdSetFontOption(bool *option, bool value);
-    void cmdSetFontSizeOff(int value);
+    void cmdSetFontSizeOffset(int value);
     void cmdResetFont();
     void cmdSelectFont();
     void cmdSelectStyle(Qt::BrushStyle * style, int idx);

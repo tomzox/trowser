@@ -58,12 +58,29 @@
 #include "highl_view_dlg.h"
 #include "search_list.h"
 #include "parse_frame.h"
+#include "dlg_bookmarks.h"
 #include "dlg_parser.h"
 #include "dlg_higl.h"
 #include "dlg_history.h"
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This class implements the "model" associated with the search list "view".
+ * The central part of this model is a plain array of line indices, which
+ * represent a sub-set of the lines (i.e. paragraphs) of the main text
+ * document. The model is designed for table view. The right-most column is
+ * rendered as a copy of the respective main text line (i.e. the actual text
+ * content of that line is not stored in the model).  Other columns can
+ * optionally be made visible to display additional related information,
+ * specifically: A flag when the line has been bookmarked; the line number;
+ * line number delta to a user-selected "root" line; and several columns with
+ * user-defined content that is obtained from an external ParseFrame class.
+ *
+ * In addition to the standard QAbstractItemModel interface, the model provides
+ * an interface HighlightViewModelIf which is used by the delegate rendering
+ * the text content for obtaining the data and mark-up configuration.
+ */
 class SearchListModel : public QAbstractItemModel, public HighlightViewModelIf
 {
 public:
@@ -71,16 +88,16 @@ public:
                      COL_IDX_CUST_VAL, COL_IDX_CUST_VAL_DELTA, COL_IDX_CUST_FRM, COL_IDX_CUST_FRM_DELTA,
                      COL_IDX_TXT, COL_COUNT };
 
-    SearchListModel(MainText * mainText, Highlighter * higl, const ParseSpec& parseSpec, bool showSrchHall)
+    SearchListModel(MainText * mainText, Highlighter * higl, const ParseSpec& parseSpec,
+                    bool showSrchHall, bool showBookmarkMarkup)
         : m_mainText(mainText)
         , m_higl(higl)
         , m_parser(ParseFrame::create(m_mainText->document(), parseSpec))  // may return nullptr
         , m_showSrchHall(showSrchHall)
+        , m_showBookmarkMarkup(showBookmarkMarkup)
     {
     }
-    virtual ~SearchListModel()
-    {
-    }
+    virtual ~SearchListModel() = default;
     virtual QModelIndex index(int row, int column, const QModelIndex& parent __attribute__((unused)) = QModelIndex()) const override
     {
         return createIndex(row, column);
@@ -552,6 +569,9 @@ void SearchListModel::adjustLineNums(int top_l, int bottom_l)
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This struct describes one entry in the undo/redo lists.
+ */
 class UndoRedoItem
 {
 public:
@@ -572,17 +592,39 @@ public:
     std::vector<int> lines;
 };
 
+/**
+ * The SearchListUndo class manages the undo/redo list for the search list
+ * dialog. Any changes to the content of the search list are recorded to the
+ * undo list.  Changes can be either additions or removals. Changes done by
+ * background tasks of the search list class are usually split into many parts
+ * for performance reasons; the UndoRedoItem class offers special interfaces
+ * for these cases to allow concatenating them to a single entry in the undo
+ * list.
+ *
+ * When a change is undone, the respective change description is moved from the
+ * undo list to the redo list. For performance reasons any undo/redo may be
+ * split in many steps. In this phase entries are kept in both undo and redo
+ * list, but portions of the contained line number lists are moved from one
+ * list to the other, always in sync with changes to the model. When the undo
+ * or redo is completed the obsolete entry is removed. Is the process is
+ * aborted in the middle, the partial entries remain in both lists.
+ *
+ * Note this class is coupled tightly with the state of the model. To ensure
+ * consistency there's an invariant function checking all undo entries combined
+ * result exactly in the current content of the model.
+ */
 class SearchListUndo
 {
 public:
     SearchListUndo() = default;
+    ~SearchListUndo() = default;
     void appendChange(bool doAdd, const std::vector<int>& lines);
 
-    void prepareBgChange(bool forUndo, bool doAdd);
-    void appendBgChange(bool forUndo, bool doAdd,
+    void prepareBgChange(bool doAdd);
+    void appendBgChange(bool doAdd,
                         std::vector<int>::const_iterator lines_begin,
                         std::vector<int>::const_iterator lines_end);
-    void finalizeBgChange(bool forUndo, bool doAdd);
+    void finalizeBgChange(bool doAdd);
     void abortBgChange();
 
     void prepareUndoRedo(bool isRedo);
@@ -613,6 +655,13 @@ public:
 #endif
 };
 
+
+/**
+ * This is the basic interface for adding to the "undo" list. It is used by
+ * small "atomic" changes, usually via user interaction (i.e. adding a few
+ * selected text lines). The redo list is cleared, so that any changes that
+ * were previously undone are lost.
+ */
 void SearchListUndo::appendChange(bool doAdd, const std::vector<int>& lines)
 {
     Q_ASSERT(m_bgDstIdx < 0);
@@ -623,17 +672,24 @@ void SearchListUndo::appendChange(bool doAdd, const std::vector<int>& lines)
     SEARCH_LIST_UNDO_INVARIANT();
 }
 
-void SearchListUndo::prepareBgChange(bool forUndo, bool doAdd)
+
+/**
+ * This interface has to be called at the start of background tasks to prepare
+ * combining subsequent changes to a single entry. Target is always the undo
+ * list; the redo list is cleared.
+ */
+void SearchListUndo::prepareBgChange(bool doAdd)
 {
-    std::vector<UndoRedoItem>& undo_list = forUndo ? dlg_srch_undo : dlg_srch_redo;
+    std::vector<UndoRedoItem>& undo_list = dlg_srch_undo;
     Q_ASSERT(m_bgDstIdx < 0);
 
     m_bgDstIdx = undo_list.size();
     m_bgDoAdd = doAdd;
-    m_bgForUndo = forUndo;
+    m_bgForUndo = true;
 
     dlg_srch_redo.clear();
 }
+
 
 /**
  * This function is during background tasks which fill the search match dialog
@@ -641,15 +697,15 @@ void SearchListUndo::prepareBgChange(bool forUndo, bool doAdd)
  * the undo list. If there's already an undo item for the current search, the
  * numbers are merged into it.
  */
-void SearchListUndo::appendBgChange(bool forUndo, bool doAdd,
+void SearchListUndo::appendBgChange(bool doAdd,
                                     std::vector<int>::const_iterator lines_begin,
                                     std::vector<int>::const_iterator lines_end)
 {
-    std::vector<UndoRedoItem>& undo_list = forUndo ? dlg_srch_undo : dlg_srch_redo;
+    std::vector<UndoRedoItem>& undo_list = dlg_srch_undo;
 
     Q_ASSERT((m_bgDstIdx >= 0) && (size_t(m_bgDstIdx) <= undo_list.size()));
     Q_ASSERT(m_bgDoAdd == doAdd);
-    Q_ASSERT(m_bgForUndo == forUndo);
+    Q_ASSERT(m_bgForUndo == true);
 
     if (size_t(m_bgDstIdx) == undo_list.size())
         undo_list.emplace_back(UndoRedoItem(doAdd, std::vector<int>(lines_begin, lines_end)));
@@ -668,19 +724,27 @@ void SearchListUndo::appendBgChange(bool forUndo, bool doAdd,
  * Note it's allowed that there actually were no changes (e.g. no matching
  * lines found in text), so that no item may have been added to the list.
  */
-void SearchListUndo::finalizeBgChange(bool forUndo, bool doAdd)
+void SearchListUndo::finalizeBgChange(bool doAdd)
 {
-    std::vector<UndoRedoItem>& undo_list = forUndo ? dlg_srch_undo : dlg_srch_redo;
+    std::vector<UndoRedoItem>& undo_list = dlg_srch_undo;
 
     Q_ASSERT((m_bgDstIdx >= 0) && (size_t(m_bgDstIdx) <= undo_list.size()));
     Q_ASSERT(m_bgDoAdd == doAdd);
-    Q_ASSERT(m_bgForUndo == forUndo);
+    Q_ASSERT(m_bgForUndo == true);
 
     m_bgDstIdx = -1;
 
     SEARCH_LIST_UNDO_INVARIANT();
 }
 
+
+/**
+ * This function aborts either kind of ongoing changes via background tasks,
+ * i.e. either additions via "search all", or undo/redo. The function just
+ * resets the "background state", but leaves undo/redo lists unchanged. This is
+ * possible because each step done by background tasks keeps model and
+ * undo/redo lists in sync.
+ */
 void SearchListUndo::abortBgChange()
 {
     Q_ASSERT(m_bgDstIdx >= 0);
@@ -690,6 +754,13 @@ void SearchListUndo::abortBgChange()
     SEARCH_LIST_UNDO_INVARIANT();
 }
 
+
+/**
+ * This function is called upon start of an undo/redo that will be executed via
+ * background tasks. It prepares for combination of all following changes into
+ * a single entry in the opposite list. The function does not actually add an
+ * entry yet, as empty entries are not allowed in the lists.
+ */
 void SearchListUndo::prepareUndoRedo(bool isRedo)
 {
     std::vector<UndoRedoItem>& src_list = isRedo ? dlg_srch_redo : dlg_srch_undo;
@@ -706,6 +777,14 @@ void SearchListUndo::prepareUndoRedo(bool isRedo)
     }
 }
 
+/**
+ * This function "pops" a set of line numbers from the last entry of the undo
+ * or redo list (the actual list to be used is indicated via parameter). These
+ * line numbers are added to the last entry of the opposite list (or a new
+ * entry is created, if this is the first call after prepareUndoRedo) and then
+ * returns the same set of line numbers to the caller.  The caller has to apply
+ * the change to the model (so that it remains in sync with the undo list).
+ */
 bool SearchListUndo::popUndoRedo(bool isRedo, bool *retDoAdd, std::vector<int>& retLines, size_t maxCount)
 {
     std::vector<UndoRedoItem>& src_list = isRedo ? dlg_srch_redo : dlg_srch_undo;
@@ -761,6 +840,11 @@ bool SearchListUndo::popUndoRedo(bool isRedo, bool *retDoAdd, std::vector<int>& 
     return true;
 }
 
+
+/**
+ * This function has to be invoked at the end of background tasks which perform
+ * undo/redo. The function resets the background task-related state variables.
+ */
 void SearchListUndo::finalizeUndoRedo(bool isRedo)
 {
     std::vector<UndoRedoItem>& dst_list = isRedo ? dlg_srch_undo : dlg_srch_redo;
@@ -773,6 +857,17 @@ void SearchListUndo::finalizeUndoRedo(bool isRedo)
     SEARCH_LIST_UNDO_INVARIANT();
 }
 
+
+/**
+ * This function is called when portions of the text in the main window have
+ * been deleted to update references to text lines. The function removes all
+ * references to removed lines from the undo/redo lists and prunes remaining
+ * empty entries. Remaining line numbers may be shifted, if lines at the top
+ * of the document were removed.
+ *
+ * @param top_l     First line which is NOT deleted, or 0 to delete nothing at top
+ * @param bottom_l  This line and all below are removed, or -1 if none
+ */
 void SearchListUndo::adjustLineNums(int top_l, int bottom_l)
 {
     std::vector<UndoRedoItem> tmp2;
@@ -800,6 +895,11 @@ void SearchListUndo::adjustLineNums(int top_l, int bottom_l)
     SEARCH_LIST_UNDO_INVARIANT();
 }
 
+
+/**
+ * This query function indicates if there are any entries in the undo list, and
+ * optionally the number of lines in the last entry.
+ */
 bool SearchListUndo::hasUndo(int *count) const
 {
     if (count != nullptr)
@@ -808,6 +908,11 @@ bool SearchListUndo::hasUndo(int *count) const
     return dlg_srch_undo.size() != 0;
 }
 
+
+/**
+ * This query function indicates if there are any entries in the redo list, and
+ * optionally the number of lines in the last entry.
+ */
 bool SearchListUndo::hasRedo(int *count) const
 {
     if (count != nullptr)
@@ -816,6 +921,12 @@ bool SearchListUndo::hasRedo(int *count) const
     return dlg_srch_redo.size() != 0;
 }
 
+
+/**
+ * This function describes the changes represented by the last entry in either
+ * the undo or redo lists. This can be used to update the text of the undo/redo
+ * menu entries.
+ */
 std::pair<bool,int> SearchListUndo::describeFirstOp(bool forUndo)
 {
     std::vector<UndoRedoItem>& undo_list = forUndo ? dlg_srch_undo : dlg_srch_redo;
@@ -833,7 +944,15 @@ std::pair<bool,int> SearchListUndo::describeFirstOp(bool forUndo)
 }
 
 #ifndef QT_NO_DEBUG
-// note this function assumes that undo list is updated after changes were applied to model
+/**
+ * This function verifies internal consistency and concistency with the model
+ * data.
+ *
+ * Note this function assumes that undo list is updated immediately after any
+ * change to the model content. This is relevant in particular when changes are
+ * split in many steps via background tasks - in this case the updo/redo list
+ * has to be updated after each step.
+ */
 void SearchListUndo::invariant() const
 {
     // convert input list into set & check that it is sorted & free of duplicates
@@ -987,6 +1106,10 @@ int SearchListDrawBok::widthHint() const
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This helper class overloads the standard QTableView class to allow adding
+ * key bindings.
+ */
 class SearchListView : public QTableView
 {
 public:
@@ -996,40 +1119,13 @@ public:
         this->resizeColumnToContents(SearchListModel::COL_IDX_BOOK);
     }
     virtual void keyPressEvent(QKeyEvent *e) override;
-    virtual int sizeHintForColumn(int column) const override;
-    void setDocLineCount(int lineCount);
     void addKeyBinding(Qt::KeyboardModifier mod, Qt::Key key, const std::function<void()>& cb);
 
 private:
     const int TXT_MARGIN = 5;
-    int m_docLineCount = 0;
     std::unordered_map<uint32_t,const std::function<void()>> m_keyCb;
 
 };
-
-int SearchListView::sizeHintForColumn(int column) const
-{
-    if (   (column == SearchListModel::COL_IDX_LINE)
-        || (column == SearchListModel::COL_IDX_LINE_D))
-    {
-        int maxLine = (column == SearchListModel::COL_IDX_LINE)
-                         ? m_docLineCount : -m_docLineCount;
-
-        QFontMetrics metrics(viewOptions().font);
-        int width = metrics.boundingRect(QString::number(maxLine)).width();
-        return width + TXT_MARGIN * 2;
-    }
-    else
-        return 100;  // never reached
-}
-
-void SearchListView::setDocLineCount(int lineCount)
-{
-    m_docLineCount = lineCount;
-
-    this->resizeColumnToContents(SearchListModel::COL_IDX_LINE);
-    this->resizeColumnToContents(SearchListModel::COL_IDX_LINE_D);
-}
 
 void SearchListView::addKeyBinding(Qt::KeyboardModifier mod, Qt::Key key, const std::function<void()>& cb)
 {
@@ -1111,8 +1207,9 @@ SearchList::SearchList()
 
     tid_search_list = new BgTask(central_wid, BG_PRIO_SEARCH_LIST);
 
-
-    m_model = new SearchListModel(s_mainText, s_higl, s_parseSpec, m_showSrchHall);
+    m_showCfg = s_prevShowCfg;
+    m_model = new SearchListModel(s_mainText, s_higl, s_parseSpec,
+                                  m_showCfg.srchHall, m_showCfg.bookmarkMarkup);
     m_draw = new HighlightViewDelegate(m_model, false,
                                        s_mainWin->getFontContent(),
                                        s_mainWin->getFgColDefault(),
@@ -1138,7 +1235,6 @@ SearchList::SearchList()
         m_table->setItemDelegateForColumn(SearchListModel::COL_IDX_TXT, m_draw);
         m_table->setContextMenuPolicy(Qt::CustomContextMenu);
         m_table->setColumnWidth(SearchListModel::COL_IDX_BOOK, m_drawBok->widthHint());
-        m_table->setDocLineCount(s_mainText->document()->lineCount());
         configureColumnVisibility();
         connect(m_table, &QAbstractItemView::customContextMenuRequested, this, &SearchList::showContextMenu);
         connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &SearchList::selectionChanged);
@@ -1201,14 +1297,21 @@ SearchList::SearchList()
     this->show();
 }
 
+
+/**
+ * Destructor: Freeing resources not automatically deleted via widget tree
+ */
 SearchList::~SearchList()
 {
+    s_prevShowCfg = m_showCfg;
     searchAbort(false);
     delete m_model;
     delete m_draw;
     delete m_drawBok;
     delete m_undo;
+    delete tid_search_list;
 }
+
 
 /**
  * This overriding function is called when the dialog window receives the close
@@ -1217,7 +1320,6 @@ SearchList::~SearchList()
  */
 void SearchList::closeEvent(QCloseEvent * event)
 {
-    // TODO? override resizeEvent(QResizeEvent *event) to call updateRcAfterIdle() (needed in case user terminates app via CTRL-C while window still open)
     s_winGeometry = this->saveGeometry();
     s_winState = this->saveState();
     s_mainWin->updateRcAfterIdle();
@@ -1263,11 +1365,15 @@ void SearchList::mainDocNameChanged()
 {
     const QString& fileName = s_mainWin->getFilename();
     if (!fileName.isEmpty())
-      this->setWindowTitle("Search matches - " + fileName);
+        this->setWindowTitle("Search matches - " + fileName);
     else
-      this->setWindowTitle("Search matches");
+        this->setWindowTitle("Search matches - trowser");
 }
 
+
+/**
+ * This sub-function of the constructor populates the menus with actions.
+ */
 void SearchList::populateMenus()
 {
     auto men = menuBar()->addMenu("&Control");
@@ -1333,21 +1439,21 @@ void SearchList::populateMenus()
     men = menuBar()->addMenu("&Options");
     act = men->addAction("Highlight all search matches");
         act->setCheckable(true);
-        act->setChecked(m_showSrchHall);
+        act->setChecked(m_showCfg.srchHall);
         act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_H));
         connect(act, &QAction::triggered, this, &SearchList::cmdToggleSearchHighlight);
     act = men->addAction("Show bookmark mark-up");
         act->setCheckable(true);
-        act->setChecked(m_showBookmarkMarkup);
+        act->setChecked(m_showCfg.bookmarkMarkup);
         connect(act, &QAction::triggered, this, &SearchList::cmdToggleBookmarkMarkup);
     men->addSeparator();
     act = men->addAction("Show line number");
         act->setCheckable(true);
-        act->setChecked(m_showLineIdx);
+        act->setChecked(m_showCfg.lineIdx);
         connect(act, &QAction::triggered, this, &SearchList::cmdToggleShowLineNumber);
     m_actShowLineDelta = men->addAction("Show line number delta");
         m_actShowLineDelta->setCheckable(true);
-        m_actShowLineDelta->setChecked(m_showLineDelta);
+        m_actShowLineDelta->setChecked(m_showCfg.lineDelta);
         connect(m_actShowLineDelta, &QAction::triggered, this, &SearchList::cmdToggleShowLineDelta);
 
     m_actShowCustomVal = men->addAction("Show custom column");
@@ -1383,24 +1489,30 @@ void SearchList::populateMenus()
     configureCustomMenuActions();
 }
 
+
+/**
+ * This function adapts the text and state of menu entries related to custom
+ * column configuration. This function is called initially and after
+ * configuration changes.
+ */
 void SearchList::configureCustomMenuActions()
 {
     auto custFlags = m_model->getCustomColumns();
 
     m_actShowCustomVal->setText("Show custom: " + s_parseSpec.getHeader(ParseColumnFlags::Val));
-    m_actShowCustomVal->setChecked(m_showCustom & ParseColumnFlags::Val);
+    m_actShowCustomVal->setChecked(m_showCfg.custom & ParseColumnFlags::Val);
     m_actShowCustomVal->setVisible(custFlags & ParseColumnFlags::Val);
 
     m_actShowCustomValDelta->setText("Show custom: Delta " + s_parseSpec.getHeader(ParseColumnFlags::Val));
-    m_actShowCustomValDelta->setChecked(m_showCustom & ParseColumnFlags::ValDelta);
+    m_actShowCustomValDelta->setChecked(m_showCfg.custom & ParseColumnFlags::ValDelta);
     m_actShowCustomValDelta->setVisible(custFlags & ParseColumnFlags::ValDelta);
 
     m_actShowCustomFrm->setText("Show custom: " + s_parseSpec.getHeader(ParseColumnFlags::Frm));
-    m_actShowCustomFrm->setChecked(m_showCustom & ParseColumnFlags::Frm);
+    m_actShowCustomFrm->setChecked(m_showCfg.custom & ParseColumnFlags::Frm);
     m_actShowCustomFrm->setVisible(custFlags & ParseColumnFlags::Frm);
 
     m_actShowCustomFrmDelta->setText("Show custom: Delta " + s_parseSpec.getHeader(ParseColumnFlags::Frm));
-    m_actShowCustomFrmDelta->setChecked(m_showCustom & ParseColumnFlags::FrmDelta);
+    m_actShowCustomFrmDelta->setChecked(m_showCfg.custom & ParseColumnFlags::FrmDelta);
     m_actShowCustomFrmDelta->setVisible(custFlags & ParseColumnFlags::FrmDelta);
 
     m_actRootCustomValDelta->setText("Select line as origin for custom: Delta " + s_parseSpec.getHeader(ParseColumnFlags::Val));
@@ -1409,6 +1521,7 @@ void SearchList::configureCustomMenuActions()
     m_actRootCustomFrmDelta->setText("Select line as origin for custom: Delta " + s_parseSpec.getHeader(ParseColumnFlags::Frm));
     m_actRootCustomFrmDelta->setVisible(custFlags & ParseColumnFlags::FrmDelta);
 }
+
 
 /**
  * This function is called when the "edit" menu in the search list dialog is opened.
@@ -1463,20 +1576,20 @@ void SearchList::showContextMenu(const QPoint& pos)
     bool sel_size_1 = (sel.size() == 1);
 
     auto act = menu->addAction("Select line as origin for line number delta");
-        act->setEnabled(sel_size_1);  // && m_showLineDelta
+        act->setEnabled(sel_size_1);  // && m_showCfg.lineDelta
         connect(act, &QAction::triggered, this, &SearchList::cmdSetLineIdxRoot);
 
     if (m_actRootCustomValDelta->isVisible())
     {
         act = menu->addAction(m_actRootCustomValDelta->text());
-        act->setEnabled(sel_size_1); // && (m_showCustom & ParseColumnFlags::ValDelta)
+        act->setEnabled(sel_size_1); // && (m_showCfg.custom & ParseColumnFlags::ValDelta)
         connect(act, &QAction::triggered, [=](){ cmdSetCustomColRoot(ParseColumnFlags::ValDelta); });
     }
     if (m_actRootCustomFrmDelta->isVisible())
     {
         // Note: error if this line has no numerical value is handled by callback
         act = menu->addAction(m_actRootCustomFrmDelta->text());
-        act->setEnabled(sel_size_1); // && (m_showCustom & ParseColumnFlags::FrmDelta)
+        act->setEnabled(sel_size_1); // && (m_showCfg.custom & ParseColumnFlags::FrmDelta)
         connect(act, &QAction::triggered, [=](){ cmdSetCustomColRoot(ParseColumnFlags::FrmDelta); });
     }
 
@@ -1493,40 +1606,46 @@ void SearchList::showContextMenu(const QPoint& pos)
     menu->exec(mapToGlobal(pos));
 }
 
+
+/**
+ * This function configures the model after changes to column visbility.
+ * Additionally it controls visibility of the horizontal header, depending on
+ * the number of non-standard columns being shown.
+ */
 void SearchList::configureColumnVisibility()
 {
-    if (m_showLineIdx)
+    if (m_showCfg.lineIdx)
         m_table->showColumn(SearchListModel::COL_IDX_LINE);
     else
         m_table->hideColumn(SearchListModel::COL_IDX_LINE);
 
-    if (m_showLineDelta)
+    if (m_showCfg.lineDelta)
         m_table->showColumn(SearchListModel::COL_IDX_LINE_D);
     else
         m_table->hideColumn(SearchListModel::COL_IDX_LINE_D);
 
-    if (m_showCustom & ParseColumnFlags::Val)
+    if (m_showCfg.custom & ParseColumnFlags::Val)
         m_table->showColumn(SearchListModel::COL_IDX_CUST_VAL);
     else
         m_table->hideColumn(SearchListModel::COL_IDX_CUST_VAL);
 
-    if (m_showCustom & ParseColumnFlags::ValDelta)
+    if (m_showCfg.custom & ParseColumnFlags::ValDelta)
         m_table->showColumn(SearchListModel::COL_IDX_CUST_VAL_DELTA);
     else
         m_table->hideColumn(SearchListModel::COL_IDX_CUST_VAL_DELTA);
 
-    if (m_showCustom & ParseColumnFlags::Frm)
+    if (m_showCfg.custom & ParseColumnFlags::Frm)
         m_table->showColumn(SearchListModel::COL_IDX_CUST_FRM);
     else
         m_table->hideColumn(SearchListModel::COL_IDX_CUST_FRM);
 
-    if (m_showCustom & ParseColumnFlags::FrmDelta)
+    if (m_showCfg.custom & ParseColumnFlags::FrmDelta)
         m_table->showColumn(SearchListModel::COL_IDX_CUST_FRM_DELTA);
     else
         m_table->hideColumn(SearchListModel::COL_IDX_CUST_FRM_DELTA);
 
     // any non-default columns shown -> display header
-    if (m_showLineDelta || m_showLineIdx || (m_showCustom != ParseColumns(0)))
+    if (m_showCfg.lineDelta || m_showCfg.lineIdx || (m_showCfg.custom != ParseColumns(0)))
         m_table->horizontalHeader()->setVisible(true);
     else
         m_table->horizontalHeader()->setVisible(false);
@@ -1534,36 +1653,36 @@ void SearchList::configureColumnVisibility()
 
 void SearchList::cmdToggleSearchHighlight(bool checked)
 {
-    m_showSrchHall = checked;
-    m_model->showSearchHall(m_showSrchHall);
+    m_showCfg.srchHall = checked;
+    m_model->showSearchHall(m_showCfg.srchHall);
     m_model->forceRedraw(SearchListModel::COL_IDX_TXT);
 }
 
 void SearchList::cmdToggleBookmarkMarkup(bool checked)
 {
-    m_showBookmarkMarkup = checked;
-    m_model->showBookmarkMarkup(m_showBookmarkMarkup);
+    m_showCfg.bookmarkMarkup = checked;
+    m_model->showBookmarkMarkup(m_showCfg.bookmarkMarkup);
     m_model->forceRedraw(SearchListModel::COL_IDX_BOOK);
 }
 
 void SearchList::cmdToggleShowLineNumber(bool checked)
 {
-    m_showLineIdx = checked;
+    m_showCfg.lineIdx = checked;
     configureColumnVisibility();
 }
 
 void SearchList::cmdToggleShowLineDelta(bool checked)
 {
-    m_showLineDelta = checked;
+    m_showCfg.lineDelta = checked;
     configureColumnVisibility();
 }
 
 void SearchList::cmdToggleShowCustom(ParseColumnFlags col, bool checked)
 {
     if (checked)
-        m_showCustom |= col;
+        m_showCfg.custom |= col;
     else
-        m_showCustom ^= (m_showCustom & col);
+        m_showCfg.custom ^= (m_showCfg.custom & col);
 
     configureColumnVisibility();
 }
@@ -1577,7 +1696,7 @@ void SearchList::cmdSetLineIdxRoot(bool)
         m_model->setLineDeltaRoot(line);
 
         // auto-enable the column if not shown yet
-        if (m_showLineDelta == false)
+        if (m_showCfg.lineDelta == false)
             m_actShowLineDelta->activate(QAction::Trigger);
     }
     else
@@ -1597,7 +1716,7 @@ void SearchList::cmdSetCustomColRoot(ParseColumnFlags col)
         if (m_model->setCustomDeltaRoot(tblCol, line))
         {
             // auto-enable the column if not shown yet
-            if ((m_showCustom & col) == 0)
+            if ((m_showCfg.custom & col) == 0)
             {
                 if (col == ParseColumnFlags::ValDelta)
                     m_actShowCustomValDelta->activate(QAction::Trigger);
@@ -1624,18 +1743,18 @@ void SearchList::cmdSetDeltaColRoot(bool)
     bool done = false;
 
     // auto-enable line index if no delta column is configured
-    if (m_showLineDelta || (m_model->getCustomColumns() == ParseColumns(0)))
+    if (m_showCfg.lineDelta || (m_model->getCustomColumns() == ParseColumns(0)))
     {
         cmdSetLineIdxRoot(true);   // dummy parameter
         done = true;
     }
 
-    if (m_showCustom & ParseColumnFlags::ValDelta)
+    if (m_showCfg.custom & ParseColumnFlags::ValDelta)
     {
         cmdSetCustomColRoot(ParseColumnFlags::ValDelta);
         done = true;
     }
-    if (m_showCustom & ParseColumnFlags::FrmDelta)
+    if (m_showCfg.custom & ParseColumnFlags::FrmDelta)
     {
         cmdSetCustomColRoot(ParseColumnFlags::FrmDelta);
         done = true;
@@ -1975,7 +2094,7 @@ void SearchList::startSearchAll(const std::vector<SearchPar>& pat_list, bool do_
         int textPos = ((direction == 0) ? 0 : s_mainText->textCursor().position());
 
         // reset redo list
-        m_undo->prepareBgChange(true, do_add);
+        m_undo->prepareBgChange(do_add);
 
         tid_search_list->start([=](){ bgSearchLoop(pat_list, do_add, direction, textPos, 0); });
     }
@@ -2042,7 +2161,7 @@ void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add
             m_model->removeLinePreSorted(idx_list);
         }
 
-        m_undo->appendBgChange(true, do_add, line_list.begin(), line_list.end());
+        m_undo->appendBgChange(do_add, line_list.begin(), line_list.end());
         // select previously selected line again
         seeViewAnchor(anchor);
     }
@@ -2078,11 +2197,11 @@ void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add
     }
     else  // done
     {
-        m_undo->finalizeBgChange(true, do_add);
+        m_undo->finalizeBgChange(do_add);
         pat_idx += 1;
         if (size_t(pat_idx) < pat_list.size())
         {
-            m_undo->prepareBgChange(true, do_add);
+            m_undo->prepareBgChange(do_add);
             int textPos = ((direction == 0) ? 0 : s_mainText->textCursor().position());
 
             tid_search_list->start([=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx); });
@@ -2271,12 +2390,12 @@ void SearchList::copyCurrentLine(bool doAdd)
         int endPos;
         if (c.position() <= c.anchor())
         {
-          endPos = c.anchor();
+            endPos = c.anchor();
         }
         else
         {
-          endPos = c.position();
-          c.setPosition(c.anchor());
+            endPos = c.position();
+            c.setPosition(c.anchor());
         }
         std::vector<int> line_list;
         std::vector<int> idx_list;
@@ -2349,7 +2468,7 @@ void SearchList::signalBookmarkLine(int line)  /*static*/
         // note line parameter may be -1 for "all"
         s_instance->m_model->forceRedraw(SearchListModel::COL_IDX_BOOK, line);
 
-        // actually needed only if (m_showBookmarkMarkup)
+        // actually needed only if (m_showCfg.bookmarkMarkup)
         s_instance->m_model->forceRedraw(SearchListModel::COL_IDX_TXT, line);
     }
 }
@@ -2366,7 +2485,7 @@ void SearchList::signalHighlightLine(int line)  /*static*/
 {
     if (s_instance != nullptr)
     {
-        // not checking "m_showSrchHall" - call will have no effect
+        // not checking "m_showCfg.srchHall" - call will have no effect
         s_instance->m_model->forceRedraw(SearchListModel::COL_IDX_TXT, line);
     }
 }
@@ -2391,10 +2510,10 @@ void SearchList::signalHighlightReconfigured()  /*static*/
 void SearchList::matchViewInt(int line, int idx)
 {
     if (idx < 0)
-      idx = m_model->getLineIdx(line);
+        idx = m_model->getLineIdx(line);
 
     if ((idx >= m_model->lineCount()) && (m_model->lineCount() > 0))
-      idx -= 1;
+        idx -= 1;
     if (idx < m_model->lineCount())
     {
         QModelIndex midx = m_model->index(idx, 0);
@@ -2438,7 +2557,7 @@ void SearchList::selectionChanged(const QItemSelection& /*selected*/, const QIte
     {
         if (m_ignoreSelCb == sel.front().row())
         {
-            // FIXME WA for ignoring callback triggered by matchViewInt()
+            // WA for ignoring callback triggered by matchViewInt()
         }
         else
         {
@@ -2446,6 +2565,7 @@ void SearchList::selectionChanged(const QItemSelection& /*selected*/, const QIte
             if (line >= 0)
             {
                 s_search->highlightFixedLine(line);
+                DlgBookmarks::matchView(line);
             }
         }
     }
@@ -2454,8 +2574,9 @@ void SearchList::selectionChanged(const QItemSelection& /*selected*/, const QIte
 
 
 /**
- * This function must be called when portions of the text in the main window
- * have been deleted to update references to text lines. Parameter meaning:
+ * This function is called via the static external interface for active
+ * instances when portions of the text in the main window have been deleted to
+ * update references to text lines. Parameter meaning:
  *
  * @param top_l     First line which is NOT deleted, or 0 to delete nothing at top
  * @param bottom_l  This line and all below are removed, or -1 if none
@@ -2466,10 +2587,13 @@ void SearchList::adjustLineNumsInt(int top_l, int bottom_l)
 
     m_model->adjustLineNums(top_l, bottom_l);
     m_undo->adjustLineNums(top_l, bottom_l);
-
-    m_table->setDocLineCount(s_mainText->document()->lineCount());
 }
 
+
+/**
+ * This static external interface notifies about removal of text from the main
+ * text document. The call is forwarded to active instances of the class.
+ */
 void SearchList::adjustLineNums(int top_l, int bottom_l)  /*static*/
 {
     if (s_instance != nullptr)
@@ -2735,6 +2859,13 @@ void SearchList::cmdDisplayStats()
     m_stline->showPlain("file", msg);
 }
 
+
+/**
+ * This slot is connected to the column configuration menu entry and opens the
+ * external configuration dialog. The dialog is non-modal, so the function
+ * returns immediately. When the user closes the dialog, a signal is raised
+ * that is connected to the following slot for processing the changes.
+ */
 void SearchList::cmdOpenParserConfig(bool)
 {
     if (m_dlgParser == nullptr)
@@ -2749,6 +2880,12 @@ void SearchList::cmdOpenParserConfig(bool)
     }
 }
 
+/**
+ * This slot is connected to the completion signal sent by the column
+ * configuration dialog when closed. If the "changed" parameter is TRUE, the
+ * function stores and applies the new configuraiton. In any case the dialog
+ * object is deleted.
+ */
 void SearchList::signalDlgParserClosed(bool changed)
 {
     if (m_dlgParser != nullptr)
@@ -2761,8 +2898,11 @@ void SearchList::signalDlgParserClosed(bool changed)
             m_model->setCustomColCfg(s_parseSpec);
 
             // hide columns that are no longer enabled in configuration
-            m_showCustom &= m_model->getCustomColumns();
+            m_showCfg.custom &= m_model->getCustomColumns();
             configureColumnVisibility();
+
+            // update static copy as parser config is static
+            s_prevShowCfg = m_showCfg;
 
             // set visbility & text of menu entries related to custom columns
             configureCustomMenuActions();
@@ -2780,13 +2920,14 @@ SearchList  * SearchList::s_instance = nullptr;
 QByteArray    SearchList::s_winGeometry;
 QByteArray    SearchList::s_winState;
 QString       SearchList::s_prevFileName(".");
+ParseSpec     SearchList::s_parseSpec;
+SearchList::SearchListShowCfg SearchList::s_prevShowCfg;
 
 Highlighter * SearchList::s_higl;
 MainSearch  * SearchList::s_search;
 MainWin     * SearchList::s_mainWin;
 MainText    * SearchList::s_mainText;
 Bookmarks   * SearchList::s_bookmarks;
-ParseSpec     SearchList::s_parseSpec;
 
 /**
  * This function is called when writing the config file to retrieve persistent
@@ -2801,12 +2942,22 @@ QJsonObject SearchList::getRcValues()  /*static*/
 
     if (s_instance)
     {
-      s_winGeometry = s_instance->saveGeometry();
-      s_winState = s_instance->saveState();
+        s_winGeometry = s_instance->saveGeometry();
+        s_winState = s_instance->saveState();
+        s_prevShowCfg = s_instance->m_showCfg;
     }
 
     obj.insert("win_geom", QJsonValue(QString(s_winGeometry.toHex())));
     obj.insert("win_state", QJsonValue(QString(s_winState.toHex())));
+
+    obj.insert("show_search_highlight", QJsonValue(s_prevShowCfg.srchHall));
+    obj.insert("show_bookmark_markup", QJsonValue(s_prevShowCfg.bookmarkMarkup));
+    obj.insert("show_col_line_idx", QJsonValue(s_prevShowCfg.lineIdx));
+    obj.insert("show_col_line_idx_delta", QJsonValue(s_prevShowCfg.lineDelta));
+    obj.insert("show_col_custom_val", QJsonValue((s_prevShowCfg.custom & ParseColumnFlags::Val) != 0));
+    obj.insert("show_col_custom_val_delta", QJsonValue((s_prevShowCfg.custom & ParseColumnFlags::ValDelta) != 0));
+    obj.insert("show_col_custom_frame", QJsonValue((s_prevShowCfg.custom & ParseColumnFlags::Frm) != 0));
+    obj.insert("show_col_custom_frame_delta", QJsonValue((s_prevShowCfg.custom & ParseColumnFlags::FrmDelta) != 0));
 
     obj.insert("custom_column_cfg", s_parseSpec.getRcValues());
 
@@ -2832,6 +2983,42 @@ void SearchList::setRcValues(const QJsonValue& val)  /*static*/
         else if (var == "win_state")
         {
             s_winState = QByteArray::fromHex(val.toString().toLatin1());
+        }
+        else if (var == "show_search_highlight")
+        {
+            s_prevShowCfg.srchHall = val.toBool();
+        }
+        else if (var == "show_bookmark_markup")
+        {
+            s_prevShowCfg.bookmarkMarkup = val.toBool();
+        }
+        else if (var == "show_col_line_idx")
+        {
+            s_prevShowCfg.lineIdx = val.toBool();
+        }
+        else if (var == "show_col_line_idx_delta")
+        {
+            s_prevShowCfg.lineDelta = val.toBool();
+        }
+        else if (var == "show_col_custom_val")
+        {
+            if (val.toBool())
+                s_prevShowCfg.custom |= ParseColumnFlags::Val;
+        }
+        else if (var == "show_col_custom_val_delta")
+        {
+            if (val.toBool())
+                s_prevShowCfg.custom |= ParseColumnFlags::ValDelta;
+        }
+        else if (var == "show_col_custom_frame")
+        {
+            if (val.toBool())
+                s_prevShowCfg.custom |= ParseColumnFlags::Frm;
+        }
+        else if (var == "show_col_custom_frame_delta")
+        {
+            if (val.toBool())
+                s_prevShowCfg.custom |= ParseColumnFlags::FrmDelta;
         }
         else if (var == "custom_column_cfg")
         {

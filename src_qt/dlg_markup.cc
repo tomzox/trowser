@@ -291,7 +291,7 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
         m_fontSizeBox->setValue(m_fmtSpec.m_sizeOff);
         m_fontSizeBox->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
         connect(m_fontSizeBox, QOverload<int>::of(&QSpinBox::valueChanged),
-                this, &DlgMarkup::cmdSetFontSizeOff);
+                this, &DlgMarkup::cmdSetFontSizeOffset);
         layout_fopt->addWidget(m_fontSizeBox, 0, 3);
 
     //
@@ -333,6 +333,10 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
     this->show();
 }
 
+
+/**
+ * Destructor: Freeing resources not automatically deleted via widget tree
+ */
 DlgMarkup::~DlgMarkup()
 {
     delete m_brushStyleModel;
@@ -353,6 +357,19 @@ void DlgMarkup::mainFontChanged()
     drawTextSample();
 }
 
+
+/**
+ * This external interface is called by the dialog owner after applying the
+ * current configuration. The function sets the current state as "original" for
+ * future checks for modification. The function also disables the "Apply"
+ * button, which is enabled only after modifications.
+ */
+void DlgMarkup::resetModified()
+{
+    m_fmtSpecOrig = m_fmtSpec;
+    m_isModified = false;
+    m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(m_isModified);
+}
 
 /**
  * This function is bound to destruction of the dialog window. The event is
@@ -378,8 +395,7 @@ void DlgMarkup::closeEvent(QCloseEvent * event)
 
 
 /**
- * This function is bound to each of the main command buttons: Ok, Apply,
- * Cancel.
+ * This slot is bound to each of the main command buttons: Ok, Apply, Cancel.
  */
 void DlgMarkup::cmdButton(QAbstractButton * button)
 {
@@ -400,13 +416,11 @@ void DlgMarkup::cmdButton(QAbstractButton * button)
     }
 }
 
-void DlgMarkup::resetModified()
-{
-    m_fmtSpecOrig = m_fmtSpec;
-    m_isModified = false;
-    m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(m_isModified);
-}
-
+/**
+ * This function is bound to state-change signals of the font options buttons.
+ * The function assignes the new value to the configuration struct and updates
+ * the text sample display.
+ */
 void DlgMarkup::cmdSetFontOption(bool *option, bool value)
 {
     *option = value;
@@ -417,7 +431,11 @@ void DlgMarkup::cmdSetFontOption(bool *option, bool value)
     drawTextSample();
 }
 
-void DlgMarkup::cmdSetFontSizeOff(int value)
+/**
+ * This slot is called when the font size offset value is changed. The function
+ * stores the new value and updates the text sample in the new mark-up format.
+ */
+void DlgMarkup::cmdSetFontSizeOffset(int value)
 {
     m_fmtSpec.m_sizeOff = value;
 
@@ -427,6 +445,13 @@ void DlgMarkup::cmdSetFontSizeOff(int value)
     drawTextSample();
 }
 
+
+/**
+ * This slot is called when the specific font selection is reset to default.
+ * The function clears the font in configuration, updates label on the font
+ * selection drop-down buttion, and updates the text sample in the new mark-up
+ * format.
+ */
 void DlgMarkup::cmdResetFont()
 {
     m_fmtSpec.m_font.clear();
@@ -439,6 +464,14 @@ void DlgMarkup::cmdResetFont()
     setFontButtonState();
 }
 
+
+/**
+ * This slot is connected to the font selection entry in the font drop-down
+ * menu.  The function opens the modal font selection dialog. When the user has
+ * selected a font, the function assignes the value to the configuration,
+ * updates label on the font selection drop-down buttion, and updates the text
+ * sample in the new mark-up format.
+ */
 void DlgMarkup::cmdSelectFont()
 {
     QFont font;
@@ -462,6 +495,12 @@ void DlgMarkup::cmdSelectFont()
     }
 }
 
+
+/**
+ * This slot is called when a color value is reset to default. The function
+ * stores the new value, updates icons on drop-down buttions, and updates the
+ * text sample in the new mark-up format.
+ */
 void DlgMarkup::cmdResetColor(QRgb * col)
 {
     *col = HiglFmtSpec::INVALID_COLOR;
@@ -473,6 +512,11 @@ void DlgMarkup::cmdResetColor(QRgb * col)
     drawButtonPixmaps();
 }
 
+/**
+ * This slot is called when a color value is changed. The function stores the
+ * new value, updates icons on drop-down buttions, and updates the text sample
+ * in the new mark-up format.
+ */
 void DlgMarkup::cmdSelectColor(QRgb * col, const QString& desc)
 {
     auto newCol = QColorDialog::getColor(QColor(*col), this, desc + " color selection");
@@ -488,6 +532,11 @@ void DlgMarkup::cmdSelectColor(QRgb * col, const QString& desc)
     }
 }
 
+/**
+ * This slot is called when a pattern style value is changed. The function
+ * stores the new value, updates icons on drop-down buttions, and updates the
+ * text sample in the new mark-up format.
+ */
 void DlgMarkup::cmdSelectStyle(Qt::BrushStyle * style, int idx)
 {
     if (size_t(idx) < s_brushStyleCnt)
@@ -501,6 +550,11 @@ void DlgMarkup::cmdSelectStyle(Qt::BrushStyle * style, int idx)
     }
 }
 
+/**
+ * This helper function updates the text of the drop-down button for font
+ * changes to reflect the current font selection, or "default" if no specific
+ * font is selected.
+ */
 void DlgMarkup::drawFontButtonText()
 {
     if (!m_fmtSpec.m_font.isEmpty())
@@ -512,6 +566,11 @@ void DlgMarkup::drawFontButtonText()
         m_curFontBut->setText("[default]");
 }
 
+/**
+ * This helper function updates the sample text with the current mark-up
+ * format.  The format is determined by the Highlighter class which is also
+ * used in the main window.
+ */
 void DlgMarkup::drawTextSample()
 {
     QTextCharFormat charFmt;
@@ -523,6 +582,10 @@ void DlgMarkup::drawTextSample()
     c.setCharFormat(charFmt);
 }
 
+/**
+ * This helper function updates the icons on all the color selection drop-down
+ * buttons to reflect the respective current color selection.
+ */
 void DlgMarkup::drawButtonPixmaps()
 {
     QPixmap pix(16, 16);
@@ -532,6 +595,10 @@ void DlgMarkup::drawButtonPixmaps()
     drawButtonPixmap(m_olColBut, m_fmtSpec.m_olCol, Qt::NoBrush, pix);
 }
 
+/**
+ * This helper function updates the icons on the pattern style selection
+ * drop-down buttons to reflect the respective current style selection.
+ */
 void DlgMarkup::drawButtonPixmap(QPushButton *but, QRgb col, Qt::BrushStyle style, QPixmap& pix)
 {
     QPainter pt(&pix);
@@ -556,6 +623,11 @@ void DlgMarkup::drawButtonPixmap(QPushButton *but, QRgb col, Qt::BrushStyle styl
     }
 }
 
+/**
+ * This helper function enables or disables the font option checkbuttons: If a
+ * specific font is selected, the get disabled as they are redundant.  Else
+ * they are enabled.
+ */
 void DlgMarkup::setFontButtonState()
 {
     bool ena = m_fmtSpec.m_font.isEmpty();

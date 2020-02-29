@@ -45,6 +45,7 @@
 #include "bg_task.h"
 #include "text_block_find.h"
 #include "dlg_history.h"
+#include "dlg_bookmarks.h"
 
 // ----------------------------------------------------------------------------
 
@@ -472,6 +473,7 @@ void MainSearch::searchHandleMatch(QTextCursor& match, const SearchPar& par, boo
         int line = match.block().blockNumber();
         SearchList::signalHighlightLine(line);
         SearchList::matchView(line);
+        DlgBookmarks::matchView(line);
     }
 
     if (tlb_hall)

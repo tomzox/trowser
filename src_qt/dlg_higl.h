@@ -54,7 +54,7 @@ private:
     DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin);
     DlgHigl(const DlgHigl&) = delete;
     DlgHigl& operator=(const DlgHigl&) = delete;
-    ~DlgHigl();
+    virtual ~DlgHigl();
 
     virtual void closeEvent(QCloseEvent *) override;
     void mainFontChanged();
