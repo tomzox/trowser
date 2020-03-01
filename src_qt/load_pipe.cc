@@ -278,6 +278,7 @@ LoadPipe::LoadPipe(MainWin * mainWin, MainText * mainText, LoadMode loadMode, si
  */
 LoadPipe::~LoadPipe()
 {
+    m_workerObj->disconnect(this);
     m_workerThread->quit();
     //m_workerObj gets deleted via QThread "finished" signal
     //m_workerThread gets deleted by destructor of m_workerObj
@@ -372,8 +373,10 @@ void LoadPipe::createDialog()
                                         Qt::Horizontal, this);
     m_butStop = cmdButs->button(QDialogButtonBox::Cancel);
     m_butOk = cmdButs->button(QDialogButtonBox::Ok);
+        m_butStop->setToolTip("<P>Abort loading and close the dialog, then load the already buffered text into the main window.</P>");
         m_butStop->setText("Stop");
         m_butOk->setEnabled(false);
+        m_butOk->setToolTip("<P>Close this dialog and load the buffered text into the main window.</P>");
         connect(m_butStop, &QPushButton::clicked, this, &LoadPipe::cmdStop);
         connect(m_butOk, &QPushButton::clicked, this, &LoadPipe::cmdOk);
         layout_grid->addWidget(cmdButs, ++row, 0, 1, 3);
@@ -571,19 +574,19 @@ void LoadPipe::limitData(bool exact)
         ssize_t rest = m_readBuffered - m_bufSize;
 
         // unhook complete data buffers from the queue
-        while ((rest > 0) && !m_dataBuf.empty() && (m_dataBuf[0].size() <= rest))
+        while ((rest > 0) && !m_dataBuf.empty() && (rest >= m_dataBuf.front().size()))
         {
-            size_t buflen = m_dataBuf[0].size();
+            size_t buflen = m_dataBuf.front().size();
             rest -= buflen;
             m_readBuffered -= buflen;
-            m_dataBuf.erase(m_dataBuf.begin());
+            m_dataBuf.pop_front();
         }
 
         // truncate the oldest data buffer in the queue to reach exact limit;
         // for performance reasons this is only done after end of loading
         if (exact && (rest > 0) && !m_dataBuf.empty())
         {
-            m_dataBuf[0].remove(0, rest);
+            m_dataBuf.front().remove(0, rest);
             m_readBuffered -= rest;
         }
     }
@@ -601,25 +604,26 @@ void LoadPipe::getLoadedData(std::vector<QByteArray>& resultBuf)
     // finalize trimming data for tail mode
     // done only now as data may still arrive from worker before reaching here
     limitData(true);
+    resultBuf.reserve(m_dataBuf.size());
 
-    // unhook complete data buffers from the queue
-    while ((rest > 0) && !m_dataBuf.empty() && (m_dataBuf[0].size() <= rest))
+    // move complete data buffers from the queue into the result vector
+    while ((rest > 0) && !m_dataBuf.empty() && (rest >= m_dataBuf.front().size()))
     {
-        size_t buflen = m_dataBuf[0].size();
+        size_t buflen = m_dataBuf.front().size();
         rest -= buflen;
         m_readBuffered -= buflen;
 
-        resultBuf.push_back(m_dataBuf.front());
-        m_dataBuf.erase(m_dataBuf.begin());
+        resultBuf.push_back(std::move(m_dataBuf.front()));
+        m_dataBuf.pop_front();
     }
 
     // partial copy of the last data buffer in the queue (only if exact limit is requested)
     if ((rest > 0) && !m_dataBuf.empty())  // implies size() > rest
     {
-        QByteArray part(m_dataBuf[0]);
-        part.remove(rest, m_dataBuf[0].size() - rest);
+        QByteArray part(m_dataBuf.front());
+        part.remove(rest, m_dataBuf.front().size() - rest);
 
-        m_dataBuf[0].remove(0, rest);
+        m_dataBuf.front().remove(0, rest);
         m_readBuffered -= rest;
     }
 }

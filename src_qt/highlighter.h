@@ -117,6 +117,7 @@ private:
     void redraw(QTextDocument * doc, int line);
     void clearAll(QTextDocument * doc);
 
+    void initPattern(HiglId id, const HiglFmtSpec& fmtSpec);
     void addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec);
     void highlightInitBg(HiglId id, int startPos);
     int  highlightLines(HiglId id, int startPos);

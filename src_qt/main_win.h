@@ -19,15 +19,11 @@
 #define _MAIN_WIN_H
 
 #include <QMainWindow>
-
-#include <functional>
+#include <QJsonObject>
 
 class QApplication;
 class QStyle;
-class QMenu;
-class QLabel;
 class QTimer;
-class QJsonObject;
 
 class MainText;
 class MainSearch;
@@ -61,8 +57,7 @@ public:
     void updateRcAfterIdle();
     void menuCmdDisplayLineNo();
     void keyCmdZoomFontSize(bool zoomIn);
-    void LoadFile(const QString& fileName);
-    void LoadFromPipe();
+    void startLoading(const char * fileName);
 
 signals:
     void textFontChanged();
@@ -70,23 +65,23 @@ signals:
 
 private:
     void closeEvent(QCloseEvent *event);
-    void menuCmdDiscard(bool is_fwd);
     void discardContent();
     void populateMenus();
     void menuCmdReload(bool checked);
     void menuCmdFileOpen(bool checked);
     void menuCmdFileQuit(bool checked);
+    void menuCmdDiscard(bool is_fwd);
     void menuCmdSelectFont(bool checked);
     void menuCmdToggleLineWrap(bool checked);
     void menuCmdGotoLine(bool checked);
     void menuCmdBookmarkDeleteAll(bool checked);
     void menuCmdAbout(bool checked);
+    void loadFromFile(const QString& fileName);
+    void loadFromPipe();
     void loadPipeDone();
 
 private:
     QApplication* const m_mainApp;
-
-    QAction     * m_actFileReload = nullptr;
 
     MainText    * m_f1_t = nullptr;
     StatusLine  * m_stline = nullptr;
@@ -94,9 +89,13 @@ private:
     Highlighter * m_higl = nullptr;
     Bookmarks   * m_bookmarks = nullptr;
     LoadPipe    * m_loadPipe = nullptr;
+    QAction     * m_actFileReload = nullptr;
 
     QTimer      * m_timUpdateRc = nullptr;
     qint64        m_tsUpdateRc = 0;
+    bool          m_rcFileWriteError = false;
+    bool          m_rcFileBackedup = false;
+    QJsonObject   m_prevRcContent;
     QFont         m_fontContent;
     QString       m_curFileName;
 };

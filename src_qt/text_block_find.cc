@@ -34,6 +34,7 @@
 MainTextFind::MainTextFind(const QTextDocument* doc, int startPos, bool isFwd)
     : m_isFwd(isFwd)
     , m_blk(doc->findBlock(startPos))
+    , m_startOff(startPos - m_blk.position())
 {
 }
 
@@ -77,7 +78,7 @@ bool MainTextFindRegExp::findNext(int& matchPos, int& matchLen, QTextBlock *matc
         {
             QRegularExpressionMatch mat;
             QString text = m_blk.text();
-            int idx = text.indexOf(m_expr, 0, &mat);
+            int idx = text.indexOf(m_expr, m_startOff, &mat);
             if (idx >= 0)
             {
                 matchPos = m_blk.position() + idx;
@@ -90,6 +91,7 @@ bool MainTextFindRegExp::findNext(int& matchPos, int& matchLen, QTextBlock *matc
                 return true;
             }
             m_blk = m_blk.next();
+            m_startOff = 0;
         }
     }
     else  /* !isFwd */
@@ -98,7 +100,7 @@ bool MainTextFindRegExp::findNext(int& matchPos, int& matchLen, QTextBlock *matc
         {
             QRegularExpressionMatch mat;
             QString text = m_blk.text();
-            int idx = text.lastIndexOf(m_expr, -1, &mat);
+            int idx = text.lastIndexOf(m_expr, m_startOff, &mat);
             if (idx >= 0)
             {
                 matchPos = m_blk.position() + idx;
@@ -111,6 +113,7 @@ bool MainTextFindRegExp::findNext(int& matchPos, int& matchLen, QTextBlock *matc
                 return true;
             }
             m_blk = m_blk.previous();
+            m_startOff = -1;
         }
     }
     return false;
@@ -153,7 +156,7 @@ bool MainTextFindSubStr::findNext(int& matchPos, int& matchLen, QTextBlock *matc
         while (m_blk.isValid() && --cnt)
         {
             QString text = m_blk.text();
-            int idx = text.indexOf(m_subStr, 0, m_cmpFlags);
+            int idx = text.indexOf(m_subStr, m_startOff, m_cmpFlags);
             if (idx >= 0)
             {
                 matchPos = m_blk.position() + idx;
@@ -164,6 +167,7 @@ bool MainTextFindSubStr::findNext(int& matchPos, int& matchLen, QTextBlock *matc
                 return true;
             }
             m_blk = m_blk.next();
+            m_startOff = 0;
         }
     }
     else  /* !isFwd */
@@ -171,7 +175,7 @@ bool MainTextFindSubStr::findNext(int& matchPos, int& matchLen, QTextBlock *matc
         while (m_blk.isValid() && --cnt)
         {
             QString text = m_blk.text();
-            int idx = text.lastIndexOf(m_subStr, -1, m_cmpFlags);
+            int idx = text.lastIndexOf(m_subStr, m_startOff, m_cmpFlags);
             if (idx >= 0)
             {
                 matchPos = m_blk.position() + idx;
@@ -182,6 +186,7 @@ bool MainTextFindSubStr::findNext(int& matchPos, int& matchLen, QTextBlock *matc
                 return true;
             }
             m_blk = m_blk.previous();
+            m_startOff = -1;
         }
     }
     return false;

@@ -56,6 +56,14 @@
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This class implements the "model" associated with the search history "view".
+ * The model is a state-less wrapper around the external history list. This
+ * means data queries are simply forwarded. Modifications of the underlying
+ * list via the model are not supported. Instead, when the list is changed
+ * externally, the view receives a signal and has the model to emit a
+ * dataChanged() signal for forcing a complete redraw.
+ */
 class DlgHistoryModel : public QAbstractItemModel
 {
 public:
@@ -175,6 +183,10 @@ void DlgHistoryModel::forceRedraw()
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This helper class overloads the standard QTableView class to allow adding
+ * key bindings.
+ */
 class DlgHistoryView : public QTableView
 {
 public:

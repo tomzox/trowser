@@ -2,13 +2,11 @@
 - clearing search highlight in large documents blocks GUI for too long
 - search_list: performance optimization line list used by SearchListModel
 - search_list: tip message when enabling delta via menu: "select root line"
-- RC file often ends up empty after crash; also RC update missing error handling
-- default size of main window and search list are too small
+- avoid blocking main window while loading large file into widget - if possible?
 
-- add tool-tips
+- add more documentation
+- add more tool-tips
 - add help (e.g. load HTML manual page into QTextEdit)
-- command line options --head/--tail not used yet (i.e. no size limit yet)
-- loading files in the background / at least after main window is open
 - main text: xview scrolling; yoff position with offset et.al.
 - main text: number prefix on key commands
 
@@ -17,7 +15,7 @@ clean-up:
 - use signals instead of hard-wired callbacks to dialogs (static interfaces)
 - main_win: split RC file into separate class (?)
 - main_search: split search history into separate class (?)
-- undo/redo in separate class (?)
+- move undo/redo & bg tasks in umbrella class of search list view (?)
 - split off duplicated "find" toolbar code into separate class
 - limit access to MainText QPlainText base class interface
 

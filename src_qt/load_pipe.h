@@ -26,6 +26,7 @@
 #include <QTimer>
 
 #include <vector>
+#include <deque>
 
 #include "main_win.h"
 
@@ -85,6 +86,7 @@ public:
     void continueReading();
     bool isEof() const { return m_isEof; }
     size_t getLoadBufferSize() const { return m_bufSize; }
+    LoadMode getLoadMode() const { return m_loadMode; }
     void getLoadedData(std::vector<QByteArray>& resultBuf);
 
 private:
@@ -121,7 +123,7 @@ private:
     LoadPipeWorker    * m_workerObj = nullptr;
     bool                m_workerActive = false;
 
-    std::vector<QByteArray> m_dataBuf;
+    std::deque<QByteArray> m_dataBuf;
     LoadMode            m_loadMode;
     size_t              m_bufSize;
     size_t              m_readTotal = 0;

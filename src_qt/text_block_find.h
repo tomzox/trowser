@@ -44,6 +44,7 @@ protected:
     static const unsigned MAX_ITERATIONS = 50000;  // in unit of blocks
     const bool m_isFwd;
     QTextBlock m_blk;
+    int m_startOff;
 };
 
 #endif /* _TEXT_BLOCK_FIND_H */

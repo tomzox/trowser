@@ -33,6 +33,7 @@
 
 #include <QWidget>
 #include <QApplication>
+#include <QDesktopWidget>
 #include <QTableView>
 #include <QAbstractItemModel>
 #include <QItemSelection>
@@ -355,10 +356,17 @@ DlgBookmarks::DlgBookmarks()
         connect(act, &QAction::triggered, this, &DlgBookmarks::cmdClose);
         central_wid->addAction(act);
 
-    if (!s_winGeometry.isEmpty())
+    if (!s_winGeometry.isEmpty() && !s_winState.isEmpty())
+    {
         this->restoreGeometry(s_winGeometry);
-    if (!s_winState.isEmpty())
         this->restoreState(s_winState);
+    }
+    else
+    {
+        // set reasonable default size when starting without RC file
+        QDesktopWidget dw;
+        this->resize(dw.width()*0.75, dw.height()*0.33);
+    }
 
     m_table->setFocus(Qt::ShortcutFocusReason);
     this->show();

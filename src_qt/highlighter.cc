@@ -389,7 +389,26 @@ void Highlighter::configFmt(QTextCharFormat& fmt, const HiglFmtSpec& fmtSpec)
     }
 }
 
-// push a new pattern/highlight definition to the end of the pattern list
+
+/**
+ * This helper function inializes the text format of a pre-existing pattern
+ * list entry
+ */
+void Highlighter::initPattern(HiglId id, const HiglFmtSpec& fmtSpec)
+{
+    HiglPat& buf = m_patList.at(id);
+
+    buf.m_fmtSpec = fmtSpec;
+
+    buf.m_fmt = QTextCharFormat();
+    configFmt(buf.m_fmt, buf.m_fmtSpec);
+}
+
+
+/**
+ * This helper function pushes a new pattern/highlight definition to the end of
+ * the pattern list.
+ */
 void Highlighter::addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec)
 {
     HiglPat fmt;
@@ -400,6 +419,7 @@ void Highlighter::addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec)
 
     m_patList.push_back(std::move(fmt));
 }
+
 
 QJsonArray Highlighter::getRcValues()
 {
@@ -514,7 +534,7 @@ void Highlighter::setRcValues(const QJsonValue& val)
         }
 
         if (fixedId < HIGL_ID_FIRST_USER_DEF)
-            setFmtSpec(idx, fmtSpec);
+            initPattern(idx, fmtSpec);
         else
             addPattern(srch, fmtSpec);
     }
@@ -620,19 +640,17 @@ void Highlighter::setFmtSpec(HiglId id, const HiglFmtSpec& fmtSpec)
 {
     if (id < m_patList.size())
     {
-        HiglPat& buf = m_patList[id];
-
-        buf.m_fmtSpec = fmtSpec;
-        buf.m_fmt = QTextCharFormat();
-        configFmt(buf.m_fmt, buf.m_fmtSpec);
+        initPattern(id, fmtSpec);
 
         redrawHall(m_mainText->document(), id);
+
+        SearchList::signalHighlightReconfigured();
+        DlgBookmarks::signalHighlightReconfigured();
+
+        m_mainWin->updateRcFile();
     }
-
-    SearchList::signalHighlightReconfigured();
-    DlgBookmarks::signalHighlightReconfigured();
-
-    m_mainWin->updateRcFile();
+    else
+        qCritical("invalid pattern ID: %d", id);
 }
 
 
@@ -868,8 +886,8 @@ void Highlighter::highlightYviewRedirect()
 
         highlightYviewCallback(0);
 
-        // TODO/FIXME does not work when scrolling via keyboard control
-        //  possible solution: override MainText::paintEvent()
+        // Note following does not work when scrolling via keyboard control
+        // hence we additionally use polling of Y-view offset in the background tasks
         connect(m_mainText->verticalScrollBar(), &QAbstractSlider::valueChanged, this, &Highlighter::highlightYviewCallback);
         m_yViewRedirected = true;
     }
@@ -927,7 +945,11 @@ void Highlighter::searchHighlightUpdate(const SearchPar& par, bool onlyVisible)
         m_patList[HIGL_ID_SEARCH].m_srch = par;
         m_hallPatComplete = false;
 
-        if (!onlyVisible)
+        if (onlyVisible)
+        {
+            highlightVisible(HIGL_ID_SEARCH);
+        }
+        else
         {
             // display "busy" cursor until highlighting is finished
             m_mainText->viewport()->setCursor(Qt::BusyCursor);
@@ -935,11 +957,11 @@ void Highlighter::searchHighlightUpdate(const SearchPar& par, bool onlyVisible)
             // implicitly kill background highlight process for obsolete pattern
             // start highlighting in the background
             tid_search_hall->start([=](){ searchHighlightAll(HIGL_ID_SEARCH, 0); });
-        }
 
-        // immediately apply highlighting in the visible area (this is quick)
-        // and install a callback to redo visible area when the user scrolls
-        highlightYviewRedirect();
+            // immediately apply highlighting in the visible area (this is quick)
+            // and install a callback to redo visible area when the user scrolls
+            highlightYviewRedirect();
+        }
     }
 }
 

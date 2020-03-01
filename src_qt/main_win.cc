@@ -22,6 +22,7 @@
  */
 
 #include <QApplication>
+#include <QDesktopWidget>
 #include <QWidget>
 #include <QMenu>
 #include <QMenuBar>
@@ -49,6 +50,7 @@
 
 #include <cstdio>
 #include <string>
+#include <unistd.h>
 
 #include "main_win.h"
 #include "main_text.h"
@@ -63,9 +65,15 @@
 #include "dlg_bookmarks.h"
 #include "dlg_markup_sa.h"
 
+// ----------------------------------------------------------------------------
+
 static LoadMode load_file_mode = LoadMode::Head;
 static size_t load_buf_size = 20*1024*1024;
+static bool load_buf_size_opt = false;
 static const char * myrcfile = ".trowserc.qt";
+static const uint32_t rcfile_compat = 0x03000001;
+static const uint32_t rcfile_version = 0x03000001;
+
 static const char * const DEFAULT_FONT_FAM = "DejaVu Sans Mono";
 static const int DEFAULT_FONT_SZ = 9;
 
@@ -112,18 +120,20 @@ MainWin::MainWin(QApplication * app)
         connect(f2_bl, &QPushButton::clicked, [=](){ m_search->searchAll(true, 0); });
         f2->addWidget(f2_bl);
     f2->addSeparator();
-    auto f2_hall = new QCheckBox("Highlight all", f2);
+    auto f2_hall = new QCheckBox("&Highlight all", f2);
         f2_hall->setToolTip("When checked, highlight all lines that contain a match on the search pattern.");
-        // do not add shortcut "ALT-H" here as this would move focus when triggered
-        connect(f2_hall, &QPushButton::clicked, [=](bool v){ m_search->searchOptToggleHall(v); });
+        f2_hall->setFocusPolicy(Qt::TabFocus);
+        connect(f2_hall, &QCheckBox::stateChanged, m_search, &MainSearch::searchOptToggleHall);
         f2->addWidget(f2_hall);
-    auto f2_mcase = new QCheckBox("Match case", f2);
+    auto f2_mcase = new QCheckBox("&Match case", f2);
         f2_mcase->setToolTip("When checked, only match on letters in the case given in the pattern.\nElse ignore case.");
-        connect(f2_mcase, &QPushButton::clicked, [=](bool v){ m_search->searchOptToggleCase(v); });
+        f2_mcase->setFocusPolicy(Qt::TabFocus);
+        connect(f2_mcase, &QCheckBox::stateChanged, m_search, &MainSearch::searchOptToggleCase);
         f2->addWidget(f2_mcase);
-    auto f2_regexp = new QCheckBox("Reg.Exp.", f2);
+    auto f2_regexp = new QCheckBox("Reg.&Exp.", f2);
         f2_regexp->setToolTip("Evaluate the search string as regular expression in Perl syntax");
-        connect(f2_regexp, &QPushButton::clicked, [=](bool v){ m_search->searchOptToggleRegExp(v); });
+        f2_regexp->setFocusPolicy(Qt::TabFocus);
+        connect(f2_regexp, &QCheckBox::stateChanged, m_search, &MainSearch::searchOptToggleRegExp);
         f2->addWidget(f2_regexp);
 
     m_stline = new StatusLine(m_f1_t);
@@ -152,10 +162,6 @@ MainWin::MainWin(QApplication * app)
     act = new QAction(central_wid);  // "search all above"
         act->setShortcut(QKeySequence(Qt::ALT + Qt::SHIFT + Qt::Key_P));
         connect(act, &QAction::triggered, [=](){ m_search->searchAll(false, -1); });
-        central_wid->addAction(act);
-    act = new QAction(central_wid);  // toggle "highlight all" option
-        act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_H));
-        connect(act, &QAction::triggered, [=](){ m_search->searchOptToggleHall(-1); });
         central_wid->addAction(act);
 
     m_f1_t->setFocus(Qt::ShortcutFocusReason);
@@ -506,14 +512,14 @@ void MainWin::menuCmdReload(bool)
     if (m_loadPipe != nullptr)
     {
         discardContent();
-        LoadFromPipe();
+        loadFromPipe();
     }
     else
     {
         if (m_bookmarks->offerSave(this))
         {
             discardContent();
-            LoadFile(m_curFileName);
+            loadFromFile(m_curFileName);
         }
     }
 }
@@ -535,7 +541,7 @@ void MainWin::menuCmdFileOpen(bool)
         if (fileName.isEmpty() == false)
         {
             discardContent();
-            LoadFile(fileName);
+            loadFromFile(fileName);
         }
     }
 }
@@ -568,24 +574,64 @@ void MainWin::closeEvent(QCloseEvent * event)
 
 
 /**
+ * This external interface is called upon start-up to load the given file or
+ * stream into the text widget and display the main window.
+ */
+void MainWin::startLoading(const char * fileName)
+{
+    if (m_prevRcContent.empty())
+    {
+        // set reasonable default size when starting without RC file
+        QDesktopWidget dw;
+        this->resize(dw.width()*0.5, dw.height()*0.75);
+    }
+    this->show();
+
+    if (strcmp(fileName, "-") == 0)
+        loadFromPipe();
+    else
+        loadFromFile(fileName);
+}
+
+/**
  * This function loads a text file (or parts of it) into the text widget.
  */
-void MainWin::LoadFile(const QString& fileName)
+void MainWin::loadFromFile(const QString& fileName)
 {
     QFile fh(fileName);
     if (fh.open(QFile::ReadOnly | QFile::Text))
     {
-        QTextStream in(&fh);
+        if ((load_file_mode == LoadMode::Tail) && (size_t(fh.size()) > load_buf_size))
+            fh.seek(fh.size() - load_buf_size);
 
-        // error handling
-        if (in.status() != QTextStream::Ok)
+        size_t rest = load_buf_size;
+        const size_t CHUNK_SIZE = 64*1024;
+        char * inBuf = new char[CHUNK_SIZE];
+        while (rest > 0)
         {
-            QString msg = QString("Error while reading the file: ") + fh.errorString();
-            QMessageBox::critical(this, "trowser", msg, QMessageBox::Ok);
-            return;
+            qint64 rdSize = fh.read(inBuf, ((rest >= CHUNK_SIZE) ? CHUNK_SIZE : rest));
+            if (rdSize > 0)
+            {
+                m_f1_t->textCursor().movePosition(QTextCursor::End);
+                m_f1_t->insertPlainText(inBuf);
+                rest -= rdSize;
+            }
+            else if (rdSize < 0)
+            {
+                QString msg = QString("Error while reading the file: ") + fh.errorString();
+                QMessageBox::warning(this, "trowser", msg, QMessageBox::Ok);
+                break;
+            }
+            else  // EOF
+                break;
         }
+        delete[] inBuf;
 
-        m_f1_t->setPlainText(in.readAll());
+        // move cursor to start or end of document, depending on head/tail option
+        auto c = m_f1_t->textCursor();
+        c.movePosition((load_file_mode == LoadMode::Head) ? QTextCursor::Start : QTextCursor::End);
+        m_f1_t->setTextCursor(c);
+        m_f1_t->ensureCursorVisible();
 
         // adapt text of the "reload file" menu entry, in case pipe was used previously
         m_actFileReload->setText("Reload current file");
@@ -596,17 +642,14 @@ void MainWin::LoadFile(const QString& fileName)
             m_loadPipe = nullptr;
         }
 
-        setWindowTitle(fileName + " - trowser");
-        m_curFileName = fileName;
-
-        // TODO InitContent
-        // - propagate window title change to search list & bookmark list
-
         m_bookmarks->readFileAuto(this);
 
         // start color highlighting in the background
         m_higl->highlightInit();
 
+        // Propagate document name change to dialog windows
+        setWindowTitle(fileName + " - trowser");
+        m_curFileName = fileName;
         emit documentNameChanged();
     }
     else
@@ -628,12 +671,15 @@ void MainWin::LoadFile(const QString& fileName)
  * loading of that data into the display is triggered by a signal sent by the
  * LoadPipe class (see next function.)
  */
-void MainWin::LoadFromPipe()
+void MainWin::loadFromPipe()
 {
     if (m_loadPipe == nullptr)
     {
         m_loadPipe = new LoadPipe(this, m_f1_t, load_file_mode, load_buf_size);
         connect(m_loadPipe, &LoadPipe::pipeLoaded, this, &MainWin::loadPipeDone);
+
+        if (isatty(0))
+            fprintf(stderr, "trowser warning: input is a terminal - missing input redirection?\n");
     }
     else
         m_loadPipe->continueReading();
@@ -658,6 +704,17 @@ void MainWin::loadPipeDone()
         m_f1_t->insertPlainText(data);
     }
 
+    // store buffer size parameter specified in the dialog in the RC file
+    load_buf_size = m_loadPipe->getLoadBufferSize();
+    load_file_mode = m_loadPipe->getLoadMode();
+    updateRcAfterIdle();
+
+    // move cursor to start or end of document, depending on head/tail option
+    auto c = m_f1_t->textCursor();
+    c.movePosition((load_file_mode == LoadMode::Head) ? QTextCursor::Start : QTextCursor::End);
+    m_f1_t->setTextCursor(c);
+    m_f1_t->ensureCursorVisible();
+
     // finally initiate color highlighting etc.
     //TODO InitContent()
     m_f1_t->viewport()->setCursor(Qt::ArrowCursor);
@@ -666,10 +723,6 @@ void MainWin::loadPipeDone()
     // adapt text of the "reload file" menu entry
     m_actFileReload->setText("Continue loading STDIN...");
     m_actFileReload->setEnabled(!m_loadPipe->isEof());
-
-    // store buffer size parameter specified in the dialog in the RC file
-    load_buf_size = m_loadPipe->getLoadBufferSize();
-    updateRcAfterIdle();
 
     if (m_loadPipe->isEof())
     {
@@ -705,44 +758,59 @@ void MainWin::loadRcFile()
         }
 
         auto doc = QJsonDocument::fromJson(txt.midRef(off).toUtf8(), &err);
-        if (!doc.isNull())
+        if (!doc.isNull() && doc.isObject())
         {
-            if (doc.isObject())
+            QJsonObject obj = doc.object();
+
+            auto rcVersion = obj.find("xx_trowser_version");
+            if (rcVersion != obj.end())
             {
-                QJsonObject obj = doc.object();
-                int load_buf_size_lsb = 0, load_buf_size_msb = 0;
-
-                for (auto it = obj.begin(); it != obj.end(); ++it)
+                if (   (uint32_t(rcVersion->toInt()) >= rcfile_compat)
+                    && (uint32_t(rcVersion->toInt()) <= rcfile_version))
                 {
-                    const QString& var = it.key();
-                    const QJsonValue& val = it.value();
+                    int load_buf_size_lsb = 0, load_buf_size_msb = 0;
 
-                    if (var == "main_search")               m_search->setRcValues(val.toObject());
-                    else if (var == "highlight")            m_higl->setRcValues(val);
-                    else if (var == "font_content")         m_fontContent.fromString(val.toString());
-                    else if (var == "load_buf_size_lsb")    load_buf_size_lsb = val.toInt();
-                    else if (var == "load_buf_size_msb")    load_buf_size_msb = val.toInt();
-                    //else if (var == "rcfile_version")     rcfile_version = val;
-                    //else if (var == "rc_compat_version")  rc_compat_version = val;
-                    //else if (var == "rc_timestamp")       { /* nop */ }
-                    else if (var == "main_win_state")       this->restoreState(QByteArray::fromHex(val.toString().toLatin1()));
-                    else if (var == "main_win_geom")        this->restoreGeometry(QByteArray::fromHex(val.toString().toLatin1()));
-                    else if (var == "search_list")          SearchList::setRcValues(val);
-                    else if (var == "dlg_highlight")        DlgHigl::setRcValues(val);
-                    else if (var == "dlg_history")          DlgHistory::setRcValues(val);
-                    else if (var == "dlg_bookmarks")        DlgBookmarks::setRcValues(val);
-                    else
-                        fprintf(stderr, "trowser: ignoring unknown keyword in rcfile: %s\n", var.toLatin1().data());
+                    for (auto it = obj.begin(); it != obj.end(); ++it)
+                    {
+                        const QString& var = it.key();
+                        const QJsonValue& val = it.value();
+
+                        if (var == "main_search")               m_search->setRcValues(val.toObject());
+                        else if (var == "highlight")            m_higl->setRcValues(val);
+                        else if (var == "font_content")         m_fontContent.fromString(val.toString());
+                        else if (var == "load_buf_size_lsb")    load_buf_size_lsb = val.toInt();
+                        else if (var == "load_buf_size_msb")    load_buf_size_msb = val.toInt();
+                        else if (var == "main_win_state")       this->restoreState(QByteArray::fromHex(val.toString().toLatin1()));
+                        else if (var == "main_win_geom")        this->restoreGeometry(QByteArray::fromHex(val.toString().toLatin1()));
+                        else if (var == "search_list")          SearchList::setRcValues(val);
+                        else if (var == "dlg_highlight")        DlgHigl::setRcValues(val);
+                        else if (var == "dlg_history")          DlgHistory::setRcValues(val);
+                        else if (var == "dlg_bookmarks")        DlgBookmarks::setRcValues(val);
+                        else if (var == "xx_trowser_version")   /*nop*/ ;
+                        else
+                            fprintf(stderr, "trowser: ignoring unknown keyword at top-level in rcfile: %s\n", var.toLatin1().data());
+                    }
+                    m_f1_t->setFont(m_fontContent);
+
+                    // buffer size provided via command line has precedence over the one from RC file
+                    if (!load_buf_size_opt && (load_buf_size_lsb || load_buf_size_msb))
+                        load_buf_size = size_t(load_buf_size_lsb) | (size_t(load_buf_size_msb) << 32);
+
+                    m_prevRcContent = obj;
                 }
-                m_f1_t->setFont(m_fontContent);
-
-                if (load_buf_size_lsb || load_buf_size_msb)
-                    load_buf_size = size_t(load_buf_size_lsb) | (size_t(load_buf_size_msb) << 32);
+                else
+                    fprintf(stderr, "rc file %s has an incompatible version (%X) and cannot be "
+                                    "loaded. Starting with default config.\n", myrcfile, rcVersion->toInt());
             }
+            else
+                fprintf(stderr, "Config file appears truncated: starting with default configuration\n");
         }
         else
         {
-            fprintf(stderr, "Error parsing config file: %s\n", err.errorString().toLatin1().data());
+            if (doc.isNull())
+                fprintf(stderr, "Error parsing config file: %s\n", err.errorString().toLatin1().data());
+            else
+                fprintf(stderr, "Config file in unexpected format\n");
         }
         fh.close();
     }
@@ -758,20 +826,10 @@ void MainWin::loadRcFile()
  */
 void MainWin::updateRcFile()
 {
-    static bool rc_file_error = false;
-
     m_timUpdateRc->stop();
     m_tsUpdateRc = QDateTime::currentSecsSinceEpoch();
 
-    //expr {srand([clock clicks -milliseconds])}
-    //append tmpfile $myrcfile "." [expr {int(rand() * 1000000)}] ".tmp"
-
     QJsonObject obj;
-
-    // dump software version
-    //puts $rcfile [list set rcfile_version $rcfile_version]
-    //puts $rcfile [list set rc_compat_version $rcfile_compat]
-    //puts $rcfile [list set rc_timestamp [clock seconds]]
 
     // dump search history
     obj.insert("main_search", m_search->getRcValues());
@@ -794,67 +852,79 @@ void MainWin::updateRcFile()
     obj.insert("font_content", QJsonValue(m_fontContent.toString()));
 
     // misc (note the head/tail mode is omitted intentionally)
-    obj.insert("load_buf_size_lsb", QJsonValue(int(load_buf_size & 0xFFFFFFU)));
+    obj.insert("load_buf_size_lsb", QJsonValue(int(load_buf_size & 0xFFFFFFFFU)));
     obj.insert("load_buf_size_msb", QJsonValue(int(load_buf_size >> 32)));
 
-    QJsonDocument doc;
-    doc.setObject(obj);
+    // dump software version (use prefix "xx" to keep this entry at the end when sorted)
+    obj.insert("xx_trowser_version", QJsonValue(int(rcfile_version)));
 
-    QFile fh(myrcfile);
-    if (fh.open(QFile::WriteOnly | QFile::Text))
+    if (obj != m_prevRcContent)
     {
-        QTextStream out(&fh);
+        QJsonDocument doc;
+        doc.setObject(obj);
 
-        out << "#\n"
-               "# trowser configuration file\n"
-               "#\n"
-               "# This file is automatically generated - do not edit\n"
-               "# Written at: " << QDateTime::currentDateTime().toString() << "\n"
-               "#\n";
+        QFile fh(myrcfile);
+        QFileDevice::Permissions bakPerm = 0;
 
-        out << doc.toJson();
-
-        fh.close();
-#if 0
-        // copy attributes on the new file
-        if {[catch {set att_perm [file attributes $myrcfile -permissions]}] == 0} {
-            catch {file attributes $tmpfile -permissions $att_perm}
-        }
-        if {[catch {set att_grp [file attributes $myrcfile -group]}] == 0} {
-            catch {file attributes $tmpfile -group $att_grp}
-        }
-        // move the new file over the old one
-        if {[catch {file rename -force $tmpfile $myrcfile} errstr] != 0} {
-            if {![info exists rc_file_error]} {
-                tk_messageBox -type ok -default ok -icon error \
-                              -message "Could not replace rc file $myrcfile: $errstr"
-                set rc_file_error 1
-            }
-        } else {
-            unset -nocomplain rc_file_error
-        }
-
-        //TODO catch write error
+        if (m_rcFileBackedup == false)
         {
-            // write error - remove the file fragment, report to user
-            catch {file delete $tmpfile}
-            if {![info exists rc_file_error]} {
-                tk_messageBox -type ok -default ok -icon error \
-                              -message "Write error in file $myrcfile: $errstr"
-                set rc_file_error 1
+            if (fh.exists())
+            {
+                bakPerm = fh.permissions();
+                QString bakName = QString(myrcfile) + ".bak";
+                QFile::remove(bakName);
+                if (QFile::rename(myrcfile, bakName))
+                {
+                    m_rcFileBackedup = true;
+                }
+                else
+                    fprintf(stderr, "Failed to rename %s to %s.bak: %s\n", myrcfile, bakName.toLatin1().data(), fh.errorString().toLatin1().data());
             }
+            else
+                m_rcFileBackedup = true;
         }
-#endif
-        rc_file_error = false;
-    }
-    else /* open error */
-    {
-        if (!rc_file_error)
+
+        if (fh.open(QFile::WriteOnly | QFile::Text))
         {
-            QMessageBox::critical(this, "trowser",
-                                  QString("Error writing config file ") + myrcfile,
-                                  QMessageBox::Ok);
-            rc_file_error = true;
+            QTextStream out(&fh);
+
+            out << "#\n"
+                   "# trowser configuration file\n"
+                   "#\n"
+                   "# This file is automatically generated - do not edit\n"
+                   "# Written at: " << QDateTime::currentDateTime().toString() << "\n"
+                   "#\n";
+            out << doc.toJson();
+
+            out << flush;
+            if (out.status() == QTextStream::Ok)
+            {
+                if (bakPerm != 0)
+                    fh.setPermissions(bakPerm);
+
+                m_prevRcContent = obj;
+                m_rcFileWriteError = false;
+            }
+            else
+            {
+                if (m_rcFileWriteError == false)
+                {
+                    QString msg = QString("Error writing config file ") + myrcfile + ": " + fh.errorString();
+                    QMessageBox::critical(this, "trowser", msg, QMessageBox::Ok);
+                    m_rcFileWriteError = true;
+                }
+            }
+            fh.close();
+        }
+        else /* open error */
+        {
+            if (m_rcFileWriteError == false)
+            {
+                QMessageBox::critical(this, "trowser",
+                                      QString("Error creating config file ") + myrcfile + ": " + fh.errorString(),
+                                      QMessageBox::Ok);
+                m_rcFileWriteError = true;
+            }
         }
     }
 }
@@ -953,6 +1023,7 @@ void ParseArgv(int argc, const char * const argv[])
                 arg_idx += 1;
                 load_buf_size = ParseArgInt(argv, arg_idx, argv[arg_idx]);
                 load_file_mode = LoadMode::Tail;
+                load_buf_size_opt = true;
             }
             else if (strncmp(arg, "--tail", 6) == 0)
             {
@@ -960,6 +1031,7 @@ void ParseArgv(int argc, const char * const argv[])
                 {
                     load_buf_size = ParseArgInt(argv, arg_idx, arg + 6+1);
                     load_file_mode = LoadMode::Tail;
+                    load_buf_size_opt = true;
                 }
                 else
                     PrintUsage(argv, arg_idx, "requires a numerical argument (e.g. --tail=10000000)");
@@ -970,6 +1042,7 @@ void ParseArgv(int argc, const char * const argv[])
                 arg_idx += 1;
                 load_buf_size = ParseArgInt(argv, arg_idx, argv[arg_idx]);
                 load_file_mode = LoadMode::Head;
+                load_buf_size_opt = true;
             }
             else if (strncmp(arg, "--head", 6) == 0)
             {
@@ -977,6 +1050,7 @@ void ParseArgv(int argc, const char * const argv[])
                 {
                     load_buf_size = ParseArgInt(argv, arg_idx, arg + 6+1);
                     load_file_mode = LoadMode::Head;
+                    load_buf_size_opt = true;
                 }
                 else
                     PrintUsage(argv, arg_idx, "requires a numerical argument (e.g. --head=10000000)");
@@ -1037,12 +1111,7 @@ int main(int argc, char *argv[])
 
     MainWin main(&app);
     main.loadRcFile();
-    main.show();
-
-    if (strcmp(argv[argc - 1], "-") == 0)
-        main.LoadFromPipe();
-    else
-        main.LoadFile(argv[argc - 1]);
+    main.startLoading(argv[argc - 1]);
 
     return app.exec();
 }

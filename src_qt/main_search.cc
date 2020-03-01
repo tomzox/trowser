@@ -95,20 +95,6 @@ void MainFindEnt::keyPressEvent(QKeyEvent *e)
                 QLineEdit::keyPressEvent(e);
             break;
 
-        case Qt::Key_E:
-            if (e->modifiers() == Qt::AltModifier)
-                m_search->searchOptToggleRegExp(-1);
-            else
-                QLineEdit::keyPressEvent(e);
-            break;
-
-        case Qt::Key_M:
-            if (e->modifiers() == Qt::AltModifier)
-                m_search->searchOptToggleCase(-1);
-            else
-                QLineEdit::keyPressEvent(e);
-            break;
-
         case Qt::Key_C:
             if (e->modifiers() == Qt::ControlModifier)
                 m_search->searchAbort();
@@ -244,60 +230,30 @@ void MainSearch::setRcValues(const QJsonObject& obj)
 /**
  * This function is bound to the "Highlight all" checkbutton and keyboard
  * shortcut to enable or disable global highlighting of search matches.
- * When called with value -1 the current value is inverted, else the given
- * value is copied.
  */
 void MainSearch::searchOptToggleHall(int v)
 {
-    if (v < 0)
-    {
-        tlb_hall = !tlb_hall;
-        m_f2_hall->setChecked(tlb_hall);
-    }
-    else
-    {
-        tlb_hall = (v != 0);
-    }
+    tlb_hall = (v != 0);
     searchHighlightSettingChange();
 }
 
 /**
  * This function is bound to the "Reg.Exp." checkbutton and keyboard shortcut
- * to enable or disable use of regular expression in search matches.  When
- * called with value -1 the current value is inverted, else the given value is
- * copied.
+ * to enable or disable use of regular expression in search matches.
  */
 void MainSearch::searchOptToggleRegExp(int v)
 {
-    if (v < 0)
-    {
-        tlb_find.m_opt_regexp = !tlb_find.m_opt_regexp;
-        m_f2_regexp->setChecked(tlb_find.m_opt_regexp);
-    }
-    else
-    {
-        tlb_find.m_opt_regexp = (v != 0);
-    }
+    tlb_find.m_opt_regexp = (v != 0);
     searchHighlightSettingChange();
 }
 
 /**
  * This function is bound to the "Match case" checkbutton and keyboard shortcut
- * to enable or disable use of regular expression in search matches.  When
- * called with value -1 the current value is inverted, else the given value is
- * copied.
+ * to enable or disable use of regular expression in search matches.
  */
 void MainSearch::searchOptToggleCase(int v)
 {
-    if (v < 0)
-    {
-        tlb_find.m_opt_case = !tlb_find.m_opt_case;
-        m_f2_mcase->setChecked(tlb_find.m_opt_case);
-    }
-    else
-    {
-        tlb_find.m_opt_case = (v != 0);
-    }
+    tlb_find.m_opt_case = (v != 0);
     searchHighlightSettingChange();
 }
 
