@@ -98,7 +98,7 @@ public:
     QJsonObject getRcValues();
     void setRcValues(const QJsonObject& obj);
     void searchAll(bool raiseWin, int direction);
-    bool searchNext(bool isFwd);
+    bool searchNext(bool isFwd, int repCnt = 1);
     bool searchFirst(bool is_fwd, const std::vector<SearchPar>& patList);
     void searchEnterOpt(const SearchPar& pat);
     void searchEnter(bool is_fwd, QWidget * parent = nullptr);
@@ -119,7 +119,7 @@ public:
     void searchRemoveFromHistory();
     void searchComplete();
     void searchCompleteLeft();
-    void searchWord(bool is_fwd);
+    void searchWord(bool is_fwd, int repCnt = 1);
     bool searchExprCheck(const SearchPar& par, bool display);
     void highlightFixedLine(int line);
     SearchPar getCurSearchParams();
@@ -129,7 +129,7 @@ public:
 private:
     void searchBackground(const SearchPar& par, bool is_fwd, int start, bool is_changed,
                           const std::function<void(QTextCursor&)>& callback);
-    bool searchAtomic(const SearchPar& par, bool is_fwd, bool is_changed);
+    bool searchAtomic(const SearchPar& par, bool is_fwd, bool is_changed, int repCnt = 1);
     void searchHighlightSettingChange();
     void searchHighlightUpdateCurrent();
     void searchHighlightUpdate(const SearchPar& par);

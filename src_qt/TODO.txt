@@ -8,7 +8,6 @@
 - add more tool-tips
 - add help (e.g. load HTML manual page into QTextEdit)
 - main text: xview scrolling; yoff position with offset et.al.
-- main text: number prefix on key commands
 
 clean-up:
 - split search_list file? (3000 lines, 3 internal sub-classes)

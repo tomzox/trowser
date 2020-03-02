@@ -91,8 +91,8 @@ MainText::MainText(MainWin * mainWin, MainSearch * search, Bookmarks * bookmarks
     //bind .f1.t <Key-End> {if {%s == 0} {cursorSetLineEnd(); KeyClr; break}}
     //bind .f1.t <Key-space> {CursorMoveLeftRight .f1.t 1; break}
     //bind .f1.t <Key-BackSpace> {CursorMoveLeftRight .f1.t -1; break}
-    m_keyCmdText.emplace('h', [=](){ QKeyEvent ne(QEvent::KeyPress, Qt::Key_Left, Qt::NoModifier); QPlainTextEdit::keyPressEvent(&ne); });
-    m_keyCmdText.emplace('l', [=](){ QKeyEvent ne(QEvent::KeyPress, Qt::Key_Right, Qt::NoModifier); QPlainTextEdit::keyPressEvent(&ne); });
+    m_keyCmdText.emplace('h', [=](){ cursorLeftRight(false, true); });
+    m_keyCmdText.emplace('l', [=](){ cursorLeftRight(true, true); });
     m_keyCmdText.emplace('\r', [=](){ cursorMoveLine(1, true); });  // Key_Return
     m_keyCmdText.emplace('w', [=](){ cursorMoveWord(true, false, false); });
     m_keyCmdText.emplace('e', [=](){ cursorMoveWord(true, false, true); });
@@ -143,7 +143,7 @@ void MainText::keyPressEvent(QKeyEvent *e)  /* virtual override */
         }
     }
 
-    if (   ((e->modifiers() & ~Qt::ShiftModifier) == 0)
+    if (   ((e->modifiers() & ~(Qt::ShiftModifier | Qt::GroupSwitchModifier)) == 0)  // ignore ALT-GR on German keyboard
         && (   (e->key() == Qt::Key_Return)
             || (e->text().length() == 1)) )
     {
@@ -157,15 +157,11 @@ void MainText::keyPressEvent(QKeyEvent *e)  /* virtual override */
     switch (e->key())
     {
         case Qt::Key_Space:
-        {   QKeyEvent ne(QEvent::KeyPress, Qt::Key_Right, Qt::NoModifier);
-            QPlainTextEdit::keyPressEvent(&ne);
+            cursorLeftRight(true, false);
             break;
-        }
         case Qt::Key_Backspace:
-        {   QKeyEvent ne(QEvent::KeyPress, Qt::Key_Left, Qt::NoModifier);
-            QPlainTextEdit::keyPressEvent(&ne);
+            cursorLeftRight(false, false);
             break;
-        }
         case Qt::Key_Delete:  // reverse of 'i'
             if ((e->modifiers() == Qt::NoModifier) && SearchList::isDialogOpen())
                 SearchList::getInstance(false)->copyCurrentLine(false);
@@ -218,16 +214,80 @@ void MainText::dragEnterEvent(QDragEnterEvent *ev)  /* virtual override */
 }
 
 /**
- * This function is bound to key presses in the main window. It's called
- * when none of the single-key bindings match. It's intended to handle
- * complex key sequences, but also has to handle single key bindings for
- * keys which can be part of sequences (e.g. "b" due to "zb")
+ * This function is bound to key presses in the main window. It's called when
+ * none of the single-key bindings match. It's intended to handle complex key
+ * sequences, but also has to handle single key bindings for keys which can be
+ * part of sequences (e.g. "b" due to "zb")
  */
 bool MainText::keyCmdText(wchar_t chr)
 {
     bool result = false;
 
-    if (last_key_char == '\'') {
+    if (last_key_number != 0)
+    {
+        if (last_key_char == 'f') {
+            searchCharInLine(chr, 1, last_key_number);
+            last_key_char = 0;
+        }
+        else if (last_key_char == 'F') {
+            searchCharInLine(chr, -1, last_key_number);
+            last_key_char = 0;
+        }
+        else switch (chr)
+        {
+            // line goto
+            case 'g':  jumpToLine(last_key_number - 1); break; // FIXME should be "gg"
+            case 'G':  jumpToLine(last_key_number - 1); break;
+            // vertical cursor movement
+            case '-':  cursorMoveLine(-last_key_number, true); break;
+            case '+':  cursorMoveLine(last_key_number, true); break;
+            case '\r': cursorMoveLine(last_key_number, true); break;
+            case 'k':  cursorMoveLine(-last_key_number, false); break;
+            case 'j':  cursorMoveLine(last_key_number, false); break;
+            case 'H':  cursorSetLineTop(last_key_number); break;
+            case 'M':  cursorSetLineCenter(); break;  // number ignored intentionally
+            case 'L':  cursorSetLineBottom(last_key_number); break;
+            // horizontal/in-line cursor movement
+            case 'w':  cursorMoveWord(true, false, false, last_key_number); break;
+            case 'e':  cursorMoveWord(true, false, true, last_key_number); break;
+            case 'b':  cursorMoveWord(false, false, false, last_key_number); break;
+            case 'W':  cursorMoveWord(true, true, false, last_key_number); break;
+            case 'E':  cursorMoveWord(true, true, true, last_key_number); break;
+            case 'B':  cursorMoveWord(false, true, false, last_key_number); break;
+            case 'f':  last_key_char = chr; break;
+            case 'F':  last_key_char = chr; break;
+            case ';':  searchCharInLine(0, 1, last_key_number); break;
+            case ',':  searchCharInLine(0, -1, last_key_number); break;
+            case ' ':  cursorLeftRight(true, false, last_key_number); break;
+            case '\b': cursorLeftRight(false, false, last_key_number); break;
+            case 'h':  cursorLeftRight(false, true, last_key_number); break;
+            case 'l':  cursorLeftRight(true, true, last_key_number); break;
+            case '|':  cursorSetCol(last_key_number - 1); break;
+            // search
+            case '*':  m_search->searchWord(true, last_key_number); break;
+            case '#':  m_search->searchWord(false, last_key_number); break;
+            case 'n':  m_search->searchNext(true, last_key_number); break;
+            case 'N':  m_search->searchNext(false, last_key_number); break;
+            case '0' ... '9':
+            {
+                last_key_number = last_key_number * 10 + (chr - '0');
+                if (last_key_number > 100000)
+                {
+                    m_mainWin->mainStatusLine()->showError("keycmd", "Repetition value too large");
+                    last_key_number = 0;
+                }
+                return true;
+            }
+            default:
+            {
+                QString msg = QString("Undefined key sequence: ") + QString::number(last_key_number) + chr;
+                m_mainWin->mainStatusLine()->showError("keycmd", msg);
+            }
+        }
+        last_key_number = 0;
+        result = true;
+    }
+    else if (last_key_char == '\'') {
         // single quote char: jump to marker or bookmark
         m_mainWin->mainStatusLine()->clearMessage("keycmd");
         if (chr == '\'') {
@@ -251,6 +311,7 @@ bool MainText::keyCmdText(wchar_t chr)
             m_mainWin->mainStatusLine()->showError("keycmd", msg);
         }
         last_key_char = 0;
+        last_key_number = 0;
         result = true;
     }
     else if ((last_key_char == 'z') || (last_key_char == 'g')) {
@@ -265,16 +326,19 @@ bool MainText::keyCmdText(wchar_t chr)
             m_mainWin->mainStatusLine()->showError("keycmd", msg);
         }
         last_key_char = 0;
+        last_key_number = 0;
         result = true;
     }
     else if (last_key_char == 'f') {
         searchCharInLine(chr, 1);
         last_key_char = 0;
+        last_key_number = 0;
         result = true;
     }
     else if (last_key_char == 'F') {
         searchCharInLine(chr, -1);
         last_key_char = 0;
+        last_key_number = 0;
         result = true;
     }
     else {
@@ -286,8 +350,8 @@ bool MainText::keyCmdText(wchar_t chr)
             result = true;
         }
         else if ((chr >= '0') && (chr <= '9')) {
-            //TODO KeyCmd_OpenDialog any chr
-            last_key_char = 0;
+            m_mainWin->mainStatusLine()->clearMessage("keycmd");
+            last_key_number = chr - '0';
             result = true;
         }
         else if ((chr == 'z') || (chr == '\'') ||
@@ -306,6 +370,7 @@ bool MainText::keyCmdText(wchar_t chr)
 void MainText::keyCmdClear()
 {
     last_key_char = 0;
+    last_key_number = 0;
 }
 
 /**
@@ -508,11 +573,11 @@ void MainText::cursorMoveLine(int delta, bool toStart)
     if (toStart)
     {
         if (delta > 0) {
-            c.movePosition(QTextCursor::NextBlock);
+            c.movePosition(QTextCursor::NextBlock, QTextCursor::MoveAnchor, delta);
             this->setTextCursor(c);
         }
         else if (delta < 0) {
-            c.movePosition(QTextCursor::PreviousBlock);
+            c.movePosition(QTextCursor::PreviousBlock, QTextCursor::MoveAnchor, -delta);
             this->setTextCursor(c);
         }
 
@@ -533,9 +598,15 @@ void MainText::cursorMoveLine(int delta, bool toStart)
         auto blk = c.block();
         int linePos = c.position() - blk.position();
         if (delta > 0)
-            blk = blk.next();
+        {
+            for (int idx = 0; (idx < delta) && blk.isValid(); ++idx)
+                blk = blk.next();
+        }
         else if (delta < 0)
-            blk = blk.previous();
+        {
+            for (int idx = 0; (idx > delta) && blk.isValid(); --idx)
+                blk = blk.previous();
+        }
         if (blk.isValid())
         {
             if (linePos >= blk.length())  // TODO remember target column, to be used in next up/down move
@@ -676,65 +747,110 @@ void MainText::cursorSetLineEnd()
 
 
 /**
- * This function moves the cursor onto the next or previous word.
- * (Same as "w", "b" et.al. in vim)
+ * This function moves the cursor into the given column of the current line.
  */
-void MainText::cursorMoveWord(bool is_fwd, bool spc_only, bool to_end)
+void MainText::cursorSetCol(int colIdx)
 {
     auto c = this->textCursor();
-    auto line_str = c.block().text();
+    auto blk = c.block();
+
+    if (colIdx < blk.length())
+        c.setPosition(blk.position() + colIdx);
+    else
+        c.movePosition(QTextCursor::EndOfLine);
+    this->setTextCursor(c);
+}
+
+/**
+ * This function moves the cursor left or right by the given numbers of
+ * columns, however at most to the end of line.
+ */
+void MainText::cursorLeftRight(bool is_fwd, bool inLine, int repCnt)
+{
+    auto c = this->textCursor();
     int pos = c.positionInBlock();
 
     if (is_fwd)
     {
-        static const QRegularExpression re_spc_end("^\\s*\\S*");
-        static const QRegularExpression re_spc_beg("^\\S*\\s*");
-        static const QRegularExpression re_any_end("^\\W*\\w*");
-        static const QRegularExpression re_any_beg("^\\w*\\W*");
-        const QRegularExpression * re;
-
-        if (spc_only)
-            re = to_end ? &re_spc_end : &re_spc_beg;
+        if ((pos + repCnt < c.block().length()) || !inLine)
+            c.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, repCnt);
         else
-            re = to_end ? &re_any_end : &re_any_beg;
-
-        auto mat = re->match(line_str.midRef(pos));
-        if (mat.hasMatch() &&
-            ((pos + mat.captured(0).length() < line_str.length()) || to_end))
-        {
-            c.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, mat.captured(0).length());
-        }
-        else
-        {
-            c.movePosition(QTextCursor::NextBlock, QTextCursor::MoveAnchor);
-            c.movePosition(QTextCursor::StartOfBlock, QTextCursor::MoveAnchor);
-        }
-        this->setTextCursor(c);
+            c.movePosition(QTextCursor::EndOfLine);
     }
-    else /* !is_fwd */
+    else
     {
-        static const QRegularExpression re_spc_end("\\s(\\s+)$");
-        static const QRegularExpression re_spc_beg("(\\S+\\s*)$");
-        static const QRegularExpression re_any_end("\\w(\\W+\\w*)$");
-        static const QRegularExpression re_any_beg("(\\w+|\\w+\\W+)$");
-        const QRegularExpression * re;
-
-        if (spc_only)
-            re = to_end ? &re_spc_end : &re_spc_beg;
+        if ((repCnt <= pos) || !inLine)
+            c.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor, repCnt);
         else
-            re = to_end ? &re_any_end : &re_any_beg;
+            c.movePosition(QTextCursor::StartOfLine);
+    }
+    this->setTextCursor(c);
+}
 
-        auto mat = re->match(line_str.leftRef(pos));
-        if (mat.hasMatch())
+/**
+ * This function moves the cursor onto the next or previous word.
+ * (Same as "w", "b" et.al. in vim)
+ */
+void MainText::cursorMoveWord(bool is_fwd, bool spc_only, bool to_end, int repCnt)
+{
+    auto c = this->textCursor();
+
+    for (int repIdx = 0; repIdx < repCnt; ++repIdx)
+    {
+        auto line_str = c.block().text();
+        int pos = c.positionInBlock();
+
+        if (is_fwd)
         {
-            c.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor, mat.captured(1).length());
+            static const QRegularExpression re_spc_end("^\\s*\\S*");
+            static const QRegularExpression re_spc_beg("^\\S*\\s*");
+            static const QRegularExpression re_any_end("^\\W*\\w*");
+            static const QRegularExpression re_any_beg("^\\w*\\W*");
+            const QRegularExpression * re;
+
+            if (spc_only)
+                re = to_end ? &re_spc_end : &re_spc_beg;
+            else
+                re = to_end ? &re_any_end : &re_any_beg;
+
+            auto mat = re->match(line_str.midRef(pos));
+            if (mat.hasMatch() &&
+                ((pos + mat.captured(0).length() < line_str.length()) || to_end))
+            {
+                c.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, mat.captured(0).length());
+            }
+            else
+            {
+                c.movePosition(QTextCursor::NextBlock, QTextCursor::MoveAnchor);
+                c.movePosition(QTextCursor::StartOfBlock, QTextCursor::MoveAnchor);
+            }
+            this->setTextCursor(c);
         }
-        else
+        else /* !is_fwd */
         {
-            c.movePosition(QTextCursor::PreviousBlock, QTextCursor::MoveAnchor);
-            c.movePosition(QTextCursor::EndOfBlock, QTextCursor::MoveAnchor);
+            static const QRegularExpression re_spc_end("\\s(\\s+)$");
+            static const QRegularExpression re_spc_beg("(\\S+\\s*)$");
+            static const QRegularExpression re_any_end("\\w(\\W+\\w*)$");
+            static const QRegularExpression re_any_beg("(\\w+|\\w+\\W+)$");
+            const QRegularExpression * re;
+
+            if (spc_only)
+                re = to_end ? &re_spc_end : &re_spc_beg;
+            else
+                re = to_end ? &re_any_end : &re_any_beg;
+
+            auto mat = re->match(line_str.leftRef(pos));
+            if (mat.hasMatch())
+            {
+                c.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor, mat.captured(1).length());
+            }
+            else
+            {
+                c.movePosition(QTextCursor::PreviousBlock, QTextCursor::MoveAnchor);
+                c.movePosition(QTextCursor::EndOfBlock, QTextCursor::MoveAnchor);
+            }
+            this->setTextCursor(c);
         }
-        this->setTextCursor(c);
     }
     this->ensureCursorVisible();
 }
@@ -743,7 +859,7 @@ void MainText::cursorMoveWord(bool is_fwd, bool spc_only, bool to_end)
  * This function moves the cursor onto the next occurence of the given
  * character in the current line.
  */
-void MainText::searchCharInLine(wchar_t chr, int dir)
+void MainText::searchCharInLine(wchar_t chr, int dir, int repCnt)
 {
     m_mainWin->mainStatusLine()->clearMessage("search_inline");
 
@@ -762,33 +878,36 @@ void MainText::searchCharInLine(wchar_t chr, int dir)
         }
     }
     auto c = this->textCursor();
-    auto blk = c.block();
-    int off = c.positionInBlock();
 
-    if (dir > 0) {
-        int idx = blk.text().indexOf(chr, off + 1);
-        if (idx > off) {
-            c.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, idx - off);
-            this->setTextCursor(c);
-            this->ensureCursorVisible();
+    for (int repIdx = 0; repIdx < repCnt; ++repIdx)
+    {
+        auto blk = c.block();
+        int off = c.positionInBlock();
+
+        if (dir > 0) {
+            int idx = blk.text().indexOf(chr, off + 1);
+            if (idx > off) {
+                c.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, idx - off);
+            }
+            else {
+                QString msg = QString("Character \"") + QString(chr) + "\" not found until line end";
+                m_mainWin->mainStatusLine()->showWarning("search_inline", msg);
+                break;
+            }
         }
-        else {
-            QString msg = QString("Character \"") + QString(chr) + "\" not found until line end";
-            m_mainWin->mainStatusLine()->showWarning("search_inline", msg);
+        else if (off > 0) {
+            int idx = blk.text().lastIndexOf(chr, off - 1);
+            if ((idx != -1) && (idx < off)) {
+                c.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor, off - idx);
+            }
+            else {
+                QString msg = QString("Character ") + chr + " not found until line start";
+                m_mainWin->mainStatusLine()->showWarning("search_inline", msg);
+                break;
+            }
         }
     }
-    else if (off > 0) {
-        int idx = blk.text().lastIndexOf(chr, off - 1);
-        if ((idx != -1) && (idx < off)) {
-            c.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor, off - idx);
-            this->setTextCursor(c);
-            this->ensureCursorVisible();
-        }
-        else {
-            QString msg = QString("Character ") + chr + " not found until line start";
-            m_mainWin->mainStatusLine()->showWarning("search_inline", msg);
-        }
-    }
+    this->setTextCursor(c);
 }
 
 

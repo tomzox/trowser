@@ -86,10 +86,12 @@ private:
     void XviewScroll(int delta, int dir);
     void XviewScrollHalf(int dir);
     void XviewSet(xviewSetWhere where);
-    void cursorMoveWord(bool is_fwd, bool spc_only, bool to_end);
+    void cursorLeftRight(bool is_fwd, bool inLine, int repCnt = 1);
+    void cursorSetCol(int colIdx);
+    void cursorMoveWord(bool is_fwd, bool spc_only, bool to_end, int repCnt = 1);
     void cursorSetLineEnd();
     void cursorSetLineStart();
-    void searchCharInLine(wchar_t chr, int dir);
+    void searchCharInLine(wchar_t chr, int dir, int repCnt = 1);
     void cursorJumpToggle();
     void cursorJumpHistory(int rel);
 
@@ -100,6 +102,7 @@ private:
     wchar_t       last_inline_char = 0;
     int           last_inline_dir = 0;
     wchar_t       last_key_char = 0;
+    unsigned      last_key_number = 0;
     std::unordered_map<KeySet,const std::function<void()>,KeySetHash<KeySet>> m_keyCmdText;
     std::unordered_map<int,const std::function<void()>> m_keyCmdCtrl;
     std::vector<JumpPos> cur_jump_stack;

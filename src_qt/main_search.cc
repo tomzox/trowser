@@ -373,7 +373,7 @@ void MainSearch::searchBackground(const SearchPar& par, bool is_fwd, int startPo
  * search entry field, starting at the current cursor position. When a match
  * is found, the cursor is moved there and the line is highlighed.
  */
-bool MainSearch::searchAtomic(const SearchPar& par, bool is_fwd, bool is_changed)
+bool MainSearch::searchAtomic(const SearchPar& par, bool is_fwd, bool is_changed, int repCnt)
 {
     bool found = false;
 
@@ -382,15 +382,37 @@ bool MainSearch::searchAtomic(const SearchPar& par, bool is_fwd, bool is_changed
         m_mainText->cursorJumpPushPos();
         tlb_last_dir = is_fwd;
 
-        int start_pos = searchGetBase(is_fwd, false);
+        QTextCursor lastMatch;
+        int repIdx;
+        for (repIdx = 0; repIdx < repCnt; ++repIdx)
+        {
+            int start_pos = searchGetBase(is_fwd, false);
 
-        auto c2 = m_mainText->findInDoc(par, is_fwd, start_pos);
+            auto match = m_mainText->findInDoc(par, is_fwd, start_pos);
+            if (match.isNull())
+                break;
 
-        // update cursor position and highlight
-        searchHandleMatch(c2, par, is_changed);
-        found = !c2.isNull();
+            lastMatch = match;
 
-        if (!found)
+            // determine new start position
+            match.setPosition(std::min(match.position(), match.anchor()));
+            m_mainText->setTextCursor(match);
+        }
+
+        if (!lastMatch.isNull())
+        {
+            if (repIdx < repCnt)
+            {
+                QString msg = QString("Only ") + QString::number(repIdx) + " of "
+                                    + QString::number(repCnt) + " matches until "
+                                    + (is_fwd ? "end" : "start") + " of file";
+                m_mainWin->mainStatusLine()->showWarning("search", msg);
+            }
+            // update cursor position and highlight
+            searchHandleMatch(lastMatch, par, is_changed);
+            found = true;
+        }
+        else
             searchHandleNoMatch(par.m_pat, is_fwd);
     }
     else
@@ -712,7 +734,7 @@ void MainSearch::searchEnterOpt(const SearchPar& pat)
  * (e.g. derived from "n" vs "N") does not invert the direction of the previous
  * search, but instead specifies the direction directly.
  */
-bool MainSearch::searchNext(bool is_fwd)
+bool MainSearch::searchNext(bool is_fwd, int repCnt)
 {
     bool found = false;
 
@@ -720,17 +742,17 @@ bool MainSearch::searchNext(bool is_fwd)
 
     if (!tlb_find.m_pat.isEmpty())
     {
-        found = searchAtomic(tlb_find, is_fwd, false);
+        found = searchAtomic(tlb_find, is_fwd, false, repCnt);
     }
     else if (tlb_history.size() > 0)
     {
         // empty expression: repeat last search
         const SearchPar &par = tlb_history.front();
-        found = searchAtomic(par, is_fwd, false);
+        found = searchAtomic(par, is_fwd, false, repCnt);
     }
     else
     {
-        m_mainWin->mainStatusLine()->showError("search", "No pattern defined for search repeat");
+        m_mainWin->mainStatusLine()->showError("search", "No pattern defined for search");
     }
     return found;
 }
@@ -1173,7 +1195,7 @@ void MainSearch::searchCompleteLeft()
  * These keys allow to search for the word under the cursor in forward and
  * backwards direction respectively.
  */
-void MainSearch::searchWord(bool is_fwd)
+void MainSearch::searchWord(bool is_fwd, int repCnt)
 {
     auto line_str = m_mainText->textCursor().block().text();
     int off = m_mainText->textCursor().positionInBlock();
@@ -1206,7 +1228,7 @@ void MainSearch::searchWord(bool is_fwd)
         searchAddHistory(tlb_find);
         m_mainWin->mainStatusLine()->clearMessage("search");
 
-        searchAtomic(tlb_find, is_fwd, true);
+        searchAtomic(tlb_find, is_fwd, true, repCnt);
     }
 }
 
