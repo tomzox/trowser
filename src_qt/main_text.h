@@ -55,6 +55,7 @@ class MainText : public QPlainTextEdit
 
 public:
     MainText(MainWin * mainWin, MainSearch * search, Bookmarks * bookmarks, QWidget * parent);
+    ~MainText() = default;
     void cursorJumpPushPos();
     void cursorJumpStackReset();
     void keyCmdClear();

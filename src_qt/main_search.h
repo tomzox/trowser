@@ -82,14 +82,14 @@ private:
 
 // ----------------------------------------------------------------------------
 
-class MainSearch : public QWidget
+class MainSearch : public QObject
 {
     Q_OBJECT
 
 public:
     MainSearch(MainWin * mainWin);
     ~MainSearch();
-    void connectWidgets(MainText    * textWid,
+    void connectWidgets(MainText    * mainText,
                         Highlighter * higl,
                         MainFindEnt * f2_e,
                         QCheckBox   * f2_hall,
@@ -134,7 +134,6 @@ private:
     void searchHighlightUpdateCurrent();
     void searchHighlightUpdate(const SearchPar& par);
     void searchHandleMatch(QTextCursor& match, const SearchPar& par, bool is_changed);
-    void searchHandleNoMatch(const QString& pat, bool is_fwd);
     void searchIncMatch(QTextCursor& match, const QString& pat, bool is_fwd, bool is_changed);
     void searchEscapeSpecialChars(QString& word, bool is_re);
     int  searchGetBase(bool is_fwd, bool is_init);

@@ -41,10 +41,10 @@ public:
     static void editBookmarkFmt(Highlighter * higl, MainWin * mainWin);
 
 private:
-    static void openDialog(DlgMarkupSA* &ptr, HiglId id, const QString& name,
+    static void openDialog(DlgMarkupSA* &ptr, HiglId id, const QString& title,
                            Highlighter * higl, MainWin * mainWin);
     // constructor can only be invoked via the static interface
-    DlgMarkupSA(HiglId id, const QString& name, Highlighter * higl, MainWin * mainWin);
+    DlgMarkupSA(HiglId id, const QString& title, Highlighter * higl, MainWin * mainWin);
     virtual ~DlgMarkupSA() = default;
     void raiseWindow();
     void signalMarkupCloseReq(HiglId id);

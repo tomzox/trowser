@@ -14,6 +14,26 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This class implements QAbstractItemDelegate for view items that display text
+ * in user-defined mark-up (i.e. mark-up managed by the Highlighting class).
+ * The class only implements the mandatory interface functions paint() and
+ * sizeHint().
+ *
+ * The class depends on a reference to an instance of class
+ * HighlightViewModelIf provided to the constructor. The reference is used for
+ * retrieving the actual text and mark-up for each item; usually the given
+ * interface is implemented by a model class. This delegate class only takes
+ * care of rendering the retrieved text in the retrieved format within the
+ * dimensions of the given view item.
+ *
+ * The class supports two different rendering modes, selected via the
+ * "centering" flag in the constructor: When set, the retrieved text is
+ * centered both horizontally and vertically within the item dimensions, and an
+ * extra margin is applied. Additionally, the selection option is ignored.
+ * This mode is specifically intended for the highlight list editor dialog.
  */
 
 #include <QWidget>

@@ -14,6 +14,30 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This module implements the sub-classes that implement the abstract
+ * MainTextFind interface. This interface is used by various classes that
+ * employ text search in the main text document. The classes replace the use of
+ * the "find" interfaces of QTextDocument, which are unusable for very large
+ * documents due to not supporting a limit on the search range (i.e. they will
+ * block the user interface for an indeterminate amount of time).
+ *
+ * There are two sub-classes, of which the first is instantiated for search via
+ * regular expression, and the second for plain sub-string search. The classes
+ * work similar an interator, which means they are one instantiated with
+ * parameters and then keep internal state for repeated calls of their
+ * findNext() interface. The search returns if either a match is found, the end
+ * of the document is reached, or a maximum number of lines has been searched.
+ * The first is sidtinguished by means of the return value, the latter two by
+ * means of the isDone() query interface.
+ *
+ * Note this class currently returns only the first match per line. The next
+ * call of findNext() will proceed to the next line. This is done for
+ * performance reasons, as none of the current users cares for more than one
+ * match per line (i.e. all but one actually only care about the line number as
+ * a result, but not the exact position of matching text.)
  */
 
 #include <QTextBlock>

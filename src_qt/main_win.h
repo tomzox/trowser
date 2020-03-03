@@ -83,7 +83,7 @@ private:
 private:
     QApplication* const m_mainApp;
 
-    MainText    * m_f1_t = nullptr;
+    MainText    * m_mainText = nullptr;
     StatusLine  * m_stline = nullptr;
     MainSearch  * m_search = nullptr;
     Highlighter * m_higl = nullptr;

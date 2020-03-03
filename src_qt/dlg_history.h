@@ -38,6 +38,8 @@ class StatusLine;
 class DlgHistoryView;
 class DlgHistoryModel;
 
+// ----------------------------------------------------------------------------
+
 class DlgHistory : public QMainWindow
 {
     Q_OBJECT

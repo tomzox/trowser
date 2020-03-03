@@ -14,6 +14,30 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This module implements the class hat performs searches in the text widget of
+ * the main window. The class has many interfaces that are connected to the
+ * main menu, key bindings in the main text window, and most importantly to the
+ * entry field and checkboxes of the main window's "find" toolbar.
+ *
+ * The class becomes active as soon as keyboard focus changes into the entry
+ * fields. For each modification of the entry text, the class immediately
+ * schedules a search in the background, and when found highlights the next
+ * match (via the Highligher module) and makes that text line visible in the
+ * main text widget. When global search highlighting is enabled, the class has
+ * the Highligher class mark all matches wihin visible part of the text. When
+ * the user modifies the search pattern before this process is completed, it
+ * is aborted and restarted for the new pattern. When no match is found for the
+ * new pattern, the cursor and view are reset to the start of the search. The
+ * process described here is called "incremental search".
+ *
+ * In addition to the above, the class offers interfaces such as for repeating
+ * the previous search in either direction. Such searches are done
+ * "atomically", which means they are blocking. Notably the "search all" button
+ * of the "find" toolbar is not implemented here, but rather in the search list
+ * class.
  */
 
 #include <QApplication>
@@ -134,7 +158,7 @@ void MainFindEnt::keyPressEvent(QKeyEvent *e)
 // ----------------------------------------------------------------------------
 
 MainSearch::MainSearch(MainWin * mainWin)
-    : QWidget(mainWin)
+    : QObject(mainWin)
     , m_mainWin(mainWin)
 {
     m_timSearchInc = new BgTask(this, BG_PRIO_SEARCH_INC);
@@ -142,19 +166,29 @@ MainSearch::MainSearch(MainWin * mainWin)
     tlb_history.reserve(TLB_HIST_MAXLEN + 1);
 }
 
+/**
+ * Destructor: Freeing resources not automatically deleted via widget tree
+ */
 MainSearch::~MainSearch()
 {
     delete m_timSearchInc;
 }
 
-void MainSearch::connectWidgets(MainText    * textWid,
+/**
+ * This external interface function is called once during start-up after all
+ * classes are instantiated to establish the required connections, which are
+ * the main text widget (within which this class performs searches), the
+ * Highlighter class (which is used to highlight search matches) and the
+ * widgets of the "find" toolbar (which provide user input to this class).
+ */
+void MainSearch::connectWidgets(MainText    * mainText,
                                 Highlighter * higl,
                                 MainFindEnt * f2_e,
                                 QCheckBox   * f2_hall,
                                 QCheckBox   * f2_mcase,
                                 QCheckBox   * f2_regexp)
 {
-    m_mainText = textWid;
+    m_mainText = mainText;
     m_higl = higl;
     m_f2_e = f2_e;
     m_f2_hall = f2_hall;
@@ -162,6 +196,11 @@ void MainSearch::connectWidgets(MainText    * textWid,
     m_f2_regexp = f2_regexp;
 }
 
+/**
+ * This function is called when writing the config file to retrieve persistent
+ * settings of this class. Currently this includes the current search string
+ * and the search history stack.
+ */
 QJsonObject MainSearch::getRcValues()
 {
     QJsonObject obj;
@@ -185,6 +224,10 @@ QJsonObject MainSearch::getRcValues()
     return obj;
 }
 
+/**
+ * This function is called during start-up to apply configuration variables.
+ * The function is the inverse of getRcValues()
+ */
 void MainSearch::setRcValues(const QJsonObject& obj)
 {
     for (auto it = obj.begin(); it != obj.end(); ++it)
@@ -266,10 +309,16 @@ void MainSearch::searchOptToggleCase(int v)
  */
 void MainSearch::searchHighlightSettingChange()
 {
+    if (m_f2_e->hasFocus())
+    {
+        searchIncrement(tlb_last_dir, true);
+    }
+    else
+    {
+        searchHighlightClear();
+        searchHighlightUpdateCurrent();
+    }
     m_mainWin->updateRcAfterIdle();
-
-    searchHighlightClear();
-    searchHighlightUpdateCurrent();
 }
 
 
@@ -291,19 +340,23 @@ void MainSearch::searchHighlightUpdateCurrent()
     }
 }
 
+/**
+ * This function initiates global highlighting (using "search highlight"
+ * mark-up) of all lines matching the given pattern and options.
+ */
 void MainSearch::searchHighlightUpdate(const SearchPar& par)
 {
-    if (!par.m_pat.isEmpty())
-    {
-        if (tlb_hall)
-        {
-            m_higl->searchHighlightUpdate(par, m_f2_e->hasFocus());
-        }
-        else
-            m_higl->searchHighlightClear();
-    }
+    Q_ASSERT(!par.m_pat.isEmpty());
+
+    m_higl->searchHighlightUpdate(par, m_f2_e->hasFocus());
 }
 
+/**
+ * This function clears highlighting of search results. This applies to all
+ * forms of search highlighting, namely (1) the specific line containing the
+ * last match, (2) incremental search highlight, and optional global search
+ * highlighting.
+ */
 void MainSearch::searchHighlightClear()
 {
     m_higl->searchHighlightClear();
@@ -369,9 +422,16 @@ void MainSearch::searchBackground(const SearchPar& par, bool is_fwd, int startPo
 
 
 /**
- * This function searches the main text content for the expression in the
- * search entry field, starting at the current cursor position. When a match
- * is found, the cursor is moved there and the line is highlighed.
+ * This function searches the main text content for the given pattern in the
+ * given direction, starting at the current cursor position. When a match is
+ * found, the cursor is moved there and the line is highlighed. If no match is
+ * found, a warning is displayed and the cursor and previous search
+ * highlight(!) remains unchanged.
+ *
+ * The search is repeated the given number of times; if not enough matches are
+ * found before reaching the end of document, a warning is displayed, but the
+ * cursor is still moved to the last match and the function return value still
+ * indicates success.
  */
 bool MainSearch::searchAtomic(const SearchPar& par, bool is_fwd, bool is_changed, int repCnt)
 {
@@ -412,8 +472,12 @@ bool MainSearch::searchAtomic(const SearchPar& par, bool is_fwd, bool is_changed
             searchHandleMatch(lastMatch, par, is_changed);
             found = true;
         }
-        else
-            searchHandleNoMatch(par.m_pat, is_fwd);
+        else  // no match found at all
+        {
+            QString msg = QString("No match until ") + (is_fwd ? "end" : "start")
+                            + " of file" + (par.m_pat.isEmpty() ? "" : ": ") + par.m_pat;
+            m_mainWin->mainStatusLine()->showWarning("search", msg);
+        }
     }
     else
     {
@@ -458,22 +522,6 @@ void MainSearch::searchHandleMatch(QTextCursor& match, const SearchPar& par, boo
     {
         searchHighlightUpdate(par);
     }
-}
-
-
-/**
- * This function displays a message if no match was found for a search
- * pattern. This is split off from the search function so that some
- * callers can override the message.
- */
-void MainSearch::searchHandleNoMatch(const QString& pat, bool is_fwd)
-{
-    QString msg = QString("No match until ")
-                    + (is_fwd ? "end" : "start")
-                    + " of file"
-                    + (pat.isEmpty() ? "" : ": ")
-                    + pat;
-    m_mainWin->mainStatusLine()->showWarning("search", msg);
 }
 
 
@@ -733,6 +781,9 @@ void MainSearch::searchEnterOpt(const SearchPar& pat)
  * search in the given direction. NOTE unlike vim, the direction parameter
  * (e.g. derived from "n" vs "N") does not invert the direction of the previous
  * search, but instead specifies the direction directly.
+ *
+ * If a match is found, the cursor is moved there and the line is marked using
+ * search highlighting. If no match is found, a warning is 
  */
 bool MainSearch::searchNext(bool is_fwd, int repCnt)
 {

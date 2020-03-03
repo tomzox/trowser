@@ -35,12 +35,14 @@ class Highlighter;
 class MainWin;
 class BrushStyleListModel;
 
+// ----------------------------------------------------------------------------
+
 class DlgMarkup : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec,
+    DlgMarkup(HiglId id, const HiglFmtSpec * fmtSpec, const QString& title,
               Highlighter * higl, MainWin * mainWin);
     virtual ~DlgMarkup();
     const HiglFmtSpec& getFmtSpec() const { return m_fmtSpec; }

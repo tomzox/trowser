@@ -15,8 +15,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
  *
- * DESCRIPTION:  Browser for line-oriented text files, e.g. debug traces.
+ * TROWSER is a browser for line-oriented text files, e.g. debug traces.
  * This is a translation from the original implementation in Tcl/Tk.
+ *
+ * Module description:
+ *
+ * This module contains the main() entry point and command line parser, as well
+ * as class MainWin which creates the main window and instantiates all other
+ * classes required by the application.
  *
  * ----------------------------------------------------------------------------
  */
@@ -67,6 +73,7 @@
 
 // ----------------------------------------------------------------------------
 
+// default and storage for command line parameters
 static LoadMode load_file_mode = LoadMode::Head;
 static size_t load_buf_size = 20*1024*1024;
 static bool load_buf_size_opt = false;
@@ -74,6 +81,7 @@ static const char * myrcfile = ".trowserc.qt";
 static const uint32_t rcfile_compat = 0x03000001;
 static const uint32_t rcfile_version = 0x03000001;
 
+// default font
 static const char * const DEFAULT_FONT_FAM = "DejaVu Sans Mono";
 static const int DEFAULT_FONT_SZ = 9;
 
@@ -89,12 +97,12 @@ MainWin::MainWin(QApplication * app)
     m_search = new MainSearch(this);
     m_bookmarks = new Bookmarks(this);
 
-    m_f1_t = new MainText(this, m_search, m_bookmarks, central_wid);
-        m_f1_t->setFont(m_fontContent);
-        m_f1_t->setLineWrapMode(QPlainTextEdit::NoWrap);
-        m_f1_t->setCursorWidth(2);
-        m_f1_t->setTabChangesFocus(true);   // enable Key_Tab moving keyboard focus
-        layout_top->addWidget(m_f1_t);
+    m_mainText = new MainText(this, m_search, m_bookmarks, central_wid);
+        m_mainText->setFont(m_fontContent);
+        m_mainText->setLineWrapMode(QPlainTextEdit::NoWrap);
+        m_mainText->setCursorWidth(2);
+        m_mainText->setTabChangesFocus(true);   // enable Key_Tab moving keyboard focus
+        layout_top->addWidget(m_mainText);
 
     auto f2 = new QToolBar("Find", this);
         f2->setObjectName("Toolbar::Find"); // for saveState
@@ -108,14 +116,17 @@ MainWin::MainWin(QApplication * app)
         f2->addWidget(f2_e);
     auto f2_bn = new QPushButton("&Next", f2);
         f2_bn->setToolTip("Move the cursor to the next match on the search pattern.");
+        f2_bn->setFocusPolicy(Qt::TabFocus);
         connect(f2_bn, &QPushButton::clicked, [=](){ m_search->searchNext(true); });
         f2->addWidget(f2_bn);
     auto f2_bp = new QPushButton("&Prev.", f2);
         f2_bp->setToolTip("Move the cursor to the previous match on the search pattern.");
+        f2_bp->setFocusPolicy(Qt::TabFocus);
         connect(f2_bp, &QPushButton::clicked, [=](){ m_search->searchNext(false); });
         f2->addWidget(f2_bp);
     auto f2_bl = new QPushButton("&All", f2);
         f2_bl->setToolTip("Open a new window showing all lines that contain a match for the pattern.");
+        f2_bl->setFocusPolicy(Qt::TabFocus);
         // FIXME first param should be "false" when used via shortcut
         connect(f2_bl, &QPushButton::clicked, [=](){ m_search->searchAll(true, 0); });
         f2->addWidget(f2_bl);
@@ -136,16 +147,16 @@ MainWin::MainWin(QApplication * app)
         connect(f2_regexp, &QCheckBox::stateChanged, m_search, &MainSearch::searchOptToggleRegExp);
         f2->addWidget(f2_regexp);
 
-    m_stline = new StatusLine(m_f1_t);
-    m_higl = new Highlighter(m_f1_t, this);
-    m_search->connectWidgets(m_f1_t, m_higl, f2_e, f2_hall, f2_mcase, f2_regexp);
-    m_bookmarks->connectWidgets(m_f1_t, m_higl);
-    SearchList::connectWidgets(this, m_search, m_f1_t, m_higl, m_bookmarks);
-    DlgBookmarks::connectWidgets(this, m_search, m_f1_t, m_higl, m_bookmarks);
-    DlgHistory::connectWidgets(this, m_search, m_f1_t);
+    m_stline = new StatusLine(m_mainText);
+    m_higl = new Highlighter(m_mainText, this);
+    m_search->connectWidgets(m_mainText, m_higl, f2_e, f2_hall, f2_mcase, f2_regexp);
+    m_bookmarks->connectWidgets(m_mainText, m_higl);
+    SearchList::connectWidgets(this, m_search, m_mainText, m_higl, m_bookmarks);
+    DlgBookmarks::connectWidgets(this, m_search, m_mainText, m_higl, m_bookmarks);
+    DlgHistory::connectWidgets(this, m_search, m_mainText);
 
     layout_top->setContentsMargins(0, 0, 0, 0);
-    setCentralWidget(central_wid);
+    this->setCentralWidget(central_wid);
 
     populateMenus();
 
@@ -164,7 +175,7 @@ MainWin::MainWin(QApplication * app)
         connect(act, &QAction::triggered, [=](){ m_search->searchAll(false, -1); });
         central_wid->addAction(act);
 
-    m_f1_t->setFocus(Qt::ShortcutFocusReason);
+    m_mainText->setFocus(Qt::ShortcutFocusReason);
 
     m_timUpdateRc = new QTimer(this);
     m_timUpdateRc->setSingleShot(true);
@@ -233,16 +244,16 @@ void MainWin::populateMenus()
 
     auto menubar_mark = menuBar()->addMenu("&Bookmarks");
     act = menubar_mark->addAction("Toggle bookmark");
-        connect(act, &QAction::triggered, [=](){ m_f1_t->toggleBookmark(); });
+        connect(act, &QAction::triggered, [=](){ m_mainText->toggleBookmark(); });
     act = menubar_mark->addAction("List bookmarks");
         connect(act, &QAction::triggered, [=](){ DlgBookmarks::openDialog(); });
     act = menubar_mark->addAction("Delete all bookmarks");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdBookmarkDeleteAll);
     menubar_mark->addSeparator();
     act = menubar_mark->addAction("Jump to prev. bookmark");
-        connect(act, &QAction::triggered, [=](){ m_f1_t->jumpToNextBookmark(false); });
+        connect(act, &QAction::triggered, [=](){ m_mainText->jumpToNextBookmark(false); });
     act = menubar_mark->addAction("Jump to next bookmark");
-        connect(act, &QAction::triggered, [=](){ m_f1_t->jumpToNextBookmark(true); });
+        connect(act, &QAction::triggered, [=](){ m_mainText->jumpToNextBookmark(true); });
     menubar_mark->addSeparator();
     act = menubar_mark->addAction("Read bookmarks from file...");
         connect(act, &QAction::triggered, [=](){ m_bookmarks->readFileFrom(this); });
@@ -268,13 +279,13 @@ QStyle * MainWin::getAppStyle() const
 
 const QColor& MainWin::getFgColDefault() const
 {
-    auto& pal = m_f1_t->palette();
+    auto& pal = m_mainText->palette();
     return pal.color(QPalette::Text);
 }
 
 const QColor& MainWin::getBgColDefault() const
 {
-    auto& pal = m_f1_t->palette();
+    auto& pal = m_mainText->palette();
     return pal.color(QPalette::Base);
 }
 
@@ -325,9 +336,9 @@ void MainWin::menuCmdAbout(bool)
  */
 void MainWin::menuCmdDisplayLineNo()
 {
-    auto c = m_f1_t->textCursor();
+    auto c = m_mainText->textCursor();
     int line = c.block().blockNumber();
-    int max = m_f1_t->document()->blockCount();
+    int max = m_mainText->document()->blockCount();
 
     QString msg = m_curFileName + ": line " + QString::number(line + 1) + " of "
                     + QString::number(max) + " lines";
@@ -345,7 +356,7 @@ void MainWin::menuCmdDisplayLineNo()
  */
 void MainWin::menuCmdGotoLine(bool)
 {
-    int lineCount = m_f1_t->document()->blockCount();
+    int lineCount = m_mainText->document()->blockCount();
     bool ok = false;
 
     int line = QInputDialog::getInt(this, "Goto line number...",
@@ -354,7 +365,7 @@ void MainWin::menuCmdGotoLine(bool)
                                     1, 1, lineCount, 1, &ok);
     if (ok && (line > 0) && (line <= lineCount))
     {
-        m_f1_t->jumpToLine(line - 1);
+        m_mainText->jumpToLine(line - 1);
     }
 }
 
@@ -391,7 +402,7 @@ void MainWin::menuCmdSelectFont(bool)
         m_fontContent = font;
 
         // apply font directly in main text window
-        m_f1_t->setFont(m_fontContent);
+        m_mainText->setFont(m_fontContent);
 
         // notify dialogs
         emit textFontChanged();
@@ -401,11 +412,11 @@ void MainWin::menuCmdSelectFont(bool)
 void MainWin::keyCmdZoomFontSize(bool zoomIn)
 {
     if (zoomIn)
-        m_f1_t->zoomIn();
+        m_mainText->zoomIn();
     else
-        m_f1_t->zoomOut();
+        m_mainText->zoomOut();
 
-    m_fontContent = m_f1_t->font();
+    m_fontContent = m_mainText->font();
 
     // notify dialogs
     emit textFontChanged();
@@ -413,7 +424,7 @@ void MainWin::keyCmdZoomFontSize(bool zoomIn)
 
 void MainWin::menuCmdToggleLineWrap(bool checked)
 {
-    m_f1_t->setLineWrapMode(checked ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+    m_mainText->setLineWrapMode(checked ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
 }
 
 /**
@@ -424,9 +435,9 @@ void MainWin::menuCmdToggleLineWrap(bool checked)
 void MainWin::discardContent()
 {
     // discard the complete document contents
-    m_f1_t->clear();
-    m_f1_t->setCurrentCharFormat(QTextCharFormat());
-    m_f1_t->cursorJumpStackReset();
+    m_mainText->clear();
+    m_mainText->setCurrentCharFormat(QTextCharFormat());
+    m_mainText->cursorJumpStackReset();
 
     m_search->searchReset();
 
@@ -442,9 +453,9 @@ void MainWin::discardContent()
  */
 void MainWin::menuCmdDiscard(bool is_fwd)
 {
-    auto c = m_f1_t->textCursor();
+    auto c = m_mainText->textCursor();
     int curLine = c.block().blockNumber();
-    int lineCount = m_f1_t->document()->blockCount();
+    int lineCount = m_mainText->document()->blockCount();
     int delCount = 0;
 
     if (is_fwd)
@@ -493,7 +504,7 @@ void MainWin::menuCmdDiscard(bool is_fwd)
     c.removeSelectedText();
 
     m_search->searchReset();
-    m_f1_t->cursorJumpStackReset();
+    m_mainText->cursorJumpStackReset();
 
     int top_l = (is_fwd ? 0 : curLine);
     int bottom_l = (is_fwd ? curLine : -1);
@@ -612,8 +623,8 @@ void MainWin::loadFromFile(const QString& fileName)
             qint64 rdSize = fh.read(inBuf, ((rest >= CHUNK_SIZE) ? CHUNK_SIZE : rest));
             if (rdSize > 0)
             {
-                m_f1_t->textCursor().movePosition(QTextCursor::End);
-                m_f1_t->insertPlainText(inBuf);
+                m_mainText->textCursor().movePosition(QTextCursor::End);
+                m_mainText->insertPlainText(inBuf);
                 rest -= rdSize;
             }
             else if (rdSize < 0)
@@ -628,10 +639,10 @@ void MainWin::loadFromFile(const QString& fileName)
         delete[] inBuf;
 
         // move cursor to start or end of document, depending on head/tail option
-        auto c = m_f1_t->textCursor();
+        auto c = m_mainText->textCursor();
         c.movePosition((load_file_mode == LoadMode::Head) ? QTextCursor::Start : QTextCursor::End);
-        m_f1_t->setTextCursor(c);
-        m_f1_t->ensureCursorVisible();
+        m_mainText->setTextCursor(c);
+        m_mainText->ensureCursorVisible();
 
         // adapt text of the "reload file" menu entry, in case pipe was used previously
         m_actFileReload->setText("Reload current file");
@@ -675,7 +686,7 @@ void MainWin::loadFromPipe()
 {
     if (m_loadPipe == nullptr)
     {
-        m_loadPipe = new LoadPipe(this, m_f1_t, load_file_mode, load_buf_size);
+        m_loadPipe = new LoadPipe(this, m_mainText, load_file_mode, load_buf_size);
         connect(m_loadPipe, &LoadPipe::pipeLoaded, this, &MainWin::loadPipeDone);
 
         if (isatty(0))
@@ -684,7 +695,7 @@ void MainWin::loadFromPipe()
     else
         m_loadPipe->continueReading();
 
-    m_f1_t->viewport()->setCursor(Qt::BusyCursor);
+    m_mainText->viewport()->setCursor(Qt::BusyCursor);
 }
 
 /**
@@ -700,8 +711,8 @@ void MainWin::loadPipeDone()
     // insert the data into the text widget
     for (auto& data : dataBuf)
     {
-        m_f1_t->textCursor().movePosition(QTextCursor::End);
-        m_f1_t->insertPlainText(data);
+        m_mainText->textCursor().movePosition(QTextCursor::End);
+        m_mainText->insertPlainText(data);
     }
 
     // store buffer size parameter specified in the dialog in the RC file
@@ -710,14 +721,14 @@ void MainWin::loadPipeDone()
     updateRcAfterIdle();
 
     // move cursor to start or end of document, depending on head/tail option
-    auto c = m_f1_t->textCursor();
+    auto c = m_mainText->textCursor();
     c.movePosition((load_file_mode == LoadMode::Head) ? QTextCursor::Start : QTextCursor::End);
-    m_f1_t->setTextCursor(c);
-    m_f1_t->ensureCursorVisible();
+    m_mainText->setTextCursor(c);
+    m_mainText->ensureCursorVisible();
 
     // finally initiate color highlighting etc.
     //TODO InitContent()
-    m_f1_t->viewport()->setCursor(Qt::ArrowCursor);
+    m_mainText->viewport()->setCursor(Qt::ArrowCursor);
     m_higl->highlightInit();
 
     // adapt text of the "reload file" menu entry
@@ -790,7 +801,7 @@ void MainWin::loadRcFile()
                         else
                             fprintf(stderr, "trowser: ignoring unknown keyword at top-level in rcfile: %s\n", var.toLatin1().data());
                     }
-                    m_f1_t->setFont(m_fontContent);
+                    m_mainText->setFont(m_fontContent);
 
                     // buffer size provided via command line has precedence over the one from RC file
                     if (!load_buf_size_opt && (load_buf_size_lsb || load_buf_size_msb))

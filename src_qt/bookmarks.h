@@ -25,6 +25,8 @@ class MainWin;
 class MainText;
 class Highlighter;
 
+// ----------------------------------------------------------------------------
+
 class Bookmarks
 {
 public:
@@ -32,6 +34,7 @@ public:
         : m_mainWin(mainWin)
     {
     }
+    ~Bookmarks() = default;
     void connectWidgets(MainText * textWid, Highlighter * higl)
     {
         m_mainText = textWid;

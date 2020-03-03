@@ -56,7 +56,7 @@ public:
 private:
     const int TXT_MARGIN = 3;
     HighlightViewModelIf * const m_model;
-    bool m_centering;
+    const bool m_centering;
     const QFont& m_fontDefault;
     const QColor& m_fgColDefault;
     const QColor& m_bgColDefault;

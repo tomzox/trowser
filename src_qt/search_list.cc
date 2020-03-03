@@ -14,6 +14,38 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This module implements the search list dialog, which is used to show a
+ * user-selected sub-set of text lines in the mmain window. The user can add or
+ * remove text lines via "search all" in the main window (or the find toolbar
+ * in several other dialogs). Lines can also be added "manually" via the
+ * "Insert" key and menu entries in the main window. Lines can also be removed
+ * via the "Delete" key within the list dialog. Any changes to the list are
+ * covered by an undo/redo mechanism.
+ *
+ * The search list is designed specifically to support a large number of lines.
+ * Therefore addition and removal as well as undo/redo are broken into steps of
+ * may 100 ms within a timer-driven background task. Only one such change can
+ * be going on at a time; the user will be asked to wait for the previous
+ * change to complete via a dialog when making further changes.
+ *
+ * Finally the dialog offers saving the entire contents, or just the line
+ * indices to a file, or inversely add line numbers listed in a file to the
+ * dialog.
+ *
+ * By default the dialog only shows a copy of the text for each line. Via the
+ * menu the user can add columns showing the line number, or a line number
+ * delta, or user-defined columns with content extracted from adjacent text
+ * lines via regular expression pattern matching & capturing.
+ *
+ * Currently only one instance of this class can exists. Attempts to open
+ * another instance will just raise the window of the existing instance.
+ * Technically however multiple instances are possible, and could be useful.
+ * This would however require extending the user-interface in other dialogs so
+ * that the user can select which instance operations such as "search all"
+ * should work on.
  */
 
 #include <QWidget>
@@ -142,9 +174,9 @@ public:
             {
                 switch (section)
                 {
-                    case COL_IDX_BOOK: return QVariant("Marking bookmarked lines with a blue dot");
-                    case COL_IDX_LINE: return QVariant("Original line number in the main window");
-                    case COL_IDX_LINE_D: return QVariant("Line number delta to selected base line");
+                    case COL_IDX_BOOK: return QVariant("Bookmarked lines are marked with a blue dot in this column.");
+                    case COL_IDX_LINE: return QVariant("Number of each line in the main window");
+                    case COL_IDX_LINE_D: return QVariant("Line number delta to a selected base line");
                     case COL_IDX_CUST_VAL: return QVariant("Value extracted from text content as per \"custom column configuration\"");
                     case COL_IDX_CUST_VAL_DELTA: return QVariant("Delta between extracted value of each line to that of a selected line");
                     case COL_IDX_CUST_FRM: return QVariant("Frame boundary value extracted from text content as per \"custom column configuration\"");
@@ -1139,6 +1171,7 @@ void SearchListView::addKeyBinding(Qt::KeyboardModifier mod, Qt::Key key, const 
 
 void SearchListView::keyPressEvent(QKeyEvent *e)
 {
+    // check if this key is overridden by a registered callback
     auto it = m_keyCb.find((uint32_t(e->modifiers()) << 4) | uint32_t(e->key()));
     if (it != m_keyCb.end()) {
         (it->second)();
@@ -1169,6 +1202,7 @@ void SearchListView::keyPressEvent(QKeyEvent *e)
             break;
 
         case Qt::Key_Down:
+            // FIXME should move cursor to top-most line when scrolling out of view
             if (e->modifiers() == Qt::ControlModifier)
                 verticalScrollBar()->setValue(verticalScrollBar()->value() + verticalScrollBar()->singleStep() );
             else
@@ -1221,6 +1255,7 @@ SearchList::SearchList()
     m_undo->connectModelForDebug(m_model);
 #endif
 
+    // main dialog component: table view, showing the selected lines of text
     QFontMetrics metrics(s_mainWin->getFontContent());
     m_table = new SearchListView(central_wid);
         m_table->setModel(m_model);
@@ -1241,12 +1276,15 @@ SearchList::SearchList()
         connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &SearchList::selectionChanged);
         layout_top->addWidget(m_table);
 
+    // Progress bar overlay: made visible during long operations via background tasks
     m_hipro = new QProgressBar(m_table);
         m_hipro->setOrientation(Qt::Horizontal);
         m_hipro->setTextVisible(true);
         m_hipro->setMinimum(0);
         m_hipro->setMaximum(100);
         m_hipro->setVisible(false);
+
+    // Status line overlay: used to display notification text
     m_stline = new StatusLine(m_table);
 
     if (!s_winGeometry.isEmpty() && !s_winState.isEmpty())
@@ -1267,6 +1305,7 @@ SearchList::SearchList()
 
     populateMenus();
 
+    // overriding key bindings of the table view widget
     m_table->addKeyBinding(Qt::ControlModifier, Qt::Key_G, [=](){ SearchList::cmdDisplayStats(); });
     m_table->addKeyBinding(Qt::NoModifier,      Qt::Key_M, [=](){ cmdToggleBookmark(); });
     m_table->addKeyBinding(Qt::NoModifier,      Qt::Key_N, [=](){ cmdSearchNext(true); });
@@ -1278,6 +1317,7 @@ SearchList::SearchList()
     m_table->addKeyBinding(Qt::NoModifier,      Qt::Key_U, [=](){ cmdUndo(); });
     m_table->addKeyBinding(Qt::ControlModifier, Qt::Key_R, [=](){ cmdRedo(); });
 
+    // global keyboard shortcuts
     auto act = new QAction(central_wid);
         act->setShortcut(QKeySequence(Qt::ALT | Qt::Key_0));
         connect(act, &QAction::triggered, this, &SearchList::cmdSetDeltaColRoot);
@@ -3053,6 +3093,10 @@ void SearchList::openDialog(bool raiseWin) /*static*/
     }
 }
 
+/**
+ * This external interface function is called once during start-up after all
+ * classes are instantiated to establish the required connections.
+ */
 void SearchList::connectWidgets(MainWin * mainWin, MainSearch * search, MainText * mainText,
                                 Highlighter * higl, Bookmarks * bookmarks) /*static*/
 {

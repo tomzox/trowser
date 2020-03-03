@@ -14,6 +14,33 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This module contains the static factory function and internal sub-classes
+ * that implement the abstract ParseFrame interface. This interface is used by
+ * the search list window for proving content for its custom columns. The
+ * ParseFrame constructor is provided an instance of the ParseSpec data
+ * structure (which is created by the DlgParser class, and stored within the
+ * persistent confiruation parameters of the search list dialog). Based on this
+ * configuration, the static builder interfaces instantiates one of the two
+ * sub-classes: The simpler ParseFrameLinear class, or the class
+ * ParseFrameRange.
+ *
+ * Both classes extract data for the custom column by searching from a given
+ * line backwards for a match on a regular expression; the expression has to
+ * contain a capure group (i.e. parenthesis). The search can be limited by an
+ * additional pattern, or a via range of lines searched. When a match is found,
+ * the captured text is returned for display in the custom column. Class
+ * ParseFrameRange will also search in forward direction, if backward search
+ * did not produce a result.
+ *
+ * Both classes employ a cache that stores the result of a search for each
+ * line, or more correctly: There is a cache entry for ranges of text that will
+ * produce the same result.
+ *
+ * Examples where these classes could be useful are given in the description of
+ * class DlgParser.
  */
 
 #include <QTextDocument>
@@ -32,13 +59,17 @@
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This class is used by both sub-classes in this module for defining cache entries.
+ */
 class ParseFrameCacheEntry
 {
 public:
-    int startLine;  // always equal the key of this entry
-    int lastLine;
-    QString val;
-    QString frm;
+    int startLine;      // always equal the key of this entry
+    int lastLine;       // when used by ParseFrameLinear: last line this entry is valid for
+                        // when used by ParseFrameRange: first following line this entry is not valid for
+    QString val;        // value extracted from mandatory first pattern
+    QString frm;        // value extracted from optional frame boundary pattern, or empty
 };
 
 using ParseFrameCacheMap = std::map<int,ParseFrameCacheEntry>;
@@ -46,7 +77,7 @@ using ParseFrameCacheMap = std::map<int,ParseFrameCacheEntry>;
 // ----------------------------------------------------------------------------
 
 /**
- * Constructor for parser using backward-search only
+ * Parser class using backwards-search only
  */
 class ParseFrameLinear : public ParseFrame
 {
@@ -169,7 +200,7 @@ QString ParseFrameLinear::parseFrame(int line, int col)
 // ----------------------------------------------------------------------------
 
 /**
- * Constructor for parser using frame-based search
+ * Parser class using frame-based search range
  */
 class ParseFrameRange : public ParseFrame
 {
@@ -209,12 +240,6 @@ ParseFrameInfo ParseFrameRange::getMatchInfo() const
     return { m_prevFrmStart, m_prevValMatch, m_prevFrmEnd };
 }
 
-
-/**
- * This function retrieves the "frame number" (timestamp) to which a given line
- * of text belongs via pattern matching. Two methods for retrieving the number
- * can be used, depending on which patterns are defined.
- */
 QString ParseFrameRange::parseFrame(int line, int col)
 {
     // Query the cache before parsing for the frame number
@@ -332,6 +357,12 @@ QString ParseFrameRange::parseFrame(int line, int col)
 
 // ----------------------------------------------------------------------------
 
+/*
+ * Member functions of the ParseSpec class, which is a parameter container.
+ * The class serves for persistent storage of parameters as well as for
+ * parameter for construction of ParseFrame instances.
+ */
+
 bool operator==(const ParseSpec& lhs, const ParseSpec& rhs)
 {
     return    (lhs.m_valPat == rhs.m_valPat)
@@ -350,6 +381,10 @@ bool operator!=(const ParseSpec& lhs, const ParseSpec& rhs)
     return !(lhs == rhs);
 }
 
+/**
+ * This function returns a description of the parser configuration
+ * ("specification") in form of a JSON object.
+ */
 QJsonObject ParseSpec::getRcValues() const
 {
     QJsonObject obj;
@@ -369,6 +404,9 @@ QJsonObject ParseSpec::getRcValues() const
     return obj;
 }
 
+/**
+ * This function constructs a parser specification from the given JSON object.
+ */
 ParseSpec::ParseSpec(const QJsonValue& val)
 {
     const QJsonObject obj = val.toObject();
@@ -378,6 +416,7 @@ ParseSpec::ParseSpec(const QJsonValue& val)
         const QString& var = it.key();
         const QJsonValue& val = it.value();
 
+        // parameters for basic "value extraction"
         if (var == "val_pattern")
         {
             m_valPat = val.toString();
@@ -390,7 +429,7 @@ ParseSpec::ParseSpec(const QJsonValue& val)
         {
             m_valDelta = val.toBool();
         }
-
+        // parameters for searching frame boundaries (and optionally capturing a 2nd value)
         else if (var == "frame_pattern")
         {
             m_frmPat = val.toString();
@@ -411,7 +450,7 @@ ParseSpec::ParseSpec(const QJsonValue& val)
         {
             m_frmDelta = val.toBool();
         }
-
+        // common parameter: search range limit
         else if (var == "limit_range")
         {
             m_range = val.toInt();
@@ -419,6 +458,11 @@ ParseSpec::ParseSpec(const QJsonValue& val)
     }
 }
 
+/**
+ * This function returns a bitmap that indicates which of possible 4 different
+ * customizable search list columns are enabled according to the given
+ * parameter set.
+ */
 ParseColumns ParseSpec::getColumns() const
 {
     ParseColumns result = ParseColumnFlags::Val;
@@ -435,6 +479,12 @@ ParseColumns ParseSpec::getColumns() const
     return result;
 }
 
+/**
+ * This function returns the user-defined column header for the given column
+ * from the given parameter set. The result is undefined if the given column
+ * is not enabled in the parameter set. Note for delta columns, the caller is
+ * responsible to prepend the delta symbol (or equivalent marker).
+ */
 const QString& ParseSpec::getHeader(ParseColumnFlags col) const
 {
     if (col == ParseColumnFlags::Val)
@@ -447,7 +497,9 @@ const QString& ParseSpec::getHeader(ParseColumnFlags col) const
 // ----------------------------------------------------------------------------
 
 /**
- * Constructor for shared base class
+ * Constructor for the shared abstract base class: The base class stores the
+ * common constant input parameters provided as parameters to the factory
+ * method.
  */
 ParseFrame::ParseFrame(QTextDocument* doc, const ParseSpec& spec)
     : m_doc(doc)
@@ -458,8 +510,9 @@ ParseFrame::ParseFrame(QTextDocument* doc, const ParseSpec& spec)
 
 
 /**
- * This factory function creates and returns a "finder" instance for the given
- * search type (i.e. regular expression or sub-string search)
+ * This static factory function creates and returns a "parser" instance for the
+ * given configuration data-set. The function may also return a NULL pointer if
+ * the given configuration is invalid.
  */
 ParseFramePtr ParseFrame::create(QTextDocument* doc, const ParseSpec& spec)  /*static*/
 {
@@ -473,9 +526,10 @@ ParseFramePtr ParseFrame::create(QTextDocument* doc, const ParseSpec& spec)  /*s
     {
         ptr = std::make_unique<ParseFrameLinear>(doc, spec);
     }
+    // else: no pattern given at all -> return nullptr
 
     if (ptr && !ptr->isValid())
-        ptr.reset();
+        ptr.reset();  // invalid pattern -> return nullptr
 
     return ptr;
 }

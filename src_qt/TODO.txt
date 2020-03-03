@@ -3,6 +3,7 @@
 - search_list: performance optimization line list used by SearchListModel
 - search_list: tip message when enabling delta via menu: "select root line"
 - avoid blocking main window while loading large file into widget - if possible?
+- store RC file in QString QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
 
 - add more documentation
 - add more tool-tips

@@ -14,6 +14,21 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This class manages the list of bookmarked text lines. Its state consists
+ * mainly of a set of line numbers and associated description text. The class
+ * provides interfaces to widgets displaying text for toggling bookmarks in a
+ * given line. It also provides interfaces to the dialog showing the bookmark
+ * list.
+ *
+ * The main purpose of bookmarks is rendering these user-selected lines in a
+ * way that makes them stand out above regularly highlighted lines. There is a
+ * special-purpose mark-up that is applied to all bookmarked lines (possibly on
+ * top of pattern-based mark-up). However this module is not involved with
+ * rendering; it only supports the rendering classes by providing interfaces
+ * for determining if a line is bookmarked.
  */
 
 #include <QWidget>
@@ -41,8 +56,16 @@
 // ----------------------------------------------------------------------------
 
 /**
- * This function adds or removes a bookmark at the given line of text.
- * The function is used to toggle bookmarks via key bindings.
+ * This function adds or removes a bookmark from the given line of text. The
+ * function is used to toggle bookmarks via key bindings. When adding a
+ * bookmark, a copy of the respective text line is assigned as default
+ * description. The description can be re-assigned later via setText().
+ * The function result indicates the new state of the line: True if bookmarked,
+ * else False.
+ *
+ * The function emits a signal to notify all widgets showing text, so that they
+ * update the mark-up of the respective text line (i.e. either adding or
+ * removing the bookmark mark-up style.)
  */
 bool Bookmarks::toggleBookmark(int line)
 {
@@ -62,7 +85,10 @@ bool Bookmarks::toggleBookmark(int line)
     }
     m_isModified = true;
 
+    // notify main window text highlighting class
     m_higl->bookmarkHighlight(line, result);
+
+    // notify dialogs
     SearchList::signalBookmarkLine(line);
     DlgBookmarks::signalBookmarkListChanged();
 
@@ -70,8 +96,12 @@ bool Bookmarks::toggleBookmark(int line)
 }
 
 /**
- * This function removes bookmarks at the given line numbers. This is used by
- * the bookmark dialog.
+ * This function removes bookmarks from all line numbers in the given list.
+ * This is a convenience interface used by the bookmark dialog, (almost)
+ * equivalent to calling toggleBookmark() for each of these lines, but slightly
+ * more efficient for large number of lines due to bulk processing (also the
+ * function will ignore line indices in the list that carry no bookmark instead
+ * of adding a bookmark there.)
  */
 void Bookmarks::removeLines(const std::vector<int>& lineList)
 {
@@ -81,10 +111,17 @@ void Bookmarks::removeLines(const std::vector<int>& lineList)
         if (it != m_bookmarks.end())
         {
             m_bookmarks.erase(it);
+
+            // notify main window text highlighting class
+            m_higl->bookmarkHighlight(line, false);
+
+            // notify search list dialog
             SearchList::signalBookmarkLine(line);
         }
     }
+    // bulk notifiction of bookmark dialog
     DlgBookmarks::signalBookmarkListChanged();
+
     m_isModified = true;
 }
 
@@ -297,7 +334,9 @@ void Bookmarks::readFile(QWidget * parent, const QString& fileName)
 }
 
 /**
- * This function writes the bookmark list into a file.
+ * This function writes the bookmark list into a file with the given name.
+ * Possible errors are reported immediately using a modal dialog on top of the
+ * given parent window.
  */
 bool Bookmarks::saveFile(QWidget * parent, const QString& fileName)
 {
@@ -328,8 +367,9 @@ bool Bookmarks::saveFile(QWidget * parent, const QString& fileName)
 }
 
 /**
- * This function is called by menu entry "Read bookmarks from file"
- * The user is asked to select a file; if he does so it's content is read.
+ * This function supports menu entry "Read bookmarks from file". The user is
+ * asked to select a file; if he does so it's content is read. The file
+ * selection widget is displayed on top of the given parent window.
  */
 void Bookmarks::readFileFrom(QWidget * parent)
 {
@@ -347,9 +387,9 @@ void Bookmarks::readFileFrom(QWidget * parent)
 
 
 /**
- * This function automatically reads a previously stored bookmark list
- * for a newly loaded file, if the bookmark file is named by the default
- * naming convention, i.e. with ".bok" extension.
+ * This function automatically reads a previously stored bookmark list for a
+ * newly loaded file, if the bookmark file is named by the default naming
+ * convention, i.e. with ".bok" extension.
  */
 void Bookmarks::readFileAuto(QWidget * parent)
 {

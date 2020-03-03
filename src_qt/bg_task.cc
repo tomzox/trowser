@@ -19,16 +19,19 @@
  *
  * This module implements a facility which supports scheduling background tasks
  * via "idle" timer out of the main event loop (i.e. not using threads).  In
- * essence, the class provides simply a single-shot timer for each call of the
- * start() method. The user modules are responsible to split processing that
- * takes a longer time than say 100ms (i.e. an acceptible delay on processing
- * interactive input) into separate steps. For each step the BgTask is started,
- * and then reschedules itself for the next step out of the callback function.
+ * essence, the class provides simply a single-shot callback for each call of
+ * the start() method. The user modules are responsible to split processing
+ * that takes a longer time than say 100ms (i.e. an acceptible delay on
+ * processing interactive input) into separate steps. For each successive step,
+ * the owner's BgTask instance is started; when the owner's task cannot be
+ * completed in this run, it reschedules for the next step out of the callback
+ * function.
  *
  * The main purpose of having a central facility is scheduling only a single
  * one of the pending tasks, namely the one with highest priority. Only once
  * that tasks stops rescheduling itself, lower-priority tasks handlers will be
- * processed.
+ * processed. The priority list is hard-coded as a enumeration in the interface
+ * of this class.
  *
  * ----------------------------------------------------------------------------
  */

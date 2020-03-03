@@ -311,6 +311,7 @@ DlgBookmarks::DlgBookmarks()
                                        s_mainWin->getFgColDefault(),
                                        s_mainWin->getBgColDefault());
 
+    // main dialog component: table view, showing a list of user-defined patterns
     QFontMetrics metrics1(s_mainWin->getFontContent());
     m_table = new DlgBookmarkView(central_wid);
         m_table->setModel(m_model);
@@ -327,21 +328,23 @@ DlgBookmarks::DlgBookmarks()
         connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &DlgBookmarks::selectionChanged);
         layout_top->addWidget(m_table);
 
-    m_stline = new StatusLine(m_table);
-
+    // Command buttons at the bottom of the dialog window: Close, "File..."
     m_cmdButs = new QDialogButtonBox(QDialogButtonBox::Close, Qt::Horizontal, central_wid);
         connect(m_cmdButs, &QDialogButtonBox::clicked, this, &DlgBookmarks::cmdButton);
-    auto fileMenu = new QMenu("File actions", this);
-        connect(fileMenu, &QMenu::aboutToShow, [=](){ m_saveMenuAct->setEnabled(s_bookmarks->validFileName()); });
-    m_saveMenuAct = fileMenu->addAction("Save");
-        connect(m_saveMenuAct, &QAction::triggered, [=](){ s_bookmarks->saveFileAs(this, true); });
-    auto act = fileMenu->addAction("Save as...");
-        connect(act, &QAction::triggered, [=](){ s_bookmarks->saveFileAs(this, false); });
-    act = fileMenu->addAction("Load...");
-        connect(act, &QAction::triggered, [=](){ s_bookmarks->readFileFrom(this); });
-    auto but = m_cmdButs->addButton("File...", QDialogButtonBox::ActionRole);
-        but->setMenu(fileMenu);
+        auto fileMenu = new QMenu("File actions", this);
+            connect(fileMenu, &QMenu::aboutToShow, [=](){ m_saveMenuAct->setEnabled(s_bookmarks->validFileName()); });
+            m_saveMenuAct = fileMenu->addAction("Save");
+                connect(m_saveMenuAct, &QAction::triggered, [=](){ s_bookmarks->saveFileAs(this, true); });
+            auto act = fileMenu->addAction("Save as...");
+                connect(act, &QAction::triggered, [=](){ s_bookmarks->saveFileAs(this, false); });
+            act = fileMenu->addAction("Load...");
+                connect(act, &QAction::triggered, [=](){ s_bookmarks->readFileFrom(this); });
+        auto but = m_cmdButs->addButton("File...", QDialogButtonBox::ActionRole);
+            but->setMenu(fileMenu);
     layout_top->addWidget(m_cmdButs);
+
+    // Status line overlay: used to display notification text
+    m_stline = new StatusLine(m_table);
 
     connect(s_mainWin, &MainWin::textFontChanged, this, &DlgBookmarks::mainFontChanged);
     connect(s_mainWin, &MainWin::documentNameChanged, this, &DlgBookmarks::mainDocNameChanged);
@@ -734,6 +737,10 @@ void DlgBookmarks::openDialog() /*static*/
     }
 }
 
+/**
+ * This external interface function is called once during start-up after all
+ * classes are instantiated to establish the required connections.
+ */
 void DlgBookmarks::connectWidgets(MainWin * mainWin, MainSearch * search, MainText * mainText,
                                   Highlighter * higl, Bookmarks * bookmarks) /*static*/
 {

@@ -42,6 +42,8 @@ class DlgBookmarkView;
 class DlgBookmarkModel;
 class HighlightViewDelegate;
 
+// ----------------------------------------------------------------------------
+
 class DlgBookmarks : public QMainWindow
 {
     Q_OBJECT

@@ -14,6 +14,19 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This module implements a dialog that shows a list of all used-defined
+ * highlighting patterns and a sample of the respective mark-up format. The
+ * dialog can be used either for searching lines matching selected patterns in
+ * the main window, or for editing the list. This functionality is provided via
+ * the two toolbars as well as the context menu and standard table view
+ * bindings.
+ *
+ * Only a single-instance of this dialog is allowed, as only a single instance
+ * exists of the underlying data. Attempts to open another instance will just
+ * raise the window of the existing instance.
  */
 
 #include <QWidget>
@@ -54,6 +67,18 @@
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This class implements the data model that is underlying the table view of
+ * the pattern list. Upon instantiation, the dialog takes a copy of the pattern
+ * list managed by the Highlighting class. Various standard and non-standard
+ * interface functions allow the view moving, inserting, or removing list
+ * items. Each list entry carries an ID that allows associating list items with
+ * entries originating from the Highlighting class when finally saving back the
+ * modified list.
+ *
+ * The class also supports an interface for the item view delegate used for
+ * rendering the sample text.
+ */
 class DlgHiglModel : public QAbstractItemModel, public HighlightViewModelIf
 {
 public:
@@ -150,9 +175,9 @@ int DlgHiglModel::columnCount(const QModelIndex& /*parent*/) const
 
 QVariant DlgHiglModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
-    if (role == Qt::DisplayRole)
+    if (orientation == Qt::Horizontal)
     {
-        if (orientation == Qt::Horizontal)
+        if (role == Qt::DisplayRole)
         {
             switch (section)
             {
@@ -164,7 +189,21 @@ QVariant DlgHiglModel::headerData(int section, Qt::Orientation orientation, int 
             }
             qWarning("Invalid index:%d for headerData()", section);
         }
-        else if ((size_t)section < m_patList.size())
+        else if (role == Qt::ToolTipRole)
+        {
+            switch (section)
+            {
+                case COL_IDX_PAT: return QVariant("<P>Shows the search text or regular expression.</P>");
+                case COL_IDX_REGEXP: return QVariant("<P>Shows \"true\" if the search string is a Regular Expression (Perl syntax), or \"false\" if it is a plain sub-string.</P>");
+                case COL_IDX_CASE: return QVariant("<P>Shows \"true\" if text matches only when in the same case as in the given pattern.</P>");
+                case COL_IDX_FMT: return QVariant("<P>Shows the assigned mark-up applied to a sample text. (Double-click for opening the mark-up editor.)</P>");
+                default: break;
+            }
+        }
+    }
+    else
+    {
+        if ((role == Qt::DisplayRole) && ((size_t)section < m_patList.size()))
         {
             return QVariant(QString::number(section + 1));
         }
@@ -352,6 +391,10 @@ QVariant DlgHiglModel::higlModelData(const QModelIndex& /*index*/, int /*role*/)
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This helper class overloads the standard QTableView class to allow
+ * overriding several key bindings.
+ */
 class DlgHiglView : public QTableView
 {
 public:
@@ -394,7 +437,7 @@ void DlgHiglView::keyPressEvent(QKeyEvent *e)
 // ----------------------------------------------------------------------------
 
 /**
- * This function creates the highlight mark-up edit dialog.
+ * This function creates and shows the highlight list editor dialog.
  */
 DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
     : m_higl(higl)
@@ -412,6 +455,7 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
                                               m_mainWin->getFgColDefault(),
                                               m_mainWin->getBgColDefault());
 
+    // main dialog component: table view, showing a list of user-defined patterns
     m_table = new DlgHiglView(central_wid);
         m_table->setModel(m_model);
         m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -428,8 +472,7 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
         connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &DlgHigl::selectionChanged);
         layout_top->addWidget(m_table);
 
-    m_stline = new StatusLine(m_table);
-
+    // Standard buttons at the bottom of the dialog window: Ok/Cancel/Apply
     m_cmdButs = new QDialogButtonBox(QDialogButtonBox::Cancel |
                                      QDialogButtonBox::Apply |
                                      QDialogButtonBox::Ok,
@@ -438,6 +481,9 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
         connect(m_cmdButs, &QDialogButtonBox::clicked, this, &DlgHigl::cmdButton);
         connect(m_model, &DlgHiglModel::dataChanged, this, &DlgHigl::cbDataChanged);
         layout_top->addWidget(m_cmdButs);
+
+    // Status line overlay: used to display notification text
+    m_stline = new StatusLine(m_table);
 
     connect(m_mainWin, &MainWin::textFontChanged, this, &DlgHigl::mainFontChanged);
 
@@ -506,7 +552,7 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
         connect(act, &QAction::triggered, [=](){ m_search->searchHighlightClear(); });
         central_wid->addAction(act);
 
-    setCentralWidget(central_wid);
+    this->setCentralWidget(central_wid);
     if (!s_winGeometry.isEmpty())
         this->restoreGeometry(s_winGeometry);
     if (!s_winState.isEmpty())
@@ -898,7 +944,7 @@ void DlgHigl::cmdEditFormat(bool)
         if (it == m_dlgMarkup.end())
         {
             QString title = QString("Pattern /") + pat.m_pat + "/ mark-up";
-            auto ptr = std::make_unique<DlgMarkup>(id, title, fmtSpec, m_higl, m_mainWin);
+            auto ptr = std::make_unique<DlgMarkup>(id, fmtSpec, title, m_higl, m_mainWin);
 
             connect(ptr.get(), &DlgMarkup::closeReq, this, &DlgHigl::signalMarkupCloseReq);
             connect(ptr.get(), &DlgMarkup::applyReq, this, &DlgHigl::signalMarkupApplyReq);
@@ -1143,6 +1189,10 @@ void DlgHigl::cmdCopyFromMain(bool)
 // ----------------------------------------------------------------------------
 // Static state & interface
 
+DlgHigl * DlgHigl::s_instance = nullptr;
+QByteArray DlgHigl::s_winGeometry;
+QByteArray DlgHigl::s_winState;
+
 /**
  * This table replaces the ugly list of "standard" colors provided by the Qt
  * color selection dialog. The colors are selected especially to be useful as
@@ -1207,10 +1257,6 @@ std::vector<QRgb> DlgHigl::s_defaultColPalette =
   QRgb(0xff'b8b800),
   QRgb(0xff'ffff00),
 };
-
-DlgHigl * DlgHigl::s_instance = nullptr;
-QByteArray DlgHigl::s_winGeometry;
-QByteArray DlgHigl::s_winState;
 
 
 /**
@@ -1310,7 +1356,7 @@ void DlgHigl::setRcValues(const QJsonValue& val)  /*static*/
 
 /**
  * This static external interface function creates and shows the dialog window.
- * If the window is already open, it is only raised. There can only be one
+ * If the window is already open, it is only raised, as there can only be one
  * instance of the dialog.
  */
 void DlgHigl::openDialog(Highlighter * higl, MainSearch * search, MainWin * mainWin) /*static*/

@@ -14,6 +14,17 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This module implements a wrapper class that serves as owner of instances of
+ * the mark-up configuration dialog. There are static interfaces that
+ * instantiated the wrapper class for each of the pre-defined special-purpose
+ * mark-up formats. The wrapper class will only create the dialog, then wait
+ * for its completion signal, upon which it saves the results if applicable,
+ * and destroys the dialog and itself. The static interfaces ensure that there
+ * is only one instance of the wrapper and respective dialog for a given
+ * purpose.
  */
 
 #include <QWidget>
@@ -30,19 +41,27 @@
 
 // ----------------------------------------------------------------------------
 
-DlgMarkupSA::DlgMarkupSA(HiglId id, const QString& name, Highlighter * higl, MainWin * mainWin)
+/**
+ * The constructor creates an instance of the mark-up configuration dialog for
+ * the given ID.
+ */
+DlgMarkupSA::DlgMarkupSA(HiglId id, const QString& title, Highlighter * higl, MainWin * mainWin)
     : m_id(id)
     , m_higl(higl)
     , m_mainWin(mainWin)
 {
     DlgHigl::initColorPalette();
-    m_dlgWin = std::make_unique<DlgMarkup>(id, name, higl->getFmtSpecForId(id), higl, mainWin);
+    m_dlgWin = std::make_unique<DlgMarkup>(id, higl->getFmtSpecForId(id), title, higl, mainWin);
 
     connect(m_dlgWin.get(), &DlgMarkup::closeReq, this, &DlgMarkupSA::signalMarkupCloseReq);
     connect(m_dlgWin.get(), &DlgMarkup::applyReq, this, &DlgMarkupSA::signalMarkupApplyReq);
 }
 
 
+/**
+ * This interface function is used to raise the window of the owned mark-up
+ * dialog, when the user requests to open the dialog when it already exists.
+ */
 void DlgMarkupSA::raiseWindow()
 {
     m_dlgWin->activateWindow();
@@ -89,12 +108,17 @@ DlgMarkupSA * DlgMarkupSA::s_searchFmtDlg = nullptr;
 DlgMarkupSA * DlgMarkupSA::s_searchIncFmtDlg = nullptr;
 DlgMarkupSA * DlgMarkupSA::s_bookmarkFmtDlg = nullptr;
 
-void DlgMarkupSA::openDialog(DlgMarkupSA* &ptr, HiglId id, const QString& name,
+/**
+ * This common sub-function is used by the static interfaces for actually
+ * instantiating the wrapper class for a given mark-up ID. If the respective
+ * instance already exists, its dialog window is raised instead.
+ */
+void DlgMarkupSA::openDialog(DlgMarkupSA* &ptr, HiglId id, const QString& title,
                              Highlighter * higl, MainWin * mainWin)  /*static*/
 {
     if (ptr == nullptr)
     {
-        ptr = new DlgMarkupSA(id, name, higl, mainWin);
+        ptr = new DlgMarkupSA(id, title, higl, mainWin);
     }
     else
     {
@@ -102,16 +126,29 @@ void DlgMarkupSA::openDialog(DlgMarkupSA* &ptr, HiglId id, const QString& name,
     }
 }
 
+/**
+ * Open or raise the mark-up editor for the mark-up used for highlighting
+ * complete text lines that match a search.
+ */
 void DlgMarkupSA::editSearchFmt(Highlighter * higl, MainWin * mainWin)  /*static*/
 {
     openDialog(DlgMarkupSA::s_searchFmtDlg, Highlighter::HIGL_ID_SEARCH, "Search matches mark-up", higl, mainWin);
 }
 
+/**
+ * Open or raise the mark-up editor for the mark-up used for highlighting the
+ * exact range of text that matches a search. Note this mark-up is always
+ * applied on top ot the above mark-up.
+ */
 void DlgMarkupSA::editSearchIncFmt(Highlighter * higl, MainWin * mainWin)  /*static*/
 {
     openDialog(DlgMarkupSA::s_searchIncFmtDlg, Highlighter::HIGL_ID_SEARCH_INC, "Search increment mark-up", higl, mainWin);
 }
 
+/**
+ * Open or raise the mark-up editor for the mark-up used for highlighting
+ * bookmarked lines.
+ */
 void DlgMarkupSA::editBookmarkFmt(Highlighter * higl, MainWin * mainWin)  /*static*/
 {
     openDialog(DlgMarkupSA::s_bookmarkFmtDlg, Highlighter::HIGL_ID_BOOKMARK, "Bookmarks mark-up", higl, mainWin);

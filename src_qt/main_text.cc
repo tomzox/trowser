@@ -14,6 +14,19 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * The class in this module implements the text widget of the main window. The
+ * class overrides QPlainTextEdit for overriding most of the key bindings. In
+ * particular, the keyboard and other events are overriden so that the text
+ * becomes read-only. The underlying QPlainTextEdit instance is not set to
+ * read-only, as that would remove the cursor. The cursor is considered
+ * important for keeping track of the origin for searches, as well as for
+ * allowing the user mark the line he/she is currently focusing on.
+ *
+ * The key bindings follow closely that of vim. For an overview please refer to
+ * the documentation.
  */
 
 #include <QWidget>
@@ -37,6 +50,9 @@
 
 // ----------------------------------------------------------------------------
 
+/**
+ * This constructor iniailizes the key bindings of the main text widget.
+ */
 MainText::MainText(MainWin * mainWin, MainSearch * search, Bookmarks * bookmarks, QWidget * parent)
     : QPlainTextEdit(parent)
     , m_mainWin(mainWin)
@@ -130,6 +146,11 @@ MainText::MainText(MainWin * mainWin, MainSearch * search, Bookmarks * bookmarks
     //bind .f1.t <Control-Alt-Delete> DebugDumpAllState
 }
 
+/**
+ * This key press handlers replaces the default handler of QPlainTextEdit.
+ * Only a few selected events are forwarded; the default for events not handled
+ * by the MainText class is discarding the event.
+ */
 void MainText::keyPressEvent(QKeyEvent *e)  /* virtual override */
 {
     if (e->modifiers() == Qt::ControlModifier)

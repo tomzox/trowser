@@ -14,6 +14,25 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------
+ *
+ * Module description:
+ *
+ * This module implements a configuration dialog for mark-up to be used in
+ * "syntax highlighting". It allows modifying and pre-viewing mark-up for a
+ * single entry in the highlight list, which is presented in the highlight
+ * dialog. This dialog is also used to allow editing the special-pupose mark-up
+ * used for search result highlighting and bookmarks.
+ *
+ * This dialog presents at the top a text window with several lines of sample
+ * text, of which one middle line is marked-up with the configured style.
+ * Below this are a variety of controls that allow adding or modifying mark-up
+ * styles.
+ *
+ * The dialog is non-modal and supports several instances of itself. The dialog
+ * class works on a temporary copy of a mark-up specification that is provided
+ * be the creator of the instance. When closed, the dialog reports back to the
+ * owner via signal; the owner then is responsible for storing and applying the
+ * new configuration.
  */
 
 #include <QWidget>
@@ -133,6 +152,7 @@ public:
         return QVariant();
     }
 
+    // Perform reverse look-up of a style to an index in the model.
     int getIndexOfStyle(Qt::BrushStyle style)
     {
         for (size_t idx = 0; idx < s_brushStyleCnt; ++idx)
@@ -145,10 +165,10 @@ public:
 // ----------------------------------------------------------------------------
 
 /**
- * This constructor creates the highlighting / mark-up editor dialog.
- * This dialog shows all currently defined pattern definitions.
+ * This constructor creates and shows the mark-up editor dialog window. The
+ * provided ID is only for use by the owner.
  */
-DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec,
+DlgMarkup::DlgMarkup(HiglId id, const HiglFmtSpec * fmtSpec, const QString& title,
                      Highlighter * higl, MainWin * mainWin)
     : m_id(id)
     , m_fmtSpecOrig(*fmtSpec)
@@ -156,10 +176,15 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
     , m_higl(higl)
     , m_mainWin(mainWin)
 {
-    this->setWindowTitle("Pattern /" + name + "/ mark-up");
+    this->setWindowTitle(title);
     auto central_wid = new QWidget();
     auto layout_top = new QVBoxLayout(central_wid);
 
+    m_brushStyleModel = new BrushStyleListModel();
+
+    //
+    // Sample text, of which one line is marked-up in the current config
+    //
     QFontMetrics metrics(m_mainWin->getFontContent());
     m_sampleWid = new QPlainTextEdit(central_wid);
         m_sampleWid->setLineWrapMode(QPlainTextEdit::NoWrap);
@@ -171,8 +196,6 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
         drawTextSample();
         layout_top->addWidget(m_sampleWid);
 
-    m_brushStyleModel = new BrushStyleListModel();
-
     //
     // Background color & style
     //
@@ -182,10 +205,12 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
     auto lab = new QLabel("Background:", central_wid);
         layout_grid->addWidget(lab, 0, 0, Qt::AlignLeft | Qt::AlignVCenter);
     lab = new QLabel("Color:", central_wid);
+        lab->setToolTip("<P>Defines the background color for lines matching the search pattern. "
+                        "The button label is blank when the default color is used.</P>");
         layout_grid->addWidget(lab, 0, 1, Qt::AlignLeft | Qt::AlignVCenter);
     m_bgColBut = new QPushButton("", central_wid);
         auto men = new QMenu("Color:", central_wid);
-            auto act = men->addAction("Reset to no color");
+            auto act = men->addAction("Reset to default color");
                 connect(act, &QAction::triggered,
                         [=](){ cmdResetColor(&m_fmtSpec.m_bgCol); });
             act = men->addAction("Select color...");
@@ -195,6 +220,11 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
         m_bgColBut->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
         layout_grid->addWidget(m_bgColBut, 0, 2);
     lab = new QLabel("Pattern:", central_wid);
+        lab->setToolTip("<P>Selects a pattern which is drawn using the selected background color "
+                        "in lines matching the search pattern. When no pattern is selected, the "
+                        "background color is drawn solidly. (Tip: 50% pattern can be used to make "
+                        "the background color appear even lighter. Only very light colors should "
+                        " be used to keep the text drawn on top of the background pattern readable.)</P>");
         layout_grid->addWidget(lab, 0, 3, Qt::AlignLeft | Qt::AlignVCenter);
     m_bgStyleBut = new QComboBox(central_wid);
         m_bgStyleBut->setModel(m_brushStyleModel);
@@ -210,10 +240,11 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
     lab = new QLabel("Text:", central_wid);
         layout_grid->addWidget(lab, 1, 0, Qt::AlignLeft | Qt::AlignVCenter);
     lab = new QLabel("Color:", central_wid);
+        lab->setToolTip("<P>Defines the foreground color in which text characters are drawn.</P>");
         layout_grid->addWidget(lab, 1, 1, Qt::AlignLeft | Qt::AlignVCenter);
     m_fgColBut = new QPushButton("", central_wid);
         men = new QMenu("Color:", central_wid);
-            act = men->addAction("Reset to no color");
+            act = men->addAction("Reset to default color");
                 connect(act, &QAction::triggered,
                         [=](){ cmdResetColor(&m_fmtSpec.m_fgCol); });
             act = men->addAction("Select color...");
@@ -223,6 +254,10 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
         m_fgColBut->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
         layout_grid->addWidget(m_fgColBut, 1, 2);
     lab = new QLabel("Pattern:", central_wid);
+        lab->setToolTip("<P>Selects a pattern with which drawn text is masked. This means only "
+                        "pixels shown black in the patterns of the drop-down menu will be "
+                        "drawn in the foreground color. Pixels shown white will be replaced with "
+                        "the background color.</P>");
         layout_grid->addWidget(lab, 1, 3, Qt::AlignLeft | Qt::AlignVCenter);
     m_fgStyleBut = new QComboBox(central_wid);
         m_fgStyleBut->setModel(m_brushStyleModel);
@@ -238,10 +273,14 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
     lab = new QLabel("Text outline:", central_wid);
         layout_grid->addWidget(lab, 2, 0, Qt::AlignLeft | Qt::AlignVCenter);
     lab = new QLabel("Color:", central_wid);
+        lab->setToolTip("<P>When selecting a color here, an outline will be drawn around each "
+                        "text character in this color. The character within the outline is drawn "
+                        "in regular text (foreground) color. (Tip: This looks best when when "
+                        "text and outline color just differ only slightly.)</P>");
         layout_grid->addWidget(lab, 2, 1, Qt::AlignLeft | Qt::AlignVCenter);
     m_olColBut = new QPushButton("", central_wid);
         men = new QMenu("Color:", central_wid);
-            act = men->addAction("Reset to no color");
+            act = men->addAction("Do not draw text outline");
                 connect(act, &QAction::triggered,
                         [=](){ cmdResetColor(&m_fmtSpec.m_olCol); });
             act = men->addAction("Select color...");
@@ -255,6 +294,11 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
     // Font family/size selection
     //
     lab = new QLabel("Font:", central_wid);
+        lab->setToolTip("<P>Selects a font & style in which text of lines matching "
+                        "the pattern will be drawn. (Tip: When using this, such text will "
+                        "no longer follow text font or size selection via the main menu. "
+                        "Therefore it's recommended using relative size change and discrete "
+                        "font options instead.)</P>");
         layout_grid->addWidget(lab, 3, 0, Qt::AlignLeft | Qt::AlignVCenter);
     m_curFontBut = new QPushButton("", central_wid);
         men = new QMenu("Font:", central_wid);
@@ -284,6 +328,8 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
                 [=](int state){ cmdSetFontOption(&m_fmtSpec.m_italic, (state == Qt::Checked)); });
         layout_fopt->addWidget(m_italicChkb, 0, 1);
     lab = new QLabel(QString::fromUtf8("\xCE\x94-Size:"), central_wid);  // UTF 0xCE94: Greek delta
+        lab->setToolTip("<P>Changes the size of text relative to the size of the default font. "
+                        "Therefore zero means same size; negative values smaller size etc.</P>");
         layout_fopt->addWidget(lab, 0, 2, Qt::AlignLeft | Qt::AlignVCenter);
     m_fontSizeBox = new QSpinBox(central_wid);
         m_fontSizeBox->setRange(-99, 99);
@@ -329,7 +375,7 @@ DlgMarkup::DlgMarkup(HiglId id, const QString& name, const HiglFmtSpec * fmtSpec
 
     connect(m_mainWin, &MainWin::textFontChanged, this, &DlgMarkup::mainFontChanged);
 
-    setCentralWidget(central_wid);
+    this->setCentralWidget(central_wid);
     this->show();
 }
 

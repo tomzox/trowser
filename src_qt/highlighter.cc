@@ -26,6 +26,9 @@
  * search" highlight, or global highlighting. Additionally the module supports
  * the highlighting editor dialog by exporting the pattern list and allowing
  * to commit updates to the list.
+ *
+ * This class is coupled tightly with a given instance of the MainText class,
+ * on which it will apply the text format.
  */
 
 #include <QTextBlock>
@@ -80,6 +83,7 @@ Highlighter::Highlighter(MainText * textWid, MainWin * mainWin)
     fmtSpecBookmark.m_fgCol = QRgb(0xFFB90000);  // dark red
     addPattern(SearchPar(), fmtSpecBookmark);
 
+    // Progress bar overlay: made visible during long operations via background tasks
     m_hipro = new QProgressBar(m_mainText);
         m_hipro->setOrientation(Qt::Horizontal);
         m_hipro->setTextVisible(true);
@@ -93,7 +97,7 @@ Highlighter::Highlighter(MainText * textWid, MainWin * mainWin)
 
 
 /**
- * Destructor
+ * Destructor: Freeing resources not automatically deleted via widget tree
  */
 Highlighter::~Highlighter()
 {
@@ -421,6 +425,14 @@ void Highlighter::addPattern(const SearchPar& srch, const HiglFmtSpec& fmtSpec)
 }
 
 
+/**
+ * This function is called when writing the config file to retrieve persistent
+ * settings of this class, namely the list of highlighting definitions. The
+ * list starts with three special-purpose patterns, which get an additional
+ * entry to mark them as such; they only consist of a mark-up description.
+ * After these the list continues with the user-defined entries, which all
+ * consist of a set of search patterns & options, and a mark-up description.
+ */
 QJsonArray Highlighter::getRcValues()
 {
     QJsonArray arr;
@@ -477,6 +489,15 @@ QJsonArray Highlighter::getRcValues()
     return arr;
 }
 
+/**
+ * This function is called during start-up to process the configuration
+ * data-set of the Highlighter class, which contains the list of highlighting
+ * definitions.  The function is the inverse of the getRcValues() method. The
+ * function is expected to be called after initial construction of the class,
+ * when the list only contains three default entries for the special-purpose
+ * mark-up. These three entries are overwritten by the respective entries in
+ * the RC file. All user-defined definitions are appended to the list.
+ */
 void Highlighter::setRcValues(const QJsonValue& val)
 {
     const QJsonArray arr = val.toArray();
@@ -534,19 +555,20 @@ void Highlighter::setRcValues(const QJsonValue& val)
         }
 
         if (fixedId < HIGL_ID_FIRST_USER_DEF)
-            initPattern(idx, fmtSpec);
+            initPattern(idx, fmtSpec);  // special-purpose mark-up: replace default instance
         else
-            addPattern(srch, fmtSpec);
+            addPattern(srch, fmtSpec);  // user-defined mark-up: append to the list
     }
 }
 
 
 /**
  * This external interface is used by the pattern configuration dialog fpr
- * retrieving the entire list of pattern definitions. The exported data
- * structure differs from the internal one, as it lacks the character format,
- * but has an additional ID. The latter is used to detect insertions, removal
- * or reordering when writing back modifications.
+ * retrieving the entire list of user-defined pattern definitions (i.e.
+ * special-purpose patterns at the front of the list are omitted). The exported
+ * data structure differs from the internal one, as it lacks the character
+ * format, but has an additional ID. The latter is used to detect insertions,
+ * removal or reordering when writing back modifications.
  */
 void Highlighter::getPatList(std::vector<HiglPatExport>& exp) const
 {
@@ -954,8 +976,8 @@ void Highlighter::searchHighlightUpdate(const SearchPar& par, bool onlyVisible)
             // display "busy" cursor until highlighting is finished
             m_mainText->viewport()->setCursor(Qt::BusyCursor);
 
-            // implicitly kill background highlight process for obsolete pattern
             // start highlighting in the background
+            // (implicitly kills background highlight process for obsolete pattern)
             tid_search_hall->start([=](){ searchHighlightAll(HIGL_ID_SEARCH, 0); });
 
             // immediately apply highlighting in the visible area (this is quick)

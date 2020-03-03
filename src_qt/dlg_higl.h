@@ -23,7 +23,8 @@
 #include <QItemSelection>
 
 #include <memory>
-#include "highlighter.h"
+
+#include "highlighter.h"  // for HiglId
 
 class QTableView;
 class QPushButton;
@@ -38,6 +39,8 @@ class StatusLine;
 class DlgHiglModel;
 class HighlightViewDelegate;
 class DlgMarkup;
+
+// ----------------------------------------------------------------------------
 
 class DlgHigl : public QMainWindow
 {

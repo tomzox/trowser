@@ -97,7 +97,7 @@ public:
     {
         return Qt::ItemIsEnabled | Qt::ItemIsSelectable;
     }
-    virtual QVariant headerData(int section __attribute__((unused)), Qt::Orientation orientation __attribute__((unused)), int role __attribute__((unused))) const override;
+    virtual QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     virtual QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
 
     //virtual bool setData(const QModelIndex& index, const QVariant &value, int role = Qt::EditRole) override;
@@ -114,22 +114,33 @@ private:
 
 QVariant DlgHistoryModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
-    if (role == Qt::DisplayRole)
+    if (orientation == Qt::Horizontal)
     {
-        if (orientation == Qt::Horizontal)
+        if (role == Qt::DisplayRole)
         {
-            if (section < COL_COUNT)
+            switch (section)
             {
-                switch (section)
-                {
-                    case COL_IDX_PAT: return QVariant("Search string / pattern");
-                    case COL_IDX_REGEXP: return QVariant("Reg.Exp.?");
-                    case COL_IDX_CASE: return QVariant("Match case?");
-                    default: break;
-                }
+                case COL_IDX_PAT: return QVariant("Search string / pattern");
+                case COL_IDX_REGEXP: return QVariant("Reg.Exp.?");
+                case COL_IDX_CASE: return QVariant("Match case?");
+                default: break;
+            }
+            qWarning("Invalid index:%d for headerData()", section);
+        }
+        else if (role == Qt::ToolTipRole)
+        {
+            switch (section)
+            {
+                case COL_IDX_PAT: return QVariant("<P>Shows the search text or regular expression. (Double-click to start editong the text.)</P>");
+                case COL_IDX_REGEXP: return QVariant("<P>Shows \"true\" if the search string is a Regular Expression (Perl syntax), or \"false\" if it is a plain sub-string.</P>");
+                case COL_IDX_CASE: return QVariant("<P>Shows \"true\" if text matches only when in the same case as in the given pattern.</P>");
+                default: break;
             }
         }
-        else
+    }
+    else
+    {
+        if (role == Qt::DisplayRole)
         {
             const std::vector<SearchPar>& hist = m_search->getHistory();
             if (size_t(section) < hist.size())
@@ -184,8 +195,8 @@ void DlgHistoryModel::forceRedraw()
 // ----------------------------------------------------------------------------
 
 /**
- * This helper class overloads the standard QTableView class to allow adding
- * key bindings.
+ * This helper class overloads the standard QTableView class to allow
+ * overriding several key bindings.
  */
 class DlgHistoryView : public QTableView
 {
@@ -243,6 +254,7 @@ DlgHistory::DlgHistory()
 
     m_model = new DlgHistoryModel(s_search);
 
+    // main dialog component: table view, showing the history list
     m_table = new DlgHistoryView(central_wid);
         m_table->setModel(m_model);
         m_table->horizontalHeader()->setSectionResizeMode(DlgHistoryModel::COL_IDX_PAT, QHeaderView::Stretch);
@@ -252,13 +264,16 @@ DlgHistory::DlgHistory()
         connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &DlgHistory::selectionChanged);
         layout_top->addWidget(m_table);
 
-    m_stline = new StatusLine(m_table);
-
+    // Standard command buttons at the bottom of the dialog window: only "Close"
     m_cmdButs = new QDialogButtonBox(QDialogButtonBox::Close,
                                      Qt::Horizontal, central_wid);
         connect(m_cmdButs, &QDialogButtonBox::clicked, this, &DlgHistory::cmdButton);
         layout_top->addWidget(m_cmdButs);
 
+    // Status line overlay: used to display notification text
+    m_stline = new StatusLine(m_table);
+
+    // Find toolbar: functionality is equivalent to main window and highlight editor dialog
     auto f2 = new QToolBar("Find", this);
         f2->setObjectName("DlgHistory::Find"); // for saveState
         addToolBar(Qt::LeftToolBarArea, f2);
@@ -287,6 +302,7 @@ DlgHistory::DlgHistory()
         connect(m_f2_balla, &QPushButton::clicked, [=](){ cmdSearchList(-1); });
         f2->addWidget(m_f2_balla);
 
+    // global keyboard shortcuts
     auto act = new QAction(central_wid);
         act->setShortcut(QKeySequence(Qt::Key_Delete));
         connect(act, &QAction::triggered, this, &DlgHistory::cmdRemove);
@@ -660,6 +676,10 @@ void DlgHistory::openDialog() /*static*/
     }
 }
 
+/**
+ * This external interface function is called once during start-up after all
+ * classes are instantiated to establish the required connections.
+ */
 void DlgHistory::connectWidgets(MainWin * mainWin, MainSearch * search, MainText * mainText) /*static*/
 {
     s_mainWin = mainWin;
