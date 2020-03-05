@@ -24,7 +24,8 @@
 #include <QTimer>
 
 #include <vector>
-#include <set>
+
+#include "search_history.h"
 
 class QCheckBox;
 class QProgressBar;
@@ -35,32 +36,6 @@ class MainText;
 class MainSearch;
 class Highlighter;
 class BgTask;
-
-// ----------------------------------------------------------------------------
-
-class SearchPar
-{
-public:
-    SearchPar() : m_opt_regexp(false), m_opt_case(false) {}
-    SearchPar(const QString& pat, bool opt_regexp, bool opt_case)
-        : m_pat(pat)
-        , m_opt_regexp(opt_regexp)
-        , m_opt_case(opt_case)
-    {
-    }
-    bool operator==(const SearchPar& rhs) const
-    {
-        return (   (m_pat == rhs.m_pat)
-                && (m_opt_regexp == rhs.m_opt_regexp)
-                && (m_opt_case == rhs.m_opt_case));
-    }
-    bool operator!=(const SearchPar& rhs) const { return !(*this == rhs); }
-    void reset() { m_pat.clear(); m_opt_regexp = false; m_opt_case = false; }
-
-    QString m_pat;
-    bool  m_opt_regexp;
-    bool  m_opt_case;
-};
 
 // ----------------------------------------------------------------------------
 
@@ -113,9 +88,7 @@ public:
     void searchReturn();
     void searchVarTrace(const QString &text);
     void searchIncrement(bool is_fwd, bool is_changed);
-    void searchAddHistory(const SearchPar& par);
     void searchBrowseHistory(bool is_up);
-    int  searchHistoryComplete(int step);
     void searchRemoveFromHistory();
     void searchComplete();
     void searchCompleteLeft();
@@ -123,8 +96,7 @@ public:
     bool searchExprCheck(const SearchPar& par, bool display);
     void highlightFixedLine(int line);
     SearchPar getCurSearchParams();
-    const std::vector<SearchPar>& getHistory() const { return tlb_history; }
-    void removeFromHistory(const std::set<int>& excluded);
+    SearchHistory * getHistory() { return &m_histList; };
 
 private:
     void searchBackground(const SearchPar& par, bool is_fwd, int start, bool is_changed,
@@ -134,7 +106,7 @@ private:
     void searchHighlightUpdateCurrent();
     void searchHighlightUpdate(const SearchPar& par);
     void searchHandleMatch(QTextCursor& match, const SearchPar& par, bool is_changed);
-    void searchIncMatch(QTextCursor& match, const QString& pat, bool is_fwd, bool is_changed);
+    void searchIncMatch(QTextCursor& match, bool is_fwd, bool is_changed);
     void searchEscapeSpecialChars(QString& word, bool is_re);
     int  searchGetBase(bool is_fwd, bool is_init);
 
@@ -156,11 +128,9 @@ private:
     int           tlb_inc_base = -1;
     int           tlb_inc_xview = 0;
     int           tlb_inc_yview = 0;
-    int           tlb_hist_pos = -1;
-    QString       tlb_hist_prefix;
-    std::vector<SearchPar> tlb_history;
-    static const uint TLB_HIST_MAXLEN = 50;
     static const int SEARCH_INC_DELAY = 100; // in ms
+    SearchHistory m_histList;
+    SearchHistory::iterator m_histIter;
 };
 
 #endif /* _MAIN_SEARCH_H */

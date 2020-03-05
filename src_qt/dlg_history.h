@@ -50,7 +50,6 @@ public:
     static void setRcValues(const QJsonValue& val);
     static DlgHistory* getInstance();
     static void openDialog();
-    static void signalHistoryChanged();
 
 private:
     // constructor can only be invoked via the static interface

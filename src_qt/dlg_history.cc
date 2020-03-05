@@ -70,7 +70,7 @@ public:
     enum TblColIdx { COL_IDX_REGEXP, COL_IDX_CASE, COL_IDX_PAT, COL_COUNT };
 
     DlgHistoryModel(MainSearch * search)
-        : m_search(search)
+        : m_history(search->getHistory())
     {
     }
     virtual ~DlgHistoryModel()
@@ -86,7 +86,7 @@ public:
     }
     virtual int rowCount(const QModelIndex& parent __attribute__((unused)) = QModelIndex()) const override
     {
-        const std::vector<SearchPar>& hist = m_search->getHistory();
+        const std::vector<SearchPar>& hist = m_history->getHistory();
         return hist.size();
     }
     virtual int columnCount(const QModelIndex& parent __attribute__((unused)) = QModelIndex()) const override
@@ -109,7 +109,7 @@ public:
     void forceRedraw();
 
 private:
-    MainSearch * const m_search;
+    SearchHistory * const m_history;
 };
 
 QVariant DlgHistoryModel::headerData(int section, Qt::Orientation orientation, int role) const
@@ -142,7 +142,7 @@ QVariant DlgHistoryModel::headerData(int section, Qt::Orientation orientation, i
     {
         if (role == Qt::DisplayRole)
         {
-            const std::vector<SearchPar>& hist = m_search->getHistory();
+            const std::vector<SearchPar>& hist = m_history->getHistory();
             if (size_t(section) < hist.size())
                 return QVariant(QString::number(section + 1));
         }
@@ -152,7 +152,7 @@ QVariant DlgHistoryModel::headerData(int section, Qt::Orientation orientation, i
 
 QVariant DlgHistoryModel::data(const QModelIndex &index, int role) const
 {
-    const std::vector<SearchPar>& hist = m_search->getHistory();
+    const std::vector<SearchPar>& hist = m_history->getHistory();
 
     if (   (role == Qt::DisplayRole)
         && ((size_t)index.row() < hist.size()))
@@ -172,19 +172,19 @@ QVariant DlgHistoryModel::data(const QModelIndex &index, int role) const
 
 const SearchPar& DlgHistoryModel::getSearchPar(const QModelIndex& index) const
 {
-    const std::vector<SearchPar>& hist = m_search->getHistory();
+    const std::vector<SearchPar>& hist = m_history->getHistory();
     return hist.at(index.row());
 }
 
 const SearchPar& DlgHistoryModel::getSearchPar(int row) const
 {
-    const std::vector<SearchPar>& hist = m_search->getHistory();
+    const std::vector<SearchPar>& hist = m_history->getHistory();
     return hist.at(row);
 }
 
 void DlgHistoryModel::forceRedraw()
 {
-    const std::vector<SearchPar>& hist = m_search->getHistory();
+    const std::vector<SearchPar>& hist = m_history->getHistory();
     if (hist.size() > 0)
     {
         emit dataChanged(createIndex(0, 0),
@@ -318,6 +318,7 @@ DlgHistory::DlgHistory()
     // note this can only be used as long as editing is disabled
     connect(m_table, &QTableView::doubleClicked, this, &DlgHistory::mouseTrigger);
 
+    connect(s_search->getHistory(), &SearchHistory::historyChanged, this, &DlgHistory::refreshContents);
     connect(s_mainWin, &MainWin::documentNameChanged, this, &DlgHistory::mainDocNameChanged);
     mainDocNameChanged();  // set window title initially
 
@@ -443,10 +444,12 @@ void DlgHistory::cmdClose(bool)
 // ----------------------------------------------------------------------------
 
 /**
- * This callback is invoked when the search history list has changed externally
- * (i.e. items removed/added or modified).  The function first forces a
- * complete redraw of the contents. Then it will re-select all previously
- * selected items, specifically those with the same pattern string.
+ * This slot is connected to changes in the externally managed search history
+ * list (i.e. items removed/added or modified). Note this function also may be
+ * called by actions initiated via the dialog, such as removal of history
+ * entries.  The function first forces a complete redraw of the contents. Then
+ * it will re-select all previously selected items, specifically those with the
+ * same pattern string.
  *
  * Note this special handling is necessary because by default the selection
  * model would keep selection at the same indices, which now may refer to
@@ -485,20 +488,6 @@ void DlgHistory::refreshContents()
 
 
 /**
- * This external interface function is called by the main search class when the
- * history was changed. The signal is ignored if the dialog is not open; else
- * it refreshes the history list in the dialog to reflect the new content.
- */
-void DlgHistory::signalHistoryChanged()  /*static*/
-{
-    if (s_instance != nullptr)
-    {
-        s_instance->refreshContents();
-    }
-}
-
-
-/**
  * This function is bound to the "Remove selected lines" command in the
  * search history list dialog's context menu.  All currently selected text
  * lines are removed from the search list.
@@ -513,7 +502,7 @@ void DlgHistory::cmdRemove(bool)
         {
             excluded.insert(midx.row());
         }
-        s_search->removeFromHistory(excluded);
+        s_search->getHistory()->removeMultiple(excluded);
     }
     else  // should never occur as button (incl. shortcut) gets disabled
         m_stline->showError("search", "No expression selected");

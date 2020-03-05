@@ -17,8 +17,8 @@
  *
  * Module description:
  *
- * This module implements the class hat performs searches in the text widget of
- * the main window. The class has many interfaces that are connected to the
+ * This module implements the class that performs searches in the text widget
+ * of the main window. The class has many interfaces that are connected to the
  * main menu, key bindings in the main text window, and most importantly to the
  * entry field and checkboxes of the main window's "find" toolbar.
  *
@@ -27,7 +27,8 @@
  * schedules a search in the background, and when found highlights the next
  * match (via the Highligher module) and makes that text line visible in the
  * main text widget. When global search highlighting is enabled, the class has
- * the Highligher class mark all matches wihin visible part of the text. When
+ * the Highligher class mark all matches wihin visible part of the text (and
+ * start a background task for highlighting the rest of the document). When
  * the user modifies the search pattern before this process is completed, it
  * is aborted and restarted for the new pattern. When no match is found for the
  * new pattern, the cursor and view are reset to the start of the search. The
@@ -35,9 +36,9 @@
  *
  * In addition to the above, the class offers interfaces such as for repeating
  * the previous search in either direction. Such searches are done
- * "atomically", which means they are blocking. Notably the "search all" button
- * of the "find" toolbar is not implemented here, but rather in the search list
- * class.
+ * "atomically", which means they are blocking. Notably the functionality for
+ * the "search all" button of the "find" toolbar is not implemented here, but
+ * rather in the search list class.
  */
 
 #include <QApplication>
@@ -68,7 +69,6 @@
 #include "search_list.h"
 #include "bg_task.h"
 #include "text_block_find.h"
-#include "dlg_history.h"
 #include "dlg_bookmarks.h"
 
 // ----------------------------------------------------------------------------
@@ -160,10 +160,9 @@ void MainFindEnt::keyPressEvent(QKeyEvent *e)
 MainSearch::MainSearch(MainWin * mainWin)
     : QObject(mainWin)
     , m_mainWin(mainWin)
+    , m_histList(mainWin)
 {
     m_timSearchInc = new BgTask(this, BG_PRIO_SEARCH_INC);
-
-    tlb_history.reserve(TLB_HIST_MAXLEN + 1);
 }
 
 /**
@@ -198,28 +197,21 @@ void MainSearch::connectWidgets(MainText    * mainText,
 
 /**
  * This function is called when writing the config file to retrieve persistent
- * settings of this class. Currently this includes the current search string
- * and the search history stack.
+ * settings of this class. Currently these are the current search string and
+ * options.
  */
 QJsonObject MainSearch::getRcValues()
 {
     QJsonObject obj;
 
-    QJsonArray arr;
-    for (auto& hl : tlb_history)
-    {
-        QJsonArray el{ QJsonValue(hl.m_pat),
-                       QJsonValue(hl.m_opt_regexp),
-                       QJsonValue(hl.m_opt_case) };
-        arr.push_back(el);
-    }
-    obj.insert("tlb_history", arr);
-
     // dump search settings
     obj.insert("tlb_case", QJsonValue(tlb_find.m_opt_case));
     obj.insert("tlb_regexp", QJsonValue(tlb_find.m_opt_regexp));
     obj.insert("tlb_hall", QJsonValue(tlb_hall));
-    obj.insert("tlb_hist_maxlen", QJsonValue((int)TLB_HIST_MAXLEN));
+
+    //TODO obj.insert("tlb_hist_maxlen", QJsonValue((int)TLB_HIST_MAXLEN));
+
+    obj.insert("tlb_history", m_histList.getRcValues());
 
     return obj;
 }
@@ -235,18 +227,7 @@ void MainSearch::setRcValues(const QJsonObject& obj)
         const QString& var = it.key();
         const QJsonValue& val = it.value();
 
-        if (var == "tlb_history")
-        {
-            QJsonArray arr = val.toArray();
-            for (auto it = arr.begin(); it != arr.end(); ++it)
-            {
-                const QJsonArray hl = it->toArray();
-                tlb_history.emplace_back(SearchPar(hl.at(0).toString(),
-                                                   hl.at(1).toBool(),
-                                                   hl.at(2).toBool()));
-            }
-        }
-        else if (var == "tlb_case")
+        if (var == "tlb_case")
         {
             tlb_find.m_opt_case = val.toBool();
             m_f2_mcase->setChecked(tlb_find.m_opt_case);
@@ -260,6 +241,10 @@ void MainSearch::setRcValues(const QJsonObject& obj)
         {
             tlb_hall = val.toBool();
             m_f2_hall->setChecked(tlb_hall);
+        }
+        else if (var == "tlb_history")
+        {
+            m_histList.setRcValues(val.toArray());
         }
         else if (var == "tlb_hist_maxlen")
         {
@@ -533,6 +518,7 @@ void MainSearch::searchHandleMatch(QTextCursor& match, const SearchPar& par, boo
 void MainSearch::searchVarTrace(const QString & val)
 {
     tlb_find.m_pat = val;
+    m_histList.trackIter(m_histIter, val);
 
     if (m_f2_e->hasFocus())
     {
@@ -551,7 +537,7 @@ void MainSearch::searchIncrement(bool is_fwd, bool is_changed)
 {
     m_timSearchInc->stop();
 
-    if ((tlb_find.m_pat != "") && searchExprCheck(tlb_find, false))
+    if (!tlb_find.m_pat.isEmpty() && searchExprCheck(tlb_find, false))
     {
         if (tlb_inc_base < 0)
         {
@@ -571,13 +557,13 @@ void MainSearch::searchIncrement(bool is_fwd, bool is_changed)
             start_pos = searchGetBase(is_fwd, false);
 
         searchBackground(tlb_find, is_fwd, start_pos, is_changed,
-                         [=](QTextCursor& c){ searchIncMatch(c, tlb_find.m_pat, is_fwd, is_changed); });
+                         [=](QTextCursor& c){ searchIncMatch(c, is_fwd, is_changed); });
     }
     else
     {
         searchReset();
 
-        if (tlb_find.m_pat != "")
+        if (!tlb_find.m_pat.isEmpty())
             m_mainWin->mainStatusLine()->showError("search", "Incomplete or invalid reg.exp.");
         else
             m_mainWin->mainStatusLine()->clearMessage("search");
@@ -589,7 +575,7 @@ void MainSearch::searchIncrement(bool is_fwd, bool is_changed)
  * incremental search in the entry field is completed.  (Before this call,
  * cursor position and search highlights are already updated.)
  */
-void MainSearch::searchIncMatch(QTextCursor& match, const QString& pat, bool is_fwd, bool is_changed)
+void MainSearch::searchIncMatch(QTextCursor& match, bool is_fwd, bool is_changed)
 {
     if (match.isNull() && (tlb_inc_base >= 0))
     {
@@ -610,16 +596,6 @@ void MainSearch::searchIncMatch(QTextCursor& match, const QString& pat, bool is_
     }
     else
         m_mainWin->mainStatusLine()->clearMessage("search");
-
-    if (tlb_hist_pos > 0)
-    {
-        auto it = tlb_history.begin() + tlb_hist_pos;
-        if ((it != tlb_history.end()) && (pat != it->m_pat))
-        {
-            tlb_hist_pos = -1;
-            tlb_hist_prefix.clear();
-        }
-    }
 }
 
 /**
@@ -702,9 +678,9 @@ SearchPar MainSearch::getCurSearchParams()
     {
         return tlb_find;
     }
-    else if (tlb_history.size() > 0)
+    else if (!m_histList.isEmpty())
     {
-        return tlb_history.front();
+        return m_histList.front();
     }
     else
         return SearchPar();
@@ -723,7 +699,7 @@ bool MainSearch::searchFirst(bool is_fwd, const std::vector<SearchPar>& patList)
 
     // add to history in reverse order to avoid toggling ordering in history list
     for (auto it = patList.rbegin(); it != patList.rend(); ++it)
-        searchAddHistory(*it);
+        m_histList.addEntry(*it);
 
     QTextCursor match;
     const SearchPar * matchPar = nullptr;
@@ -795,10 +771,10 @@ bool MainSearch::searchNext(bool is_fwd, int repCnt)
     {
         found = searchAtomic(tlb_find, is_fwd, false, repCnt);
     }
-    else if (tlb_history.size() > 0)
+    else if (!m_histList.isEmpty())
     {
         // empty expression: repeat last search
-        const SearchPar &par = tlb_history.front();
+        const SearchPar &par = m_histList.front();
         found = searchAtomic(par, is_fwd, false, repCnt);
     }
     else
@@ -820,7 +796,7 @@ void MainSearch::searchAll(bool raiseWin, int direction)
 {
     if (searchExprCheck(tlb_find, true))
     {
-        searchAddHistory(tlb_find);
+        m_histList.addEntry(tlb_find);
 
         // make focus return and cursor jump back to original position
         if (tlb_find_focus)
@@ -877,8 +853,7 @@ void MainSearch::searchInit()
     if (tlb_find_focus == false)
     {
         tlb_find_focus = true;
-        tlb_hist_pos = -1;
-        tlb_hist_prefix.clear();
+        m_histIter.reset();
 
         m_mainWin->mainStatusLine()->clearMessage("search");
     }
@@ -925,11 +900,10 @@ void MainSearch::searchLeave()
         if (searchExprCheck(tlb_find, false))
         {
             searchHighlightUpdateCurrent();
-            searchAddHistory(tlb_find);
+            m_histList.addEntry(tlb_find);
         }
 
-        tlb_hist_pos = -1;
-        tlb_hist_prefix.clear();
+        m_histIter.reset();
         tlb_inc_base = -1;
         tlb_last_wid = nullptr;
         tlb_find_focus = false;
@@ -945,7 +919,7 @@ void MainSearch::searchAbort()
 {
     if (searchExprCheck(tlb_find, false))
     {
-        searchAddHistory(tlb_find);
+        m_histList.addEntry(tlb_find);
     }
 
     tlb_find.m_pat.clear();
@@ -984,9 +958,9 @@ void MainSearch::searchReturn()
     if (tlb_find.m_pat.isEmpty())
     {
         // empty expression: repeat last search
-        if (tlb_history.size() > 0)
+        if (!m_histList.isEmpty())
         {
-            tlb_find.m_pat = tlb_history.front().m_pat;
+            tlb_find.m_pat = m_histList.front().m_pat;
             m_f2_e->setText(tlb_find.m_pat);
             restart = true;
         }
@@ -1029,62 +1003,6 @@ void MainSearch::searchReturn()
     }
 }
 
-// FIXME temporary interface to search history dialog
-// -> move history into sub-class, make this private and befriend the dialog
-void MainSearch::removeFromHistory(const std::set<int>& excluded)
-{
-    if (excluded.size() != 0)
-    {
-        std::vector<SearchPar> tmp;
-        tmp.reserve(TLB_HIST_MAXLEN + 1);
-
-        for (size_t idx = 0; idx < tlb_history.size(); ++idx)
-        {
-            if (excluded.find(idx) == excluded.end())
-                tmp.push_back(tlb_history[idx]);
-        }
-        tlb_history = tmp;
-
-        DlgHistory::signalHistoryChanged();
-        m_mainWin->updateRcAfterIdle();
-    }
-}
-
-/**
- * This function add the given search string to the search history stack.
- * If the string is already on the stack, it's moved to the top. Note: top
- * of the stack is the front of the list.
- */
-void MainSearch::searchAddHistory(const SearchPar& par)
-{
-    if (!par.m_pat.isEmpty())
-    {
-        // search for the expression in the history (options not compared)
-        // remove the element if already in the list
-        for (auto it = tlb_history.begin(); it != tlb_history.end(); ++it)
-        {
-            if (it->m_pat == par.m_pat)
-            {
-                tlb_history.erase(it);
-                break;
-            }
-        }
-
-        // insert the element at the top of the stack
-        tlb_history.insert(tlb_history.begin(), par);
-
-        // maintain max. stack depth
-        while (tlb_history.size() > TLB_HIST_MAXLEN)
-        {
-            tlb_history.erase(tlb_history.end() - 1);
-        }
-
-        m_mainWin->updateRcAfterIdle();
-
-        DlgHistory::signalHistoryChanged();
-    }
-}
-
 /**
  * This function is bound to the up/down cursor keys in the search entry
  * field. The function is used to iterate through the search history stack.
@@ -1094,81 +1012,25 @@ void MainSearch::searchAddHistory(const SearchPar& par)
  */
 void MainSearch::searchBrowseHistory(bool is_up)
 {
-    if (tlb_history.size() > 0) {
-        if (tlb_hist_pos < 0) {
-            tlb_hist_prefix = tlb_find.m_pat;
-            tlb_hist_pos = is_up ? 0 : (tlb_history.size() - 1);
-        }
-        else if (is_up) {
-            if (size_t(tlb_hist_pos) + 1 < tlb_history.size()) {
-                tlb_hist_pos += 1;
-            }
-            else {
-                tlb_hist_pos = -1;
-            }
-        }
-        else {
-            tlb_hist_pos -= 1;
-        }
+    tlb_find.m_pat = m_histList.iterNext(m_histIter, tlb_find.m_pat, is_up);
 
-        if (tlb_hist_prefix.length() > 0) {
-            tlb_hist_pos = searchHistoryComplete(is_up ? 1 : -1);
-        }
-
-        if (tlb_hist_pos >= 0) {
-            tlb_find.m_pat = tlb_history.at(tlb_hist_pos).m_pat;
-            m_f2_e->setText(tlb_find.m_pat);
-            m_f2_e->setCursorPosition(tlb_find.m_pat.length());
-        }
-        else {
-            // end of history reached -> reset
-            tlb_hist_pos = -1;
-            tlb_hist_prefix = -1;
-            tlb_find.m_pat = tlb_hist_prefix;
-            m_f2_e->setText(tlb_find.m_pat);
-            m_f2_e->setCursorPosition(tlb_find.m_pat.length());
-        }
-    }
+    m_f2_e->setText(tlb_find.m_pat);
+    m_f2_e->setCursorPosition(tlb_find.m_pat.length());
 }
 
 /**
- * This helper function searches the search history stack for a search
- * string with a given prefix.
- */
-int MainSearch::searchHistoryComplete(int step)
-{
-    for (int idx = tlb_hist_pos; (idx >= 0) && (size_t(idx) < tlb_history.size()); idx += step)
-    {
-        if (tlb_history.at(idx).m_pat.startsWith(tlb_hist_prefix))
-            return idx;
-    }
-    return -1;
-}
-
-/**
- * This function is bound to "CTRL-x" in the "Find" entry field and
- * removes the current entry from the search history.
+ * This function is bound to "CTRL-x" in the "Find" entry field and removes the
+ * current entry from the search history (if the current search string was
+ * result of cycling through search history). The search entry field is updated
+ * to the next history entry in the previously used direction, or the original
+ * search prefix.
  */
 void MainSearch::searchRemoveFromHistory()
 {
-    if ((tlb_hist_pos >= 0) && (size_t(tlb_hist_pos) < tlb_history.size()))
-    {
-        tlb_history.erase(tlb_history.begin() + tlb_hist_pos);
+    tlb_find.m_pat = m_histList.removeEntry(m_histIter);
 
-        m_mainWin->updateRcAfterIdle();
-
-        DlgHistory::signalHistoryChanged();
-
-        if (tlb_history.size() == 0)
-        {
-            tlb_hist_pos = -1;
-            tlb_hist_prefix.clear();
-        }
-        else if (size_t(tlb_hist_pos) >= tlb_history.size())
-        {
-            tlb_hist_pos = tlb_history.size() - 1;
-        }
-    }
+    m_f2_e->setText(tlb_find.m_pat);
+    m_f2_e->setCursorPosition(tlb_find.m_pat.length());
 }
 
 /**
@@ -1276,7 +1138,7 @@ void MainSearch::searchWord(bool is_fwd, int repCnt)
         m_f2_e->setText(tlb_find.m_pat);
         m_f2_e->setCursorPosition(0);
 
-        searchAddHistory(tlb_find);
+        m_histList.addEntry(tlb_find);
         m_mainWin->mainStatusLine()->clearMessage("search");
 
         searchAtomic(tlb_find, is_fwd, true, repCnt);
