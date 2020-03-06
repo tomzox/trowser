@@ -439,21 +439,21 @@ void DlgHiglView::keyPressEvent(QKeyEvent *e)
 /**
  * This function creates and shows the highlight list editor dialog.
  */
-DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
+DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainText * mainText, MainWin * mainWin)
     : m_higl(higl)
     , m_search(search)
+    , m_mainText(mainText)
     , m_mainWin(mainWin)
 {
     this->setWindowTitle("Highlight patterns - trowser");
-    auto style = m_mainWin->getAppStyle();
     auto central_wid = new QWidget();
     auto layout_top = new QVBoxLayout(central_wid);
 
     m_model = new DlgHiglModel(higl);
     m_fmtDelegate = new HighlightViewDelegate(m_model, true,
-                                              m_mainWin->getFontContent(),
-                                              m_mainWin->getFgColDefault(),
-                                              m_mainWin->getBgColDefault());
+                                              m_mainText->getFontContent(),
+                                              m_mainText->getFgColDefault(),
+                                              m_mainText->getBgColDefault());
 
     // main dialog component: table view, showing a list of user-defined patterns
     m_table = new DlgHiglView(central_wid);
@@ -485,7 +485,7 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
     // Status line overlay: used to display notification text
     m_stline = new StatusLine(m_table);
 
-    connect(m_mainWin, &MainWin::textFontChanged, this, &DlgHigl::mainFontChanged);
+    connect(mainText, &MainText::textFontChanged, this, &DlgHigl::mainFontChanged);
 
     //
     // "Edit" toolbar: functionality for adding/removing/sorting the list
@@ -495,19 +495,19 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin)
         addToolBar(Qt::TopToolBarArea, f1);
     auto f1_l = new QLabel("Edit:", f1);
         f1->addWidget(f1_l);
-    auto m_f1_add = new QPushButton(style->standardIcon(QStyle::SP_FileIcon), "Add new item", f1);
+    auto m_f1_add = new QPushButton(this->style()->standardIcon(QStyle::SP_FileIcon), "Add new item", f1);
         connect(m_f1_add, &QPushButton::clicked, this, &DlgHigl::cmdAdd);
         f1->addWidget(m_f1_add);
-    m_f1_del = new QPushButton(style->standardIcon(QStyle::SP_TrashIcon), "Remove...", f1);
+    m_f1_del = new QPushButton(this->style()->standardIcon(QStyle::SP_TrashIcon), "Remove...", f1);
         m_f1_del->setEnabled(false);
         m_f1_del->setShortcut(QKeySequence(Qt::Key_Delete));
         connect(m_f1_del, &QPushButton::clicked, this, &DlgHigl::cmdRemove);
         f1->addWidget(m_f1_del);
-    m_f1_up = new QPushButton(style->standardIcon(QStyle::SP_ArrowUp), "Move up", f1);
+    m_f1_up = new QPushButton(this->style()->standardIcon(QStyle::SP_ArrowUp), "Move up", f1);
         m_f1_up->setEnabled(false);
         connect(m_f1_up, &QPushButton::clicked, this, &DlgHigl::cmdShiftUp);
         f1->addWidget(m_f1_up);
-    m_f1_down = new QPushButton(style->standardIcon(QStyle::SP_ArrowDown), "Move down", f1);
+    m_f1_down = new QPushButton(this->style()->standardIcon(QStyle::SP_ArrowDown), "Move down", f1);
         m_f1_down->setEnabled(false);
         connect(m_f1_down, &QPushButton::clicked, this, &DlgHigl::cmdShiftDown);
         f1->addWidget(m_f1_down);
@@ -581,7 +581,7 @@ DlgHigl::~DlgHigl()
  */
 void DlgHigl::mainFontChanged()
 {
-    QFontMetrics metrics1(m_mainWin->getFontContent());
+    QFontMetrics metrics1(m_mainText->getFontContent());
     QFontMetrics metrics2(m_table->font());
     m_table->verticalHeader()->setDefaultSectionSize(2*3 + std::max(metrics1.height(), metrics2.height()));
 
@@ -944,7 +944,7 @@ void DlgHigl::cmdEditFormat(bool)
         if (it == m_dlgMarkup.end())
         {
             QString title = QString("Pattern /") + pat.m_pat + "/ mark-up";
-            auto ptr = std::make_unique<DlgMarkup>(id, fmtSpec, title, m_higl, m_mainWin);
+            auto ptr = std::make_unique<DlgMarkup>(id, fmtSpec, title, m_higl, m_mainText, m_mainWin);
 
             connect(ptr.get(), &DlgMarkup::closeReq, this, &DlgHigl::signalMarkupCloseReq);
             connect(ptr.get(), &DlgMarkup::applyReq, this, &DlgHigl::signalMarkupApplyReq);
@@ -1136,7 +1136,7 @@ void DlgHigl::cmdChangeFont(bool)
         if (!fmtSpec.m_font.isEmpty())
             font.fromString(fmtSpec.m_font);
         else
-            font = m_mainWin->getFontContent();
+            font = m_mainText->getFontContent();
 
         bool ok;
         font = QFontDialog::getFont(&ok, font, this);
@@ -1359,12 +1359,13 @@ void DlgHigl::setRcValues(const QJsonValue& val)  /*static*/
  * If the window is already open, it is only raised, as there can only be one
  * instance of the dialog.
  */
-void DlgHigl::openDialog(Highlighter * higl, MainSearch * search, MainWin * mainWin) /*static*/
+void DlgHigl::openDialog(Highlighter * higl, MainSearch * search, MainText * mainText,
+                         MainWin * mainWin) /*static*/
 {
     if (s_instance == nullptr)
     {
         initColorPalette();
-        s_instance = new DlgHigl(higl, search, mainWin);
+        s_instance = new DlgHigl(higl, search, mainText, mainWin);
     }
     else
     {

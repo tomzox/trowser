@@ -55,6 +55,7 @@
 #include "main_win.h"
 #include "main_text.h"
 #include "main_search.h"
+#include "config_file.h"
 #include "status_line.h"
 #include "search_list.h"
 #include "bookmarks.h"
@@ -307,12 +308,12 @@ DlgBookmarks::DlgBookmarks()
 
     m_model = new DlgBookmarkModel(s_mainText, s_higl, s_bookmarks);
     m_draw = new HighlightViewDelegate(m_model, false,
-                                       s_mainWin->getFontContent(),
-                                       s_mainWin->getFgColDefault(),
-                                       s_mainWin->getBgColDefault());
+                                       s_mainText->getFontContent(),
+                                       s_mainText->getFgColDefault(),
+                                       s_mainText->getBgColDefault());
 
     // main dialog component: table view, showing a list of user-defined patterns
-    QFontMetrics metrics1(s_mainWin->getFontContent());
+    QFontMetrics metrics1(s_mainText->getFontContent());
     m_table = new DlgBookmarkView(central_wid);
         m_table->setModel(m_model);
         m_table->setShowGrid(false);
@@ -346,7 +347,7 @@ DlgBookmarks::DlgBookmarks()
     // Status line overlay: used to display notification text
     m_stline = new StatusLine(m_table);
 
-    connect(s_mainWin, &MainWin::textFontChanged, this, &DlgBookmarks::mainFontChanged);
+    connect(s_mainText, &MainText::textFontChanged, this, &DlgBookmarks::mainFontChanged);
     connect(s_mainWin, &MainWin::documentNameChanged, this, &DlgBookmarks::mainDocNameChanged);
     mainDocNameChanged();  // set window title initially
 
@@ -394,7 +395,7 @@ void DlgBookmarks::closeEvent(QCloseEvent * event)
 {
     s_winGeometry = this->saveGeometry();
     s_winState = this->saveState();
-    s_mainWin->updateRcAfterIdle();
+    ConfigFile::updateRcAfterIdle();
 
     event->accept();
 
@@ -422,7 +423,7 @@ void DlgBookmarks::cmdClose(bool)
  */
 void DlgBookmarks::mainFontChanged()
 {
-    QFontMetrics metrics1(s_mainWin->getFontContent());
+    QFontMetrics metrics1(s_mainText->getFontContent());
     QFontMetrics metrics2(m_table->font());
     m_table->verticalHeader()->setDefaultSectionSize(std::max(metrics1.height(), metrics2.height()));
 

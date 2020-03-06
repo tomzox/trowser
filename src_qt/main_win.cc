@@ -33,7 +33,6 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QFrame>
-#include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QPlainTextEdit>
 #include <QTextBlock>
@@ -42,22 +41,17 @@
 #include <QCheckBox>
 #include <QToolBar>
 #include <QFontDialog>
-#include <QRegularExpression>
-#include <QTimer>
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QFileDialog>
 #include <QFile>
 #include <QTextStream>
-#include <QDateTime>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
 
 #include <cstdio>
 #include <string>
 #include <unistd.h>
 
+#include "config_file.h"
 #include "main_win.h"
 #include "main_text.h"
 #include "main_search.h"
@@ -73,23 +67,13 @@
 
 // ----------------------------------------------------------------------------
 
-// default and storage for command line parameters
-static LoadMode load_file_mode = LoadMode::Head;
-static size_t load_buf_size = 20*1024*1024;
-static bool load_buf_size_opt = false;
-static const char * myrcfile = ".trowserc.qt";
-static const uint32_t rcfile_compat = 0x03000001;
-static const uint32_t rcfile_version = 0x03000001;
-
-// default font
-static const char * const DEFAULT_FONT_FAM = "DejaVu Sans Mono";
-static const int DEFAULT_FONT_SZ = 9;
-
-// ----------------------------------------------------------------------------
-
+/**
+ * This constructor creates and shows the main window, containing a menu bar,
+ * the text widget showing the main document and a "Find" toolbar. Additionally
+ * the function instantiates all other classes required by the application.
+ */
 MainWin::MainWin(QApplication * app)
     : m_mainApp(app)
-    , m_fontContent(DEFAULT_FONT_FAM, DEFAULT_FONT_SZ, false, false)
 {
     auto central_wid = new QWidget();
     auto layout_top = new QVBoxLayout(central_wid);
@@ -98,7 +82,6 @@ MainWin::MainWin(QApplication * app)
     m_bookmarks = new Bookmarks(this);
 
     m_mainText = new MainText(this, m_search, m_bookmarks, central_wid);
-        m_mainText->setFont(m_fontContent);
         m_mainText->setLineWrapMode(QPlainTextEdit::NoWrap);
         m_mainText->setCursorWidth(2);
         m_mainText->setTabChangesFocus(true);   // enable Key_Tab moving keyboard focus
@@ -154,6 +137,7 @@ MainWin::MainWin(QApplication * app)
     SearchList::connectWidgets(this, m_search, m_mainText, m_higl, m_bookmarks);
     DlgBookmarks::connectWidgets(this, m_search, m_mainText, m_higl, m_bookmarks);
     DlgHistory::connectWidgets(this, m_search, m_mainText);
+    ConfigFile::connectWidgets(this, m_search, m_mainText, m_higl);
 
     layout_top->setContentsMargins(0, 0, 0, 0);
     this->setCentralWidget(central_wid);
@@ -176,14 +160,11 @@ MainWin::MainWin(QApplication * app)
         central_wid->addAction(act);
 
     m_mainText->setFocus(Qt::ShortcutFocusReason);
-
-    m_timUpdateRc = new QTimer(this);
-    m_timUpdateRc->setSingleShot(true);
-    m_timUpdateRc->setInterval(3000);
-    connect(m_timUpdateRc, &QTimer::timeout, this, &MainWin::updateRcFile);
-    m_tsUpdateRc = QDateTime::currentSecsSinceEpoch();
 }
 
+/**
+ * Destructor: Freeing resources not automatically deleted via widget tree
+ */
 MainWin::~MainWin()
 {
     delete m_search;
@@ -192,6 +173,9 @@ MainWin::~MainWin()
     delete m_loadPipe;
 }
 
+/**
+ * This sub-function of the constructor populates the menu bar with actions.
+ */
 void MainWin::populateMenus()
 {
     QAction * act;
@@ -214,11 +198,11 @@ void MainWin::populateMenus()
         connect(act, &QAction::triggered, this, &MainWin::menuCmdSelectFont);
     QMenu *sub = menubar_ctrl->addMenu("Mark-up configuration");
         act = sub->addAction("Search results...");
-            connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editSearchFmt(m_higl, this); });
+            connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editSearchFmt(m_higl, m_mainText, this); });
         act = sub->addAction("Search increment...");
-            connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editSearchIncFmt(m_higl, this); });
+            connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editSearchIncFmt(m_higl, m_mainText, this); });
         act = sub->addAction("Bookmarks...");
-            connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editBookmarkFmt(m_higl, this); });
+            connect(act, &QAction::triggered, [=](){ DlgMarkupSA::editBookmarkFmt(m_higl, m_mainText, this); });
     menubar_ctrl->addSeparator();
     act = menubar_ctrl->addAction("Quit");
         connect(act, &QAction::triggered, this, &MainWin::menuCmdFileQuit);
@@ -227,7 +211,7 @@ void MainWin::populateMenus()
     act = menubar_srch->addAction("Search history...");
         connect(act, &QAction::triggered, [=](){ DlgHistory::openDialog(); });
     act = menubar_srch->addAction("Edit highlight patterns...");
-        connect(act, &QAction::triggered, [=](){ DlgHigl::openDialog(m_higl, m_search, this); });
+        connect(act, &QAction::triggered, [=](){ DlgHigl::openDialog(m_higl, m_search, m_mainText, this); });
     menubar_srch->addSeparator();
     act = menubar_srch->addAction("List all search matches...");
         connect(act, &QAction::triggered, [=](){ m_search->searchAll(true, 0); });
@@ -267,26 +251,13 @@ void MainWin::populateMenus()
         connect(act, &QAction::triggered, m_mainApp, &QApplication::aboutQt);
 }
 
+/**
+ * This query function returns the widget that currently has keyboard focus, or
+ * NULL if none.
+ */
 QWidget * MainWin::focusWidget() const
 {
     return m_mainApp->focusWidget();
-}
-
-QStyle * MainWin::getAppStyle() const
-{
-    return m_mainApp->style();
-}
-
-const QColor& MainWin::getFgColDefault() const
-{
-    auto& pal = m_mainText->palette();
-    return pal.color(QPalette::Text);
-}
-
-const QColor& MainWin::getBgColDefault() const
-{
-    auto& pal = m_mainText->palette();
-    return pal.color(QPalette::Base);
 }
 
 
@@ -327,25 +298,6 @@ void MainWin::menuCmdAbout(bool)
                 "with this program.  If not, see <A HREF=\"http://www.gnu.org/licenses/\">www.gnu.org/licenses</A>.</small>");
 
     QMessageBox::about(this, "About Trace Browser", msg);
-}
-
-/**
- * This function is bound to CTRL-G in the main window. It displays the
- * current line number and fraction of lines above the cursor in percent
- * (i.e. same as VIM)
- */
-void MainWin::menuCmdDisplayLineNo()
-{
-    auto c = m_mainText->textCursor();
-    int line = c.block().blockNumber();
-    int max = m_mainText->document()->blockCount();
-
-    QString msg = m_curFileName + ": line " + QString::number(line + 1) + " of "
-                    + QString::number(max) + " lines";
-    if (max > 1)
-        msg += " (" + QString::number(int(100.0 * line / max + 0.5)) + "%)";
-
-    m_stline->showPlain("line_query", msg);
 }
 
 /**
@@ -393,38 +345,32 @@ void MainWin::menuCmdBookmarkDeleteAll(bool)
                              "Your bookmark list is already empty.", QMessageBox::Ok);
 }
 
+/**
+ * This slot is bound to the "Font selection" menu entry. The function will
+ * open the font selection dialog with the text widget's current font as
+ * default. If the user selects a font, it is passed to the MainText class
+ * which will reconfigure itself and notify other dialogs that show text
+ * content.
+ */
 void MainWin::menuCmdSelectFont(bool)
 {
     bool ok;
-    QFont font = QFontDialog::getFont(&ok, m_fontContent, this);
+    QFont font = QFontDialog::getFont(&ok, m_mainText->getFontContent(), this);
     if (ok)
     {
-        m_fontContent = font;
-
-        // apply font directly in main text window
-        m_mainText->setFont(m_fontContent);
-
-        // notify dialogs
-        emit textFontChanged();
+        // apply selected font in main text window
+        m_mainText->setFontContent(font);
     }
 }
 
-void MainWin::keyCmdZoomFontSize(bool zoomIn)
-{
-    if (zoomIn)
-        m_mainText->zoomIn();
-    else
-        m_mainText->zoomOut();
-
-    m_fontContent = m_mainText->font();
-
-    // notify dialogs
-    emit textFontChanged();
-}
-
+/**
+ * This slot is bound to the "Toggle line wrap" menu entry. The new state is
+ * forwarded to the text widget.
+ */
 void MainWin::menuCmdToggleLineWrap(bool checked)
 {
-    m_mainText->setLineWrapMode(checked ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+    m_mainText->setLineWrapMode(checked ? QPlainTextEdit::WidgetWidth
+                                        : QPlainTextEdit::NoWrap);
 }
 
 /**
@@ -445,7 +391,6 @@ void MainWin::discardContent()
     m_higl->adjustLineNums(0, 0);
     SearchList::adjustLineNums(0, 0);
 }
-
 
 /*
  * This function is bound to the "Discard above/below" menu commands. The
@@ -547,8 +492,8 @@ void MainWin::menuCmdFileOpen(bool)
     // offer to save old bookmarks before discarding them below
     if (m_bookmarks->offerSave(this))
     {
-        QString fileName = QFileDialog::getOpenFileName(this,
-                             "Open File", ".", "Trace Files (out.*);;Any (*)");
+        QString fileName = QFileDialog::getOpenFileName(this, "Open File",
+                                m_curFileName, "Trace Files (out.*);;Any (*)");
         if (fileName.isEmpty() == false)
         {
             discardContent();
@@ -570,10 +515,10 @@ void MainWin::menuCmdFileQuit(bool)
 // user closed main window via "X" button
 void MainWin::closeEvent(QCloseEvent * event)
 {
-    updateRcFile();
-
     if (m_bookmarks->offerSave(this))
     {
+        ConfigFile::updateRcFile();
+
         // FIXME connect(quitButton, clicked(), m_mainApp, &QApplication:quit, Qt::QueuedConnection);
         m_mainApp->quit();
     }
@@ -590,7 +535,7 @@ void MainWin::closeEvent(QCloseEvent * event)
  */
 void MainWin::startLoading(const char * fileName)
 {
-    if (m_prevRcContent.empty())
+    if (ConfigFile::isValid() == false)
     {
         // set reasonable default size when starting without RC file
         QDesktopWidget dw;
@@ -612,19 +557,27 @@ void MainWin::loadFromFile(const QString& fileName)
     QFile fh(fileName);
     if (fh.open(QFile::ReadOnly | QFile::Text))
     {
-        if ((load_file_mode == LoadMode::Tail) && (size_t(fh.size()) > load_buf_size))
+        LoadMode load_file_mode;
+        size_t load_buf_size;
+        ConfigFile::getFileLoadParams(load_file_mode, load_buf_size);
+
+        if (   (load_file_mode == LoadMode::Tail)
+            && (size_t(fh.size()) > load_buf_size))
+        {
             fh.seek(fh.size() - load_buf_size);
+        }
 
         size_t rest = load_buf_size;
         const size_t CHUNK_SIZE = 64*1024;
-        char * inBuf = new char[CHUNK_SIZE];
+        char * inBuf = new char[CHUNK_SIZE + 1];
         while (rest > 0)
         {
-            qint64 rdSize = fh.read(inBuf, ((rest >= CHUNK_SIZE) ? CHUNK_SIZE : rest));
+            qint64 rdSize = fh.read(inBuf, std::min(rest, CHUNK_SIZE));
             if (rdSize > 0)
             {
                 m_mainText->textCursor().movePosition(QTextCursor::End);
-                m_mainText->insertPlainText(inBuf);
+                inBuf[rdSize] = 0;
+                m_mainText->insertPlainText(QString(inBuf));
                 rest -= rdSize;
             }
             else if (rdSize < 0)
@@ -686,6 +639,10 @@ void MainWin::loadFromPipe()
 {
     if (m_loadPipe == nullptr)
     {
+        LoadMode load_file_mode;
+        size_t load_buf_size;
+        ConfigFile::getFileLoadParams(load_file_mode, load_buf_size);
+
         m_loadPipe = new LoadPipe(this, m_mainText, load_file_mode, load_buf_size);
         connect(m_loadPipe, &LoadPipe::pipeLoaded, this, &MainWin::loadPipeDone);
 
@@ -716,18 +673,18 @@ void MainWin::loadPipeDone()
     }
 
     // store buffer size parameter specified in the dialog in the RC file
-    load_buf_size = m_loadPipe->getLoadBufferSize();
-    load_file_mode = m_loadPipe->getLoadMode();
-    updateRcAfterIdle();
+    LoadMode load_file_mode = m_loadPipe->getLoadMode();
+    size_t load_buf_size = m_loadPipe->getLoadBufferSize();
+    ConfigFile::updateFileLoadParams(load_file_mode, load_buf_size);
 
     // move cursor to start or end of document, depending on head/tail option
     auto c = m_mainText->textCursor();
-    c.movePosition((load_file_mode == LoadMode::Head) ? QTextCursor::Start : QTextCursor::End);
+    c.movePosition((load_file_mode == LoadMode::Head)
+                        ? QTextCursor::Start : QTextCursor::End);
     m_mainText->setTextCursor(c);
     m_mainText->ensureCursorVisible();
 
     // finally initiate color highlighting etc.
-    //TODO InitContent()
     m_mainText->viewport()->setCursor(Qt::ArrowCursor);
     m_higl->highlightInit();
 
@@ -744,376 +701,6 @@ void MainWin::loadPipeDone()
 
 // ----------------------------------------------------------------------------
 
-/**
- * This function reads configuration variables from the rc file.
- * The function is called once during start-up.
- */
-void MainWin::loadRcFile()
-{
-    QFile fh(myrcfile);
-    if (fh.open(QFile::ReadOnly | QFile::Text))
-    {
-        QJsonParseError err;
-        QTextStream readFile(&fh);
-        auto txt = readFile.readAll();
-
-        // skip comments at the start of the file
-        int off = 0;
-        while (off < txt.length())
-        {
-            static const QRegularExpression re1("\\s*(?:#.*)?(?:\n|$)");
-            auto mat1 = re1.match(txt.midRef(off), 0, QRegularExpression::NormalMatch, QRegularExpression::AnchoredMatchOption);
-            if (!mat1.hasMatch())
-                break;
-            off += mat1.captured(0).length();
-        }
-
-        auto doc = QJsonDocument::fromJson(txt.midRef(off).toUtf8(), &err);
-        if (!doc.isNull() && doc.isObject())
-        {
-            QJsonObject obj = doc.object();
-
-            auto rcVersion = obj.find("xx_trowser_version");
-            if (rcVersion != obj.end())
-            {
-                if (   (uint32_t(rcVersion->toInt()) >= rcfile_compat)
-                    && (uint32_t(rcVersion->toInt()) <= rcfile_version))
-                {
-                    int load_buf_size_lsb = 0, load_buf_size_msb = 0;
-
-                    for (auto it = obj.begin(); it != obj.end(); ++it)
-                    {
-                        const QString& var = it.key();
-                        const QJsonValue& val = it.value();
-
-                        if (var == "main_search")               m_search->setRcValues(val.toObject());
-                        else if (var == "highlight")            m_higl->setRcValues(val);
-                        else if (var == "font_content")         m_fontContent.fromString(val.toString());
-                        else if (var == "load_buf_size_lsb")    load_buf_size_lsb = val.toInt();
-                        else if (var == "load_buf_size_msb")    load_buf_size_msb = val.toInt();
-                        else if (var == "main_win_state")       this->restoreState(QByteArray::fromHex(val.toString().toLatin1()));
-                        else if (var == "main_win_geom")        this->restoreGeometry(QByteArray::fromHex(val.toString().toLatin1()));
-                        else if (var == "search_list")          SearchList::setRcValues(val);
-                        else if (var == "dlg_highlight")        DlgHigl::setRcValues(val);
-                        else if (var == "dlg_history")          DlgHistory::setRcValues(val);
-                        else if (var == "dlg_bookmarks")        DlgBookmarks::setRcValues(val);
-                        else if (var == "xx_trowser_version")   /*nop*/ ;
-                        else
-                            fprintf(stderr, "trowser: ignoring unknown keyword at top-level in rcfile: %s\n", var.toLatin1().data());
-                    }
-                    m_mainText->setFont(m_fontContent);
-
-                    // buffer size provided via command line has precedence over the one from RC file
-                    if (!load_buf_size_opt && (load_buf_size_lsb || load_buf_size_msb))
-                        load_buf_size = size_t(load_buf_size_lsb) | (size_t(load_buf_size_msb) << 32);
-
-                    m_prevRcContent = obj;
-                }
-                else
-                    fprintf(stderr, "rc file %s has an incompatible version (%X) and cannot be "
-                                    "loaded. Starting with default config.\n", myrcfile, rcVersion->toInt());
-            }
-            else
-                fprintf(stderr, "Config file appears truncated: starting with default configuration\n");
-        }
-        else
-        {
-            if (doc.isNull())
-                fprintf(stderr, "Error parsing config file: %s\n", err.errorString().toLatin1().data());
-            else
-                fprintf(stderr, "Config file in unexpected format\n");
-        }
-        fh.close();
-    }
-    else
-    {
-        // Application GUI is not initialized yet, so print to console
-        fprintf(stderr, "trowser: warning: failed to load config file '%s': %s\n", myrcfile, strerror(errno));
-    }
-}
-
-/**
- * This functions writes configuration variables into the rc file
- */
-void MainWin::updateRcFile()
-{
-    m_timUpdateRc->stop();
-    m_tsUpdateRc = QDateTime::currentSecsSinceEpoch();
-
-    QJsonObject obj;
-
-    // dump search history
-    obj.insert("main_search", m_search->getRcValues());
-
-    // dump highlighting patterns
-    obj.insert("highlight", m_higl->getRcValues());
-
-    // dialog window geometry and other options
-    obj.insert("dlg_highlight", DlgHigl::getRcValues());
-    obj.insert("dlg_history", DlgHistory::getRcValues());
-    obj.insert("dlg_bookmarks", DlgBookmarks::getRcValues());
-
-    // search list options & custom column parser configuration
-    obj.insert("search_list", SearchList::getRcValues());
-
-    obj.insert("main_win_geom", QJsonValue(QString(this->saveGeometry().toHex())));
-    obj.insert("main_win_state", QJsonValue(QString(this->saveState().toHex())));
-
-    // font and color settings
-    obj.insert("font_content", QJsonValue(m_fontContent.toString()));
-
-    // misc (note the head/tail mode is omitted intentionally)
-    obj.insert("load_buf_size_lsb", QJsonValue(int(load_buf_size & 0xFFFFFFFFU)));
-    obj.insert("load_buf_size_msb", QJsonValue(int(load_buf_size >> 32)));
-
-    // dump software version (use prefix "xx" to keep this entry at the end when sorted)
-    obj.insert("xx_trowser_version", QJsonValue(int(rcfile_version)));
-
-    if (obj != m_prevRcContent)
-    {
-        QJsonDocument doc;
-        doc.setObject(obj);
-
-        QFile fh(myrcfile);
-        QFileDevice::Permissions bakPerm = 0;
-
-        if (m_rcFileBackedup == false)
-        {
-            if (fh.exists())
-            {
-                bakPerm = fh.permissions();
-                QString bakName = QString(myrcfile) + ".bak";
-                QFile::remove(bakName);
-                if (QFile::rename(myrcfile, bakName))
-                {
-                    m_rcFileBackedup = true;
-                }
-                else
-                    fprintf(stderr, "Failed to rename %s to %s.bak: %s\n", myrcfile, bakName.toLatin1().data(), fh.errorString().toLatin1().data());
-            }
-            else
-                m_rcFileBackedup = true;
-        }
-
-        if (fh.open(QFile::WriteOnly | QFile::Text))
-        {
-            QTextStream out(&fh);
-
-            out << "#\n"
-                   "# trowser configuration file\n"
-                   "#\n"
-                   "# This file is automatically generated - do not edit\n"
-                   "# Written at: " << QDateTime::currentDateTime().toString() << "\n"
-                   "#\n";
-            out << doc.toJson();
-
-            out << flush;
-            if (out.status() == QTextStream::Ok)
-            {
-                if (bakPerm != 0)
-                    fh.setPermissions(bakPerm);
-
-                m_prevRcContent = obj;
-                m_rcFileWriteError = false;
-            }
-            else
-            {
-                if (m_rcFileWriteError == false)
-                {
-                    QString msg = QString("Error writing config file ") + myrcfile + ": " + fh.errorString();
-                    QMessageBox::critical(this, "trowser", msg, QMessageBox::Ok);
-                    m_rcFileWriteError = true;
-                }
-            }
-            fh.close();
-        }
-        else /* open error */
-        {
-            if (m_rcFileWriteError == false)
-            {
-                QMessageBox::critical(this, "trowser",
-                                      QString("Error creating config file ") + myrcfile + ": " + fh.errorString(),
-                                      QMessageBox::Ok);
-                m_rcFileWriteError = true;
-            }
-        }
-    }
-}
-
-/**
- * This function is used to trigger writing the RC file after changes.
- * The write is delayed by a few seconds to avoid writing the file multiple
- * times when multiple values are changed. This timer is restarted when
- * another change occurs during the delay, however only up to a limit.
- */
-void MainWin::updateRcAfterIdle()
-{
-    if (   !m_timUpdateRc->isActive()
-        || (QDateTime::currentSecsSinceEpoch() - m_tsUpdateRc) < 60)
-    {
-        m_timUpdateRc->start();
-    }
-}
-
-
-// ----------------------------------------------------------------------------
-
-/**
- * This function is called when the program is started with -help to list all
- * possible command line options.
- */
-void PrintUsage(const char * const argv[], int argvn=-1, const char * reason=nullptr)
-{
-    if (reason != nullptr)
-        fprintf(stderr, "%s: %s: %s\n", argv[0], reason, argv[argvn]);
-
-    fprintf(stderr, "Usage: %s [options] {file|-}\n", argv[0]);
-
-    if (argvn != -1)
-    {
-        fprintf(stderr, "Use -h or --help for a list of options\n");
-    }
-    else
-    {
-        fprintf(stderr, "The following options are available:\n"
-                        "  --head=size\t\tLoad <size> bytes from the start of the file\n"
-                        "  --tail=size\t\tLoad <size> bytes from the end of the file\n"
-                        "  --rcfile=<path>\tUse alternate config file (default: ~/.trowserc)\n");
-    }
-    exit(1);
-}
-
-
-/**
- * This helper function checks if a command line flag which requires an
- * argument is followed by at least another word on the command line.
- */
-void ParseArgvLenCheck(int argc, const char * const argv[], int arg_idx)
-{
-    if (arg_idx + 1 >= argc)
-        PrintUsage(argv, arg_idx, "this option requires an argument");
-}
-
-/**
- * This helper function reads an integer value from a command line parameter
- */
-int ParseArgInt(const char * const argv[], int arg_idx, const char * opt)
-{
-    int ival = 0;
-    try
-    {
-        std::size_t pos;
-        ival = std::stoi(opt, &pos);
-        if (opt[pos] != 0)
-            PrintUsage(argv, arg_idx, "numerical value is followed by garbage");
-    }
-    catch (const std::exception& ex)
-    {
-        PrintUsage(argv, arg_idx, "is not a numerical value");
-    }
-    return ival;
-}
-
-/**
- * This function parses and evaluates the command line arguments.
- */
-void ParseArgv(int argc, const char * const argv[])
-{
-    bool file_seen = false;
-    int arg_idx = 1;
-
-    while (arg_idx < argc)
-    {
-        const char * arg = argv[arg_idx];
-
-        if ((arg[0] == '-') && (arg[1] != 0))
-        {
-            if (strcmp(arg, "-t") == 0)
-            {
-                ParseArgvLenCheck(argc, argv, arg_idx);
-                arg_idx += 1;
-                load_buf_size = ParseArgInt(argv, arg_idx, argv[arg_idx]);
-                load_file_mode = LoadMode::Tail;
-                load_buf_size_opt = true;
-            }
-            else if (strncmp(arg, "--tail", 6) == 0)
-            {
-                if ((arg[6] == '=') && (arg[6+1] != 0))
-                {
-                    load_buf_size = ParseArgInt(argv, arg_idx, arg + 6+1);
-                    load_file_mode = LoadMode::Tail;
-                    load_buf_size_opt = true;
-                }
-                else
-                    PrintUsage(argv, arg_idx, "requires a numerical argument (e.g. --tail=10000000)");
-            }
-            else if (strcmp(arg, "-h") == 0)
-            {
-                ParseArgvLenCheck(argc, argv, arg_idx);
-                arg_idx += 1;
-                load_buf_size = ParseArgInt(argv, arg_idx, argv[arg_idx]);
-                load_file_mode = LoadMode::Head;
-                load_buf_size_opt = true;
-            }
-            else if (strncmp(arg, "--head", 6) == 0)
-            {
-                if ((arg[6] == '=') && (arg[6+1] != 0))
-                {
-                    load_buf_size = ParseArgInt(argv, arg_idx, arg + 6+1);
-                    load_file_mode = LoadMode::Head;
-                    load_buf_size_opt = true;
-                }
-                else
-                    PrintUsage(argv, arg_idx, "requires a numerical argument (e.g. --head=10000000)");
-            }
-            else if (strcmp(arg, "-r") == 0)
-            {
-                if (arg_idx + 1 < argc)
-                {
-                    arg_idx += 1;
-                    myrcfile = argv[arg_idx];
-                }
-                else
-                    PrintUsage(argv, arg_idx, "this option requires an argument");
-            }
-            else if (strncmp(arg, "--rcfile", 8) == 0)
-            {
-                if ((arg[8] == '=') && (arg[9] != 0))
-                    myrcfile = arg + 8+1;
-                else
-                    PrintUsage(argv, arg_idx, "requires a path argument (e.g. --rcfile=foo/bar)");
-            }
-            else if (strcmp(arg, "-?") == 0 || strcmp(arg, "--help") == 0)
-            {
-                PrintUsage(argv);
-            }
-            else
-                PrintUsage(argv, arg_idx, "unknown option");
-        }
-        else
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                file_seen = true;
-            }
-            else
-            {
-                arg_idx += 1;
-                PrintUsage(argv, arg_idx, "only one file name expected");
-            }
-        }
-        arg_idx += 1;
-    }
-
-    if (!file_seen)
-    {
-        fprintf(stderr, "File name missing (use \"-\" for stdin)\n");
-        PrintUsage(argv);
-    }
-}
-
-// ----------------------------------------------------------------------------
-
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
@@ -1121,7 +708,7 @@ int main(int argc, char *argv[])
     ParseArgv(argc, argv);
 
     MainWin main(&app);
-    main.loadRcFile();
+    ConfigFile::loadRcFile();
     main.startLoading(argv[argc - 1]);
 
     return app.exec();

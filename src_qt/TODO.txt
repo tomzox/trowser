@@ -3,7 +3,6 @@
 - search_list: performance optimization line list used by SearchListModel
 - search_list: tip message when enabling delta via menu: "select root line"
 - avoid blocking main window while loading large file into widget - if possible?
-- store RC file in QString QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
 
 - add more documentation
 - add more tool-tips
@@ -13,10 +12,10 @@
 clean-up:
 - split search_list file? (3000 lines, 3 internal sub-classes)
 - use signals instead of hard-wired callbacks to dialogs (static interfaces)
-- main_win: split RC file into separate class (?)
 - move undo/redo & bg tasks in umbrella class of search list view (?)
 - split off duplicated "find" toolbar code into separate class
 - limit access to MainText QPlainText base class interface
+- use QCommandLineParser class instead of legacy C code
 
 optional enhancements:
 - multiple instances of search list window

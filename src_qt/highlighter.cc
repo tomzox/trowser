@@ -51,6 +51,7 @@
 #include "text_block_find.h"
 #include "highlighter.h"
 #include "search_list.h"
+#include "config_file.h"
 #include "dlg_bookmarks.h"
 
 
@@ -648,7 +649,7 @@ void Highlighter::setPatList(const std::vector<HiglPatExport>& newPatList)
     SearchList::signalHighlightReconfigured();
     DlgBookmarks::signalHighlightReconfigured();
 
-    m_mainWin->updateRcFile();
+    ConfigFile::updateRcAfterIdle();
 }
 
 
@@ -669,7 +670,7 @@ void Highlighter::setFmtSpec(HiglId id, const HiglFmtSpec& fmtSpec)
         SearchList::signalHighlightReconfigured();
         DlgBookmarks::signalHighlightReconfigured();
 
-        m_mainWin->updateRcFile();
+        ConfigFile::updateRcAfterIdle();
     }
     else
         qCritical("invalid pattern ID: %d", id);

@@ -33,6 +33,7 @@ class QAbstractButton;
 class QJsonObject;
 
 class MainWin;
+class MainText;
 class MainSearch;
 class Highlighter;
 class StatusLine;
@@ -47,14 +48,14 @@ class DlgHigl : public QMainWindow
     Q_OBJECT
 
 public:
-    static void openDialog(Highlighter * higl, MainSearch * search, MainWin * mainWin);
+    static void openDialog(Highlighter * higl, MainSearch * search, MainText * mainText, MainWin * mainWin);
     static void initColorPalette();
     static QJsonObject getRcValues();
     static void setRcValues(const QJsonValue& val);
 
 private:
     // constructor can only be invoked via the static interface
-    DlgHigl(Highlighter * higl, MainSearch * search, MainWin * mainWin);
+    DlgHigl(Highlighter * higl, MainSearch * search, MainText * mainText, MainWin * mainWin);
     DlgHigl(const DlgHigl&) = delete;
     DlgHigl& operator=(const DlgHigl&) = delete;
     virtual ~DlgHigl();
@@ -97,6 +98,7 @@ private:
 
     Highlighter * const m_higl;
     MainSearch * const  m_search;
+    MainText * const    m_mainText;
     MainWin * const     m_mainWin;
     QTableView        * m_table = nullptr;
     DlgHiglModel      * m_model = nullptr;

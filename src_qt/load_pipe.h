@@ -28,7 +28,7 @@
 #include <vector>
 #include <deque>
 
-#include "main_win.h"
+#include "config_file.h"
 
 class QCloseEvent;
 class QAbstractButton;

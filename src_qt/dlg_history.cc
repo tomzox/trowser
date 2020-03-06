@@ -50,6 +50,7 @@
 #include "main_win.h"
 #include "main_text.h"
 #include "main_search.h"
+#include "config_file.h"
 #include "status_line.h"
 #include "search_list.h"
 #include "dlg_history.h"
@@ -349,7 +350,7 @@ void DlgHistory::closeEvent(QCloseEvent * event)
 {
     s_winGeometry = this->saveGeometry();
     s_winState = this->saveState();
-    s_mainWin->updateRcAfterIdle();
+    ConfigFile::updateRcAfterIdle();
 
     event->accept();
 

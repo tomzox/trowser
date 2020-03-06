@@ -42,6 +42,7 @@
 
 #include "main_win.h"
 #include "main_search.h"
+#include "config_file.h"
 #include "search_history.h"
 
 // ----------------------------------------------------------------------------
@@ -97,7 +98,7 @@ void SearchHistory::removeMultiple(const std::set<int>& excluded)
         }
         m_history = tmp;
 
-        m_mainWin->updateRcAfterIdle();
+        ConfigFile::updateRcAfterIdle();
         emit historyChanged();
     }
 }
@@ -131,7 +132,7 @@ void SearchHistory::addEntry(const SearchPar& par)
             m_history.erase(m_history.begin() + TLB_HIST_MAXLEN, m_history.end());
         }
 
-        m_mainWin->updateRcAfterIdle();
+        ConfigFile::updateRcAfterIdle();
         emit historyChanged();
     }
 }
@@ -158,7 +159,7 @@ const QString& SearchHistory::removeEntry(iterator& it)
             it.reset();
         }
 
-        m_mainWin->updateRcAfterIdle();
+        ConfigFile::updateRcAfterIdle();
         emit historyChanged();
     }
 

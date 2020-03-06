@@ -84,6 +84,7 @@
 #include "main_text.h"
 #include "main_search.h"
 #include "status_line.h"
+#include "config_file.h"
 #include "bg_task.h"
 #include "text_block_find.h"
 #include "bookmarks.h"
@@ -1246,9 +1247,9 @@ SearchList::SearchList()
     m_model = new SearchListModel(s_mainText, s_higl, s_parseSpec,
                                   m_showCfg.srchHall, m_showCfg.bookmarkMarkup);
     m_draw = new HighlightViewDelegate(m_model, false,
-                                       s_mainWin->getFontContent(),
-                                       s_mainWin->getFgColDefault(),
-                                       s_mainWin->getBgColDefault());
+                                       s_mainText->getFontContent(),
+                                       s_mainText->getFgColDefault(),
+                                       s_mainText->getBgColDefault());
     m_drawBok = new SearchListDrawBok(m_model, s_mainText, s_bookmarks);
     m_undo = new SearchListUndo();
 #ifndef QT_NO_DEBUG
@@ -1256,7 +1257,7 @@ SearchList::SearchList()
 #endif
 
     // main dialog component: table view, showing the selected lines of text
-    QFontMetrics metrics(s_mainWin->getFontContent());
+    QFontMetrics metrics(s_mainText->getFontContent());
     m_table = new SearchListView(central_wid);
         m_table->setModel(m_model);
         m_table->setShowGrid(false);
@@ -1299,7 +1300,7 @@ SearchList::SearchList()
         this->resize(dw.width()*0.75, dw.height()*0.33);
     }
 
-    connect(s_mainWin, &MainWin::textFontChanged, this, &SearchList::mainFontChanged);
+    connect(s_mainText, &MainText::textFontChanged, this, &SearchList::mainFontChanged);
     connect(s_mainWin, &MainWin::documentNameChanged, this, &SearchList::mainDocNameChanged);
     mainDocNameChanged();  // set window title initially
 
@@ -1370,7 +1371,7 @@ void SearchList::closeEvent(QCloseEvent * event)
 {
     s_winGeometry = this->saveGeometry();
     s_winState = this->saveState();
-    s_mainWin->updateRcAfterIdle();
+    ConfigFile::updateRcAfterIdle();
 
     event->accept();
 
@@ -1397,7 +1398,7 @@ void SearchList::cmdClose(bool)
  */
 void SearchList::mainFontChanged()
 {
-    QFontMetrics metrics(s_mainWin->getFontContent());
+    QFontMetrics metrics(s_mainText->getFontContent());
     m_table->verticalHeader()->setDefaultSectionSize(metrics.height());
 
     m_model->forceRedraw(SearchListModel::COL_IDX_TXT);
@@ -1420,7 +1421,7 @@ void SearchList::mainDocNameChanged()
 
 
 /**
- * This sub-function of the constructor populates the menus with actions.
+ * This sub-function of the constructor populates the menu bar with actions.
  */
 void SearchList::populateMenus()
 {
@@ -1467,7 +1468,7 @@ void SearchList::populateMenus()
     act = men->addAction("Search history...");
         connect(act, &QAction::triggered, [=](){ DlgHistory::openDialog(); });
     act = men->addAction("Edit highlight patterns...");
-        connect(act, &QAction::triggered, [=](){ DlgHigl::openDialog(s_higl, s_search, s_mainWin); });
+        connect(act, &QAction::triggered, [=](){ DlgHigl::openDialog(s_higl, s_search, s_mainText, s_mainWin); });
     men->addSeparator();
     act = men->addAction("Insert all search matches...");
         act->setShortcut(QKeySequence(Qt::ALT + Qt::Key_A));

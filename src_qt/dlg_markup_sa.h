@@ -26,6 +26,7 @@
 class QString;
 
 class Highlighter;
+class MainText;
 class MainWin;
 class DlgMarkup;
 
@@ -36,15 +37,15 @@ class DlgMarkupSA : public QWidget
     Q_OBJECT
 
 public:
-    static void editSearchFmt(Highlighter * higl, MainWin * mainWin);
-    static void editSearchIncFmt(Highlighter * higl, MainWin * mainWin);
-    static void editBookmarkFmt(Highlighter * higl, MainWin * mainWin);
+    static void editSearchFmt(Highlighter * higl, MainText * mainText, MainWin * mainWin);
+    static void editSearchIncFmt(Highlighter * higl, MainText * mainText, MainWin * mainWin);
+    static void editBookmarkFmt(Highlighter * higl, MainText * mainText, MainWin * mainWin);
 
 private:
     static void openDialog(DlgMarkupSA* &ptr, HiglId id, const QString& title,
-                           Highlighter * higl, MainWin * mainWin);
+                           Highlighter * higl, MainText * mainText, MainWin * mainWin);
     // constructor can only be invoked via the static interface
-    DlgMarkupSA(HiglId id, const QString& title, Highlighter * higl, MainWin * mainWin);
+    DlgMarkupSA(HiglId id, const QString& title, Highlighter * higl, MainText * mainText, MainWin * mainWin);
     virtual ~DlgMarkupSA() = default;
     void raiseWindow();
     void signalMarkupCloseReq(HiglId id);
@@ -57,6 +58,7 @@ private:
 
     const HiglId m_id;
     Highlighter * const m_higl;
+    MainText * const m_mainText;
     MainWin * const m_mainWin;
     std::unique_ptr<DlgMarkup> m_dlgWin;
 };

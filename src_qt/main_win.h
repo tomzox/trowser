@@ -19,10 +19,8 @@
 #define _MAIN_WIN_H
 
 #include <QMainWindow>
-#include <QJsonObject>
 
 class QApplication;
-class QStyle;
 class QTimer;
 
 class MainText;
@@ -34,8 +32,6 @@ class LoadPipe;
 
 // ----------------------------------------------------------------------------
 
-enum class LoadMode { Head, Tail };
-
 class MainWin : public QMainWindow
 {
     Q_OBJECT
@@ -45,22 +41,12 @@ public:
     ~MainWin();
 
     QWidget * focusWidget() const;
-    QStyle * getAppStyle() const;
     const QString& getFilename() const { return m_curFileName; }
-    const QFont& getFontContent() const { return m_fontContent; }
-    const QColor& getFgColDefault() const;
-    const QColor& getBgColDefault() const;
     StatusLine * mainStatusLine() const { return m_stline; }
 
-    void loadRcFile();
-    void updateRcFile();
-    void updateRcAfterIdle();
-    void menuCmdDisplayLineNo();
-    void keyCmdZoomFontSize(bool zoomIn);
     void startLoading(const char * fileName);
 
 signals:
-    void textFontChanged();
     void documentNameChanged();
 
 private:
@@ -91,12 +77,6 @@ private:
     LoadPipe    * m_loadPipe = nullptr;
     QAction     * m_actFileReload = nullptr;
 
-    QTimer      * m_timUpdateRc = nullptr;
-    qint64        m_tsUpdateRc = 0;
-    bool          m_rcFileWriteError = false;
-    bool          m_rcFileBackedup = false;
-    QJsonObject   m_prevRcContent;
-    QFont         m_fontContent;
     QString       m_curFileName;
 };
 

@@ -63,16 +63,30 @@ public:
     void jumpToNextBookmark(bool);
     void jumpToLine(int line);
 
+    const QColor& getFgColDefault() const;
+    const QColor& getBgColDefault() const;
+    const QFont& getFontContent() const { return m_fontContent; }
+    void setFontInitial(const QString& fontName);
+    void setFontContent(const QFont& font);
+
     QTextCursor findInDoc(const SearchPar& par, bool is_fwd, int start_pos);
+
+signals:
+    void textFontChanged();
 
 private:
     using xviewSetWhere = enum { XVIEW_SET_LEFT, XVIEW_SET_RIGHT };
     using JumpPos = struct { int pos, line; };
     static const uint JUMP_STACK_MAXLEN = 100;
 
+    static constexpr const char * const DEFAULT_FONT_FAM = "DejaVu Sans Mono";
+    static const int DEFAULT_FONT_SZ = 9;
+
     virtual void keyPressEvent(QKeyEvent *e) override;
     virtual void dragEnterEvent(QDragEnterEvent *ev) override;
     bool keyCmdText(wchar_t chr);
+    void keyCmdZoomFontSize(bool zoomIn);
+    void displayLineNo();
 
     void YviewSet(char where, int col);
     void YviewScrollLine(int delta);
@@ -100,6 +114,8 @@ private:
     MainWin     * const m_mainWin;
     MainSearch  * const m_search;
     Bookmarks   * const m_bookmarks;
+    QFont         m_fontContent;
+
     wchar_t       last_inline_char = 0;
     int           last_inline_dir = 0;
     wchar_t       last_key_char = 0;

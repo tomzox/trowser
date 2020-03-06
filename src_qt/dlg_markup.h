@@ -32,6 +32,7 @@ class QCheckBox;
 
 class HiglFmtSpec;
 class Highlighter;
+class MainText;
 class MainWin;
 class BrushStyleListModel;
 
@@ -43,7 +44,7 @@ class DlgMarkup : public QMainWindow
 
 public:
     DlgMarkup(HiglId id, const HiglFmtSpec * fmtSpec, const QString& title,
-              Highlighter * higl, MainWin * mainWin);
+              Highlighter * higl, MainText * mainText, MainWin * mainWin);
     virtual ~DlgMarkup();
     const HiglFmtSpec& getFmtSpec() const { return m_fmtSpec; }
     HiglId getFmtId() const { return m_id; }
@@ -75,6 +76,7 @@ private:
     HiglFmtSpec         m_fmtSpecOrig;
     HiglFmtSpec         m_fmtSpec;
     Highlighter * const m_higl;
+    MainText * const    m_mainText;
     MainWin * const     m_mainWin;
     bool                m_isModified = false;
 

@@ -35,6 +35,7 @@
 
 #include "main_win.h"
 #include "highlighter.h"
+#include "config_file.h"
 #include "dlg_higl.h"
 #include "dlg_markup.h"
 #include "dlg_markup_sa.h"
@@ -45,13 +46,15 @@
  * The constructor creates an instance of the mark-up configuration dialog for
  * the given ID.
  */
-DlgMarkupSA::DlgMarkupSA(HiglId id, const QString& title, Highlighter * higl, MainWin * mainWin)
+DlgMarkupSA::DlgMarkupSA(HiglId id, const QString& title, Highlighter * higl,
+                         MainText * mainText, MainWin * mainWin)
     : m_id(id)
     , m_higl(higl)
+    , m_mainText(mainText)
     , m_mainWin(mainWin)
 {
     DlgHigl::initColorPalette();
-    m_dlgWin = std::make_unique<DlgMarkup>(id, higl->getFmtSpecForId(id), title, higl, mainWin);
+    m_dlgWin = std::make_unique<DlgMarkup>(id, higl->getFmtSpecForId(id), title, higl, mainText, mainWin);
 
     connect(m_dlgWin.get(), &DlgMarkup::closeReq, this, &DlgMarkupSA::signalMarkupCloseReq);
     connect(m_dlgWin.get(), &DlgMarkup::applyReq, this, &DlgMarkupSA::signalMarkupApplyReq);
@@ -98,7 +101,7 @@ void DlgMarkupSA::signalMarkupApplyReq(HiglId id, bool /*immediate*/)
 
     m_higl->setFmtSpec(id, m_dlgWin->getFmtSpec());
     m_dlgWin->resetModified();
-    m_mainWin-> updateRcFile();
+    ConfigFile::updateRcAfterIdle();
 }
 
 // ----------------------------------------------------------------------------
@@ -114,11 +117,11 @@ DlgMarkupSA * DlgMarkupSA::s_bookmarkFmtDlg = nullptr;
  * instance already exists, its dialog window is raised instead.
  */
 void DlgMarkupSA::openDialog(DlgMarkupSA* &ptr, HiglId id, const QString& title,
-                             Highlighter * higl, MainWin * mainWin)  /*static*/
+                             Highlighter * higl, MainText * mainText, MainWin * mainWin)  /*static*/
 {
     if (ptr == nullptr)
     {
-        ptr = new DlgMarkupSA(id, title, higl, mainWin);
+        ptr = new DlgMarkupSA(id, title, higl, mainText, mainWin);
     }
     else
     {
@@ -130,9 +133,9 @@ void DlgMarkupSA::openDialog(DlgMarkupSA* &ptr, HiglId id, const QString& title,
  * Open or raise the mark-up editor for the mark-up used for highlighting
  * complete text lines that match a search.
  */
-void DlgMarkupSA::editSearchFmt(Highlighter * higl, MainWin * mainWin)  /*static*/
+void DlgMarkupSA::editSearchFmt(Highlighter * higl, MainText * mainText, MainWin * mainWin)  /*static*/
 {
-    openDialog(DlgMarkupSA::s_searchFmtDlg, Highlighter::HIGL_ID_SEARCH, "Search matches mark-up", higl, mainWin);
+    openDialog(DlgMarkupSA::s_searchFmtDlg, Highlighter::HIGL_ID_SEARCH, "Search matches mark-up", higl, mainText, mainWin);
 }
 
 /**
@@ -140,16 +143,16 @@ void DlgMarkupSA::editSearchFmt(Highlighter * higl, MainWin * mainWin)  /*static
  * exact range of text that matches a search. Note this mark-up is always
  * applied on top ot the above mark-up.
  */
-void DlgMarkupSA::editSearchIncFmt(Highlighter * higl, MainWin * mainWin)  /*static*/
+void DlgMarkupSA::editSearchIncFmt(Highlighter * higl, MainText * mainText, MainWin * mainWin)  /*static*/
 {
-    openDialog(DlgMarkupSA::s_searchIncFmtDlg, Highlighter::HIGL_ID_SEARCH_INC, "Search increment mark-up", higl, mainWin);
+    openDialog(DlgMarkupSA::s_searchIncFmtDlg, Highlighter::HIGL_ID_SEARCH_INC, "Search increment mark-up", higl, mainText, mainWin);
 }
 
 /**
  * Open or raise the mark-up editor for the mark-up used for highlighting
  * bookmarked lines.
  */
-void DlgMarkupSA::editBookmarkFmt(Highlighter * higl, MainWin * mainWin)  /*static*/
+void DlgMarkupSA::editBookmarkFmt(Highlighter * higl, MainText * mainText, MainWin * mainWin)  /*static*/
 {
-    openDialog(DlgMarkupSA::s_bookmarkFmtDlg, Highlighter::HIGL_ID_BOOKMARK, "Bookmarks mark-up", higl, mainWin);
+    openDialog(DlgMarkupSA::s_bookmarkFmtDlg, Highlighter::HIGL_ID_BOOKMARK, "Bookmarks mark-up", higl, mainText, mainWin);
 }

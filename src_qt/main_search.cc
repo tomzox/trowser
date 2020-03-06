@@ -67,6 +67,7 @@
 #include "highlighter.h"
 #include "status_line.h"
 #include "search_list.h"
+#include "config_file.h"
 #include "bg_task.h"
 #include "text_block_find.h"
 #include "dlg_bookmarks.h"
@@ -303,7 +304,7 @@ void MainSearch::searchHighlightSettingChange()
         searchHighlightClear();
         searchHighlightUpdateCurrent();
     }
-    m_mainWin->updateRcAfterIdle();
+    ConfigFile::updateRcAfterIdle();
 }
 
 
@@ -759,7 +760,8 @@ void MainSearch::searchEnterOpt(const SearchPar& pat)
  * search, but instead specifies the direction directly.
  *
  * If a match is found, the cursor is moved there and the line is marked using
- * search highlighting. If no match is found, a warning is 
+ * search highlighting. If no match is found, a warning is issued and a
+ * possible previous highlighting remains.
  */
 bool MainSearch::searchNext(bool is_fwd, int repCnt)
 {

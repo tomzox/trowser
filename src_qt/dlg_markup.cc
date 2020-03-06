@@ -62,6 +62,7 @@
 #include <memory>
 
 #include "main_win.h"
+#include "main_text.h"
 #include "highlighter.h"
 #include "dlg_markup.h"
 
@@ -169,11 +170,12 @@ public:
  * provided ID is only for use by the owner.
  */
 DlgMarkup::DlgMarkup(HiglId id, const HiglFmtSpec * fmtSpec, const QString& title,
-                     Highlighter * higl, MainWin * mainWin)
+                     Highlighter * higl, MainText * mainText, MainWin * mainWin)
     : m_id(id)
     , m_fmtSpecOrig(*fmtSpec)
     , m_fmtSpec(*fmtSpec)
     , m_higl(higl)
+    , m_mainText(mainText)
     , m_mainWin(mainWin)
 {
     this->setWindowTitle(title);
@@ -185,10 +187,10 @@ DlgMarkup::DlgMarkup(HiglId id, const HiglFmtSpec * fmtSpec, const QString& titl
     //
     // Sample text, of which one line is marked-up in the current config
     //
-    QFontMetrics metrics(m_mainWin->getFontContent());
+    QFontMetrics metrics(m_mainText->getFontContent());
     m_sampleWid = new QPlainTextEdit(central_wid);
         m_sampleWid->setLineWrapMode(QPlainTextEdit::NoWrap);
-        m_sampleWid->setFont(m_mainWin->getFontContent());
+        m_sampleWid->setFont(m_mainText->getFontContent());
         m_sampleWid->setFocusPolicy(Qt::NoFocus);
         m_sampleWid->setPlainText(SAMPLE_STR_TXT);
         m_sampleWid->setReadOnly(true);
@@ -373,7 +375,7 @@ DlgMarkup::DlgMarkup(HiglId id, const HiglFmtSpec * fmtSpec, const QString& titl
         connect(m_cmdButs, &QDialogButtonBox::clicked, this, &DlgMarkup::cmdButton);
         layout_top->addWidget(m_cmdButs);
 
-    connect(m_mainWin, &MainWin::textFontChanged, this, &DlgMarkup::mainFontChanged);
+    connect(m_mainText, &MainText::textFontChanged, this, &DlgMarkup::mainFontChanged);
 
     this->setCentralWidget(central_wid);
     this->show();
@@ -396,9 +398,9 @@ DlgMarkup::~DlgMarkup()
  */
 void DlgMarkup::mainFontChanged()
 {
-    QFontMetrics metrics(m_mainWin->getFontContent());
+    QFontMetrics metrics(m_mainText->getFontContent());
     m_sampleWid->setFixedHeight(metrics.height() * (SAMPLE_STR_LINE_CNT + 2));
-    m_sampleWid->setFont(m_mainWin->getFontContent());
+    m_sampleWid->setFont(m_mainText->getFontContent());
 
     drawTextSample();
 }
@@ -524,7 +526,7 @@ void DlgMarkup::cmdSelectFont()
     if (!m_fmtSpec.m_font.isEmpty())
         font.fromString(m_fmtSpec.m_font);
     else
-        font = m_mainWin->getFontContent();
+        font = m_mainText->getFontContent();
 
     bool ok;
     font = QFontDialog::getFont(&ok, font, this);

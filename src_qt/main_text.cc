@@ -45,6 +45,7 @@
 #include "main_search.h"
 #include "status_line.h"
 #include "bookmarks.h"
+#include "config_file.h"
 #include "dlg_bookmarks.h"
 #include "search_list.h"
 
@@ -58,7 +59,10 @@ MainText::MainText(MainWin * mainWin, MainSearch * search, Bookmarks * bookmarks
     , m_mainWin(mainWin)
     , m_search(search)
     , m_bookmarks(bookmarks)
+    , m_fontContent(DEFAULT_FONT_FAM, DEFAULT_FONT_SZ, false, false)
 {
+    this->setFont(m_fontContent);
+
     // commands for scrolling vertically
     m_keyCmdCtrl.emplace(Qt::Key_Up, [=](){ YviewScrollLine(-1); });
     m_keyCmdCtrl.emplace(Qt::Key_Down, [=](){ YviewScrollLine(1); });
@@ -138,11 +142,11 @@ MainText::MainText(MainWin * mainWin, MainSearch * search, Bookmarks * bookmarks
     m_keyCmdText.emplace('i', [=](){ SearchList::getInstance(false)->copyCurrentLine(true); });
     m_keyCmdText.emplace('u', [=](){ SearchList::extUndo(); });
     m_keyCmdCtrl.emplace(Qt::Key_R, [=](){ SearchList::extRedo(); });
-    m_keyCmdCtrl.emplace(Qt::Key_G, [=](){ m_mainWin->menuCmdDisplayLineNo(); });
+    m_keyCmdCtrl.emplace(Qt::Key_G, [=](){ displayLineNo(); });
     //bind .f1.t <Double-Button-1> {if {%s == 0} {Mark_ToggleAtInsert; KeyClr; break}};
     m_keyCmdText.emplace('m', [=](){ toggleBookmark(); });
-    m_keyCmdCtrl.emplace(Qt::Key_Plus, [=](){ m_mainWin->keyCmdZoomFontSize(true); });
-    m_keyCmdCtrl.emplace(Qt::Key_Minus, [=](){ m_mainWin->keyCmdZoomFontSize(false); });
+    m_keyCmdCtrl.emplace(Qt::Key_Plus, [=](){ keyCmdZoomFontSize(true); });
+    m_keyCmdCtrl.emplace(Qt::Key_Minus, [=](){ keyCmdZoomFontSize(false); });
     //bind .f1.t <Control-Alt-Delete> DebugDumpAllState
 }
 
@@ -1104,6 +1108,71 @@ void MainText::jumpToLine(int line)
     }
 }
 
+
+/**
+ * This function is bound to CTRL-G in the main window. It displays the
+ * current line number and fraction of lines above the cursor in percent
+ * (i.e. same as VIM)
+ */
+void MainText::displayLineNo()
+{
+    auto c = this->textCursor();
+    int line = c.block().blockNumber();
+    int max = this->document()->blockCount();
+
+    QString msg = m_mainWin->getFilename() + ": line "
+                    + QString::number(line + 1) + " of "
+                    + QString::number(max) + " lines";
+    if (max > 1)
+        msg += " (" + QString::number(int(100.0 * line / max + 0.5)) + "%)";
+
+    m_mainWin->mainStatusLine()->showPlain("line_query", msg);
+}
+
+
+const QColor& MainText::getFgColDefault() const
+{
+    auto& pal = this->palette();
+    return pal.color(QPalette::Text);
+}
+
+const QColor& MainText::getBgColDefault() const
+{
+    auto& pal = this->palette();
+    return pal.color(QPalette::Base);
+}
+
+void MainText::setFontContent(const QFont& font)
+{
+    m_fontContent = font;
+
+    this->setFont(m_fontContent);
+
+    ConfigFile::updateRcAfterIdle();
+
+    // notify dialogs
+    emit textFontChanged();
+}
+
+void MainText::setFontInitial(const QString& fontName)
+{
+    m_fontContent.fromString(fontName);
+    this->setFont(m_fontContent);
+}
+
+void MainText::keyCmdZoomFontSize(bool zoomIn)
+{
+    if (zoomIn)
+        this->zoomIn();
+    else
+        this->zoomOut();
+
+    m_fontContent = this->font();
+    ConfigFile::updateRcAfterIdle();
+
+    // notify dialogs
+    emit textFontChanged();
+}
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
