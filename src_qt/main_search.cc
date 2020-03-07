@@ -698,9 +698,7 @@ bool MainSearch::searchFirst(bool is_fwd, const std::vector<SearchPar>& patList)
     m_mainText->cursorJumpPushPos();
     searchHighlightClear();
 
-    // add to history in reverse order to avoid toggling ordering in history list
-    for (auto it = patList.rbegin(); it != patList.rend(); ++it)
-        m_histList.addEntry(*it);
+    m_histList.addMultiple(patList);
 
     QTextCursor match;
     const SearchPar * matchPar = nullptr;

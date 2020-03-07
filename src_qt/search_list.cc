@@ -2125,9 +2125,9 @@ void SearchList::searchMatches(bool do_add, int direction, const SearchPar& par)
     }
 }
 
-void SearchList::searchMatches(bool do_add, int direction, const std::vector<SearchPar>& pat_list)
+void SearchList::searchMatches(bool do_add, int direction, const std::vector<SearchPar>& patList)
 {
-    startSearchAll(pat_list, do_add, direction);
+    startSearchAll(patList, do_add, direction);
 }
 
 /**
@@ -2136,16 +2136,19 @@ void SearchList::searchMatches(bool do_add, int direction, const std::vector<Sea
  * search list. The search is performed in the background and NOT finished when
  * this function returns.  Possibly still running older searches are aborted.
  */
-void SearchList::startSearchAll(const std::vector<SearchPar>& pat_list, bool do_add, int direction)
+void SearchList::startSearchAll(const std::vector<SearchPar>& patList, bool do_add, int direction)
 {
     if (searchAbort())
     {
+        // add patterns to the search history
+        s_search->getHistory()->addMultiple(patList);
+
         int textPos = ((direction == 0) ? 0 : s_mainText->textCursor().position());
 
         // reset redo list
         m_undo->prepareBgChange(do_add);
 
-        tid_search_list->start([=](){ bgSearchLoop(pat_list, do_add, direction, textPos, 0); });
+        tid_search_list->start([=](){ bgSearchLoop(patList, do_add, direction, textPos, 0); });
     }
 }
 
@@ -2155,13 +2158,13 @@ void SearchList::startSearchAll(const std::vector<SearchPar>& pat_list, bool do_
  * The search loop continues for at most 100ms, then the function re-schedules
  * itself as idle task.
  */
-void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add, int direction, int textPos, int pat_idx)
+void SearchList::bgSearchLoop(const std::vector<SearchPar> patList, bool do_add, int direction, int textPos, int pat_idx)
 {
     auto anchor = getViewAnchor();
     qint64 start_t = QDateTime::currentMSecsSinceEpoch();
     std::vector<int> line_list;
     std::vector<int> idx_list;
-    auto finder = MainTextFind::create(s_mainText->document(), pat_list[pat_idx], direction>=0, textPos);
+    auto finder = MainTextFind::create(s_mainText->document(), patList[pat_idx], direction>=0, textPos);
 
     while (!finder->isDone())
     {
@@ -2240,20 +2243,20 @@ void SearchList::bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add
             else
                 ratio = 1;
         }
-        searchProgress(100 * (ratio + pat_idx) / pat_list.size());
+        searchProgress(100 * (ratio + pat_idx) / patList.size());
 
-        tid_search_list->start([=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx); });
+        tid_search_list->start([=](){ bgSearchLoop(patList, do_add, direction, textPos, pat_idx); });
     }
     else  // done
     {
         m_undo->finalizeBgChange(do_add);
         pat_idx += 1;
-        if (size_t(pat_idx) < pat_list.size())
+        if (size_t(pat_idx) < patList.size())
         {
             m_undo->prepareBgChange(do_add);
             int textPos = ((direction == 0) ? 0 : s_mainText->textCursor().position());
 
-            tid_search_list->start([=](){ bgSearchLoop(pat_list, do_add, direction, textPos, pat_idx); });
+            tid_search_list->start([=](){ bgSearchLoop(patList, do_add, direction, textPos, pat_idx); });
         }
         else
         {

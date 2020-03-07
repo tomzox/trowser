@@ -185,12 +185,7 @@ const SearchPar& DlgHistoryModel::getSearchPar(int row) const
 
 void DlgHistoryModel::forceRedraw()
 {
-    const std::vector<SearchPar>& hist = m_history->getHistory();
-    if (hist.size() > 0)
-    {
-        emit dataChanged(createIndex(0, 0),
-                         createIndex(hist.size() - 1, COL_COUNT));
-    }
+    emit layoutChanged();
 }
 
 // ----------------------------------------------------------------------------
@@ -449,8 +444,9 @@ void DlgHistory::cmdClose(bool)
  * list (i.e. items removed/added or modified). Note this function also may be
  * called by actions initiated via the dialog, such as removal of history
  * entries.  The function first forces a complete redraw of the contents. Then
- * it will re-select all previously selected items, specifically those with the
- * same pattern string.
+ * it will re-select all previously selected items (ie.e. those with the same
+ * pattern string); the previous selection is known from a copy that is taken
+ * immediately in the callback upon any change of selection.
  *
  * Note this special handling is necessary because by default the selection
  * model would keep selection at the same indices, which now may refer to
@@ -489,9 +485,9 @@ void DlgHistory::refreshContents()
 
 
 /**
- * This function is bound to the "Remove selected lines" command in the
- * search history list dialog's context menu.  All currently selected text
- * lines are removed from the search list.
+ * This slot is connected to the Deleta shortcut and "Remove selected lines"
+ * command in the history list's context menu.  All currently selected entries
+ * are removed from the history.
  */
 void DlgHistory::cmdRemove(bool)
 {
@@ -511,9 +507,11 @@ void DlgHistory::cmdRemove(bool)
 
 
 /**
- * This function is invoked by the "Copy to search field" command in the
- * search history list's context menu. (Note an almost identical menu entry
- * exists in the tag list dialog.)
+ * This slot is connected to the "Copy to search field" entry in the history
+ * list's context menu. The function copies the search string and options to
+ * the respective input fields and checkboxes respectively in the main window
+ * and starts a search.  (Note an almost identical menu entry exists in the tag
+ * list dialog.)
  */
 void DlgHistory::cmdCopyToMain(bool)
 {
@@ -526,8 +524,9 @@ void DlgHistory::cmdCopyToMain(bool)
 
 
 /**
- * This function is bound to double-click on a history entry. The function
- * starts a search with the selected expression.
+ * This slot is connected to double-click mouse events occuring on an entry in
+ * the history list. The function starts a search with the selected expression
+ * in the main window.
  */
 void DlgHistory::mouseTrigger(const QModelIndex &index)
 {
@@ -536,9 +535,11 @@ void DlgHistory::mouseTrigger(const QModelIndex &index)
 
 
 /**
- * This function starts a search in the main text content for the selected
- * expression, i.e. as if the word had been entered to the search text
- * entry field.
+ * This slot is bound to the "Next" and "Prev" buttons in the "Find" toolbar.
+ * This function starts a search in the main text content in the given
+ * direction for all of the currently selected search patterns. When more than
+ * one pattern is selected, the cursor is moved to the first match on any of
+ * the patterns.
  */
 void DlgHistory::cmdSearch(bool is_fwd)
 {
@@ -568,10 +569,10 @@ void DlgHistory::cmdSearch(bool is_fwd)
 }
 
 /**
- * This function is bound to the "list all" button in the search history
- * dialog. The function opens the search result list window and starts a
- * search for all expressions which are currently selected in the history
- * list (serializing multiple searches is handled by the search list dialog)
+ * This slot is bound to the "list all" button in the "Find" toolbar.  The
+ * function opens the search result list window and starts a search for all
+ * expressions which are currently selected in the history list (serializing
+ * multiple searches is handled by the search list dialog).
  */
 void DlgHistory::cmdSearchList(int direction)
 {

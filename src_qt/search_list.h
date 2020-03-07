@@ -75,7 +75,7 @@ public:
     // static external interfaces (invoked via getInstance() result)
     void copyCurrentLine(bool doAdd);
     void searchMatches(bool do_add, int direction, const SearchPar& par);
-    void searchMatches(bool do_add, int direction, const std::vector<SearchPar>& pat_list);
+    void searchMatches(bool do_add, int direction, const std::vector<SearchPar>& patList);
 
 private:
     // constructor can only be invoked via the static interface
@@ -112,8 +112,8 @@ private:
     void bgUndoRedoLoop(bool isRedo, int origCount);
     void addMatches(int direction);
     void removeMatches(int direction);
-    void startSearchAll(const std::vector<SearchPar>& pat_list, bool do_add, int direction);
-    void bgSearchLoop(const std::vector<SearchPar> pat_list, bool do_add, int direction, int line, int pat_idx);
+    void startSearchAll(const std::vector<SearchPar>& patList, bool do_add, int direction);
+    void bgSearchLoop(const std::vector<SearchPar> patList, bool do_add, int direction, int line, int pat_idx);
     void searchProgress(int percent);
     bool searchAbort(bool doWarn = true);
     void closeAbortDialog();

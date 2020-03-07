@@ -104,6 +104,18 @@ void SearchHistory::removeMultiple(const std::set<int>& excluded)
 }
 
 /**
+ * This convenience function adds all the given patterns to the search history,
+ * or moves them to the top if already in the list. (This function is used when
+ * starting searches via the search history list or highlight editor.)
+ */
+void SearchHistory::addMultiple(const std::vector<SearchPar>& patList)
+{
+    // add individually in reverse order so that they end up in the given order
+    for (auto it = patList.rbegin(); it != patList.rend(); ++it)
+        addEntry(*it);
+}
+
+/**
  * This function add the given search parameter set to the search history
  * stack.  If the same string is already on the stack, it is moved to the top.
  * Note: top of the stack is the front of the list.

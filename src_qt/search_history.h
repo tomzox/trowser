@@ -22,6 +22,7 @@
 #include <QString>
 
 #include <set>
+#include <vector>
 
 class QJsonArray;
 
@@ -68,7 +69,9 @@ class SearchHistory : public QObject
     Q_OBJECT
 public:
     /**
-     * Public sub-class, used for iterating through the history stack.
+     * Public sub-class, used for iterating through the history stack under
+     * user-control (i.e. non-consecutively; the class serves as container
+     * for iteration parameters between user interaction)
      */
     class iterator
     {
@@ -96,7 +99,7 @@ public:
         bool          prevUp = false;
         QString       prefix;
     };
-    //  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - --
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SearchHistory(MainWin * mainWin)
         : m_mainWin(mainWin)
@@ -106,11 +109,12 @@ public:
     QJsonArray getRcValues();
     void setRcValues(const QJsonArray& arr);
 
-    const std::vector<SearchPar>& getHistory() const { return m_history; }
-    void removeMultiple(const std::set<int>& excluded);
-
     bool isEmpty() const { return m_history.empty(); }
     const SearchPar& front() const { return m_history.front(); }
+
+    const std::vector<SearchPar>& getHistory() const { return m_history; }
+    void removeMultiple(const std::set<int>& excluded);
+    void addMultiple(const std::vector<SearchPar>& patList);
 
     void addEntry(const SearchPar& par);
     const QString& removeEntry(iterator& it);

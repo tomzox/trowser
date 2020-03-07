@@ -22,3 +22,4 @@ optional enhancements:
 - bookmark undo/redo for line list (implemented within Bookmarks class)
 - bookmark adding/removing via text search (all/all above/all below)
 - search history dialog: max list length configurable
+- file reload: offer changing load buffer size & mode limits
