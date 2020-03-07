@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2010,2019 Th. Zoerner
+# Copyright (C) 2007-2010,2019-2020 Th. Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -252,9 +252,9 @@ def CreateMainWindow():
   wt.f2_bh = Checkbutton(text="Highlight all", variable=tlb_hall, command=lambda:SearchHighlightSettingChange, underline=0)
   wt.f2_cb = Checkbutton(text="Match case", variable=tlb_case, command=lambda:SearchHighlightSettingChange, underline=6)
   wt.f2_re = Checkbutton(text="Reg.Exp.", variable=tlb_regexp, command=lambda:SearchHighlightSettingChange, underline=4)
-  for wid in (wt.f2_l, wt.f2_bn, wt.f2_bp, wt.f2_bl, wt.f2_bh, wt.f2_cb, wt.f2_re):
+  for wid in (wt.f2_l, wt.f2_e, wt.f2_bn, wt.f2_bp, wt.f2_bl, wt.f2_bh, wt.f2_cb, wt.f2_re):
     wid.pack(side=LEFT, anchor=W, padx=1)
-  wt.f2_e.pack(side=LEFT, anchor=W, padx=1, fill=X, expand=1)
+  wt.f2_e.pack_configure(fill=X, expand=1)
   wt.f2.pack(side=TOP, fill=X)
 
   wt.f2_e.bind("<Escape>", lambda e: BindCallAndBreak(SearchAbort))
@@ -2389,7 +2389,6 @@ def KeyCmd_OpenDialog(type, txt=""):
       wt.dlg_key_e.bind("<Key-BackSpace>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorMove("<Key-BackSpace>")))
       wt.dlg_key_e.bind("<Key-h>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorMove("<Key-h>")))
       wt.dlg_key_e.bind("<Key-l>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorMove("<Key-l>")))
-      wt.dlg_key_e.bind("<Key-semicolon>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorMove("<Key-semicolon>")))
       # search key binding
       wt.dlg_key_e.bind("<Key-n>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecSearch(1)))
       wt.dlg_key_e.bind("<Key-p>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecSearch(0)))
@@ -3125,7 +3124,7 @@ def MarkList_GetLen():
 
 #
 # This function must be called when portions of the text in the main window
-# have been deleted to update references to text lines. Paramater meaning:
+# have been deleted to update references to text lines. Parameter meaning:
 # + top_l: this is the first line which is not deleted, or 1 if none
 # + bottom_l: this line and all below have been removed, or 0 if none
 #
@@ -3561,10 +3560,10 @@ def SearchHistory_Remove():
   global dlg_hist_sel, tlb_history
 
   sel = dlg_hist_sel.TextSel_GetSelection()
-  sel = sel.sort(reverse=True)
+  sel.sort(reverse=True)
   for idx in sel:
     line = "%d.0" % (idx + 1)
-    tlb_history = lreplace(tlb_history, idx, idx)
+    del tlb_history[idx]
     wt.dlg_hist_f1_l.delete(line, line + " + 1 lines")
 
   dlg_hist_sel.TextSel_SetSelection([])
@@ -5073,7 +5072,7 @@ def SearchList_GetLen():
 
 #
 # This function must be called when portions of the text in the main window
-# have been deleted to update references to text lines. Paramater meaning:
+# have been deleted to update references to text lines. Parameter meaning:
 # + top_l: this is the first line which is not deleted, or 1 if none
 # + bottom_l: this line and all below have been removed, or 0 if none
 #
@@ -6017,7 +6016,7 @@ def FontList_Quit(do_store):
 
 # ----------------------------------------------------------------------------
 #
-# This function creates or raises the color color highlight edit dialog.
+# This function creates or raises the color highlight edit dialog.
 #
 def Markup_OpenDialog(pat_idx):
   global font_normal, font_bold, font_content, font_hlink
@@ -6705,7 +6704,7 @@ def OpenAboutDialog():
     wt.about_name = Label(wt.about, text="Trace Browser")
     wt.about_name.pack(side=TOP, pady=8)
 
-    wt.about_copyr1 = Label(wt.about, text="Copyright (C) 2007-2010,2019 Th. Zoerner", font=font_normal)
+    wt.about_copyr1 = Label(wt.about, text="Copyright (C) 2007-2010,2019-2020 Th. Zoerner", font=font_normal)
     wt.about_copyr1.pack(side=TOP)
 
     msg ="""
@@ -7577,7 +7576,7 @@ class LoadPipe(object):
 
 
   #
-  # This function closes the pip-loading dialog window and inserts the loaded
+  # This function closes the pipe-loading dialog window and inserts the loaded
   # text (if any) into the main window.
   #
   def LoadPipe_Insert(self, from_thread):
@@ -8541,8 +8540,8 @@ load_buf_size = 0x100000
 
 # define RC file version limit for forwards compatibility
 rcfile_compat = 0x02000001
-rcfile_version = 0x02000001
-myrcfile = ".trowserc"
+rcfile_version = 0x02000002
+myrcfile = ".trowserc.py"
 rc_file_error = 0
 
 #

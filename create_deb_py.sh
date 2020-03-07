@@ -2,7 +2,7 @@
 
 set -e
 
-BASEDIR=deb/trowser_1.3-3
+BASEDIR=deb/trowser_2.0-2
 
 mkdir -p $BASEDIR/DEBIAN
 cat > $BASEDIR/DEBIAN/control <<EoF
@@ -11,12 +11,12 @@ Priority: optional
 Section: text
 Maintainer: Th. Zoerner <tomzo@users.sourceforge.net>
 Architecture: all
-Version: 1.3
-Depends: tcl8.4|tcl8.5|tcl8.6, tk8.4|tk8.5|tk8.6
-Description: Browser for large line-oriented text files based on Tcl/Tk
+Version: 2.0
+Depends: python3, python3-tk
+Description: Browser for large line-oriented text files in Python/tkinter
  Trowser is a browser for large line-oriented text files (such as debug traces)
- implemented in Tcl/Tk.  It's meant as an alternative to "less". Compared
- to less, trowser adds color highlighting, a persistent search history,
+ implemented in Python using Tk. It is meant as an alternative to "less".
+ Compared to less, trowser adds color highlighting, a persistent search history,
  graphical bookmarking, separate search result (i.e. filter) windows and
  flexible skipping of input from pipes to STDIN.  Trowser has a graphical
  interface, but is designed to allow browsing via the keyboard at least
@@ -25,7 +25,7 @@ Description: Browser for large line-oriented text files based on Tcl/Tk
 EoF
 
 mkdir -p $BASEDIR/usr/bin
-cp -p trowser.tcl $BASEDIR/usr/bin/trowser
+cp -p trowser.py $BASEDIR/usr/bin/trowser
 chmod +x $BASEDIR/usr/bin/trowser
 
 mkdir -p $BASEDIR/usr/share/man/man1
@@ -68,4 +68,4 @@ cd ..
 # note "fakeroot" is used to have files owned by user "root"
 # - this is optional for local packages; can be removed if you don't have this script
 
-fakeroot dpkg-deb --build trowser_1.3-3
+fakeroot dpkg-deb --build trowser_2.0-2

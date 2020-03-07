@@ -3,7 +3,7 @@
 exec wish "$0" -- "$@"
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2010,2019 Th. Zoerner
+# Copyright (C) 2007-2010,2019-2020 Th. Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -2509,7 +2509,6 @@ proc KeyCmd_OpenDialog {type {txt {}}} {
       bind .dlg_key.e <Key-BackSpace> {KeyCmd_ExecCursorMove <Key-BackSpace>; break}
       bind .dlg_key.e <Key-h> {KeyCmd_ExecCursorMove <Key-h>; break}
       bind .dlg_key.e <Key-l> {KeyCmd_ExecCursorMove <Key-l>; break}
-      bind .dlg_key.e <Key-semicolon> {KeyCmd_ExecCursorMove <Key-semicolon>; break}
       # search key binding
       bind .dlg_key.e <Key-n> {KeyCmd_ExecSearch 1; break}
       bind .dlg_key.e <Key-p> {KeyCmd_ExecSearch 0; break}
@@ -7132,7 +7131,7 @@ proc OpenAboutDialog {} {
     label .about.name -text "Trace Browser"
     pack .about.name -side top -pady 8
 
-    label .about.copyr1 -text "Copyright (C) 2007-2010,2019 Tom Zoerner" -font $font_normal
+    label .about.copyr1 -text "Copyright (C) 2007-2010,2019-2020 Tom Zoerner" -font $font_normal
     pack .about.copyr1 -side top
 
     message .about.m -font $font_normal -text {
