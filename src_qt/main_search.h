@@ -24,6 +24,7 @@
 #include <QTimer>
 
 #include <vector>
+#include <functional>
 
 #include "search_history.h"
 

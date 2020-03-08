@@ -21,6 +21,8 @@
 #include <QObject>
 #include <QPointer>
 
+#include <functional>
+
 class QTimer;
 
 // ----------------------------------------------------------------------------

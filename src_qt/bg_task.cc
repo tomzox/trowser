@@ -92,7 +92,7 @@ BgTask::~BgTask()
 void BgTask::schedTimerExpired()  /*static*/
 {
     auto it = std::min_element(s_queue.begin(), s_queue.end(),
-                               [](BgTask* a, BgTask* b) bool { return a->m_priority < b->m_priority; });
+                               [](BgTask* a, BgTask* b) -> bool { return a->m_priority < b->m_priority; });
     if (it != s_queue.end())
     {
         BgTask * next = *it;

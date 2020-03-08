@@ -23,6 +23,7 @@
 #include <QPlainTextEdit>
 
 #include <vector>
+#include <functional>
 #include <unordered_map>
 
 class MainWin;

@@ -75,7 +75,7 @@ ConfigFile::ConfigFile()
     m_timUpdateRc->setInterval(3000);
     connect(m_timUpdateRc, &QTimer::timeout, this, &ConfigFile::writeConfig);
 
-    m_tsUpdateRc = QDateTime::currentSecsSinceEpoch();
+    m_tsUpdateRc = QDateTime::currentMSecsSinceEpoch();  // use MSecs for compatibility with Qt 5.7
 }
 
 /**
@@ -323,7 +323,7 @@ QFileDevice::Permissions ConfigFile::backupConfig(QFile& fh)
 void ConfigFile::writeConfig()
 {
     m_timUpdateRc->stop();
-    m_tsUpdateRc = QDateTime::currentSecsSinceEpoch();
+    m_tsUpdateRc = QDateTime::currentMSecsSinceEpoch();
 
     // collect content from all modules with persistent state
     QJsonObject obj = getRcValues();
@@ -393,7 +393,7 @@ void ConfigFile::writeConfig()
 void ConfigFile::writeConfigDelayed()
 {
     if (   !m_timUpdateRc->isActive()
-        || (QDateTime::currentSecsSinceEpoch() - m_tsUpdateRc) < 60)
+        || (QDateTime::currentMSecsSinceEpoch() - m_tsUpdateRc) < 60000)
     {
         m_timUpdateRc->start();
     }

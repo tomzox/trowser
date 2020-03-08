@@ -157,7 +157,8 @@ MainText::MainText(MainWin * mainWin, MainSearch * search, Bookmarks * bookmarks
  */
 void MainText::keyPressEvent(QKeyEvent *e)  /* virtual override */
 {
-    if (e->modifiers() == Qt::ControlModifier)
+    // filter Shift as some keyboards indicate it unexpectedly on '+'
+    if ((e->modifiers() & ~(Qt::ShiftModifier | Qt::GroupSwitchModifier)) == Qt::ControlModifier)
     {
         auto it = m_keyCmdCtrl.find(e->key());
         if (it != m_keyCmdCtrl.end())
@@ -535,6 +536,7 @@ void MainText::cursorSetLineCenter()
 {
     cursorJumpPushPos();
 
+    // FIXME if doc length is smaller than screen height, center length/2 instead
     auto view = this->viewport();
     auto c = this->cursorForPosition(QPoint(0, view->height() / 2));
     c.movePosition(QTextCursor::StartOfBlock, QTextCursor::MoveAnchor);

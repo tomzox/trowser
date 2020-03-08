@@ -16,12 +16,12 @@ will always apply the highlight to the complete text line.
 Due to historical evolvement, implementations of trowser are available in three
 different programming languages: [Tcl/Tk](http://tcl.tk/),
 [Python](https://www.python.org/), and C++ using [Qt5](https://www.qt.io/).
-The three versions are largely equivalent. However the C++/Qt version has best
+The three versions are largely equivalent, however the C++/Qt version has best
 performance, looks prettier and has a new "column configuration" dialog for the
 search list, thus it's recommended to use this version. Currently you'd have to
-compile it yourself from the sources in the `src_qt/` sub-directory of
-repository. If you're not up to this, use one of the other versions which don't
-need compilation due to using interpreted languages.
+compile it yourself from the sources in the [src_qt/](src_qt/) sub-directory of
+the repository. If you're not up to this, use one of the other versions which
+don't need compilation (due to using interpreted languages).
 
 ## Screenshots
 
@@ -88,14 +88,19 @@ this task, but this way lots of repetitive manual hacking on the command
 line is required. For an every-day task, it seems worth to invest some
 time into automating the process in a specialized tool.
 
-Additionally, trowser has the capability to
-automatically parse data out of the trace file which can be included
-in bookmarks and search results list and could easily be extended
-in that direction for different applications. With less than 9000
-lines of code trowser still is a relatively small application (in
-large part thanks to the powerful "text" widget in Tk) so there's only
-a low barrier of getting familiar with the source code to allow
-extending or adapting the functionality for your own needs.
+Additionally, trowser has the capability to automatically parse data out
+of the trace file which can be included in custom columns of the search
+results list. This can be used for example in traces for event-driven
+applications to show a common timestamp or ID for each trace line
+generated while processing the same event. If the pre-existing custom
+configuration doesn't allow your use-case, it is fairly straight-forward
+extending it by adding a new sub-class in `src_qt/parse_frame.cc`
+
+With less than 9k lines of Tcl/Tk code, or 16k lines C++ respectively,
+trowser still is a relatively small application (in large part thanks to
+the powerful "text" widgets both Tk and Qt) so there's only a low barrier
+of getting familiar with the source code to allow extending or adapting
+the functionality for your own needs.
 
 ## Installing (Tcl/Tk & Python versions)
 
