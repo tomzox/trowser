@@ -29,7 +29,10 @@
  * Therefore addition and removal as well as undo/redo are broken into steps of
  * may 100 ms within a timer-driven background task. Only one such change can
  * be going on at a time; the user will be asked to wait for the previous
- * change to complete via a dialog when making further changes.
+ * change to complete via a dialog when making further changes. (The underlying
+ * model is designed to handle large lists and large number of insertions and
+ * removals efficiently; see performance considerations class description
+ * below.)
  *
  * Finally the dialog offers saving the entire contents, or just the line
  * indices to a file, or inversely add line numbers listed in a file to the
@@ -97,6 +100,8 @@
 #include "dlg_higl.h"
 #include "dlg_history.h"
 
+#define SEARCH_LIST_NO_DEBUG
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -114,6 +119,31 @@
  * In addition to the standard QAbstractItemModel interface, the model provides
  * an interface HighlightViewModelIf which is used by the delegate rendering
  * the text content for obtaining the data and mark-up configuration.
+ *
+ * Notes to performance optimizations: The main part of the model state is a
+ * sorted set of numbers, specifically a sub-set of the range of indices
+ * between 0 and the number of lines in the main document. The container used
+ * for this set has to support reasonably fast random access by index (for the
+ * view) and fast insertions/removals. There is currently no standard container
+ * that supports both: std::set supports fast insertion and lookup by value,
+ * however not fast or random access by index. std:vector supports the fast
+ * random access, but gets very slow for insertions/removals when the size of
+ * the list is already large.
+ *
+ * Nevertheless, the solution is based around std::vector, because we can avoid
+ * the performance issues due to the fact that insertions/removals are always
+ * done in order. This means in particular, for large changes, successive
+ * points of insertion or removal are close. This means, when breaking the
+ * while list of numbers to be inserted/removed into chunks (which needs to be
+ * done to support use of background tasks), processing of each chunk only
+ * affects a relatively small portion of the whole vector. Using this idea,
+ * there are many possible solutions to perform insertions and removals of the
+ * sub-sets effifiently. For example, insertion could be done simply by
+ * inserting all new numbers consecutively at the position where the first
+ * value needs to be inserted, and then resort the range between this position
+ * and the correct position of the last value to be inserted. This is not the
+ * implemented solution however, as this can be done even more efficiently
+ * without sorting; See below for details.
  */
 class SearchListModel : public QAbstractItemModel, public HighlightViewModelIf
 {
@@ -216,11 +246,8 @@ public:
     {
         return dlg_srch_lines.size();
     }
-    void insertLine(int line, int row = -1);
     void insertLinePreSorted(const std::vector<int>& line_list, std::vector<int>& idx_list);
-    void insertLines(const std::vector<int>& line_list);
     void removeLinePreSorted(const std::vector<int>& idx_list);
-    void removeLines(const std::vector<int>& line_list);
     void removeAll(std::vector<int>& removedLines);
 
     void setLineDeltaRoot(int line);
@@ -276,6 +303,7 @@ private:
     int                         m_rootLineIdx = 0;
     int                         m_rootCustVal = 0;
     int                         m_rootCustFrm = 0;
+
     std::vector<int>            dlg_srch_lines;
 
 };
@@ -328,127 +356,138 @@ QVariant SearchListModel::data(const QModelIndex &index, int role) const
     return QVariant();
 }
 
-void SearchListModel::insertLine(int line, int row)
-{
-    if (row < 0)
-        row = getLineIdx(line);
-
-    if ((size_t(row) >= dlg_srch_lines.size()) || (dlg_srch_lines[row] != line))
-    {
-        this->beginInsertRows(QModelIndex(), row, row);
-        dlg_srch_lines.insert(dlg_srch_lines.begin() + row, line);
-        this->endInsertRows();
-    }
-}
-
-// ATTN: indices must be pre-compensated for insertion
-// i.e. when inserting two lines at index N, index list must indicate N and N+1 repectively
 void SearchListModel::insertLinePreSorted(const std::vector<int>& line_list,
                                           std::vector<int>& idx_list)
 {
     Q_ASSERT(line_list.size() == idx_list.size());
+    if (idx_list.size() == 0)
+        return;
 
-    dlg_srch_lines.reserve(dlg_srch_lines.size() + line_list.size());
-
-    // adjust insertion indices for shift caused by preceding insertions
-    for (size_t idx = 1; idx < idx_list.size(); ++idx)
-        idx_list[idx] += idx;
-
-    int idx = 0;
-    int prev = -1;
-    while (size_t(idx) < idx_list.size())
+    // small list, or all lines inserted at the same place?
+    if (   (dlg_srch_lines.size() <= 20000)
+        || (idx_list[0] == idx_list[idx_list.size() - 1]))
     {
-        Q_ASSERT(idx_list[idx] > prev); prev = idx_list[idx];
-        int count = 1;
-        while ((size_t(idx + count) < idx_list.size()) && (idx_list[idx] + count == idx_list[idx + count]))
-            ++count;
+        // yes -> standard way, i.e. keep display in sync with every insertion
 
-        int row = idx_list[idx];
-        this->beginInsertRows(QModelIndex(), row, row + count - 1);
-        dlg_srch_lines.insert(dlg_srch_lines.begin() + row,
-                              line_list.begin() + idx,
-                              line_list.begin() + idx + count);
-        this->endInsertRows();
+        dlg_srch_lines.reserve(dlg_srch_lines.size() + line_list.size());
 
-        idx += count;
-    }
-}
+        // adjust insertion indices for shift caused by preceding insertions
+        // i.e. when inserting two lines at index N, 2nd index indicates N+1
+        for (size_t idx = 1; idx < idx_list.size(); ++idx)
+            idx_list[idx] += idx;
 
-void SearchListModel::insertLines(const std::vector<int>& line_list)
-{
-    int prev = -1;
-    for (size_t line_idx = 0; line_idx < line_list.size(); ++line_idx)
-    {
-        // assert input list is sorted in ascending order
-        Q_ASSERT(line_list[line_idx] > prev); prev = line_list[line_idx];
-
-        int row;
-        if (getLineIdx(line_list[line_idx], row) == false)
+        int idx = 0;
+        int prev = -1;
+        while (size_t(idx) < idx_list.size())
         {
-            // detect line values mapped to consecutive index values
-            size_t count = 1;
-            if (size_t(row) < dlg_srch_lines.size())
-                while (   (line_idx + count < line_list.size())
-                       && (dlg_srch_lines[row] > line_list[line_idx + count]))
-                    ++count;
-            else
-                count = line_list.size() - line_idx;
+            Q_ASSERT(idx_list[idx] > prev); prev = idx_list[idx];
+            int count = 1;
+            while ((size_t(idx + count) < idx_list.size()) && (idx_list[idx] + count == idx_list[idx + count]))
+                ++count;
 
-            // insert lines into display & list
+            int row = idx_list[idx];
             this->beginInsertRows(QModelIndex(), row, row + count - 1);
             dlg_srch_lines.insert(dlg_srch_lines.begin() + row,
-                                  line_list.begin() + line_idx,
-                                  line_list.begin() + line_idx + count);
+                                  line_list.begin() + idx,
+                                  line_list.begin() + idx + count);
             this->endInsertRows();
+
+            idx += count;
         }
+    }
+    else  // non-consecutive insertions
+    {
+        // Step #1: insert dummy entries at the point of 1st insertion to make space for all new entries
+        dlg_srch_lines.insert(dlg_srch_lines.begin() + idx_list[0], idx_list.size(), 0);
+
+        // Step #2: merge sorted list of new entries with pre-existing range of list (also sorted);
+        // The range of pre-existing ("old") entries is that between first and last point of insertion for new entries;
+        // This means simultaneously filling the gap with new entries & copying forward old entries as needed to keep sort order.
+        size_t end_old = idx_list[idx_list.size() - 1] + idx_list.size();  // not included; may be one off past end of dlg_srch_lines
+        size_t src_old_idx = idx_list[0] + idx_list.size();  // start of old entries after shift by insertion above
+        size_t src_new_idx = 0;
+        size_t dst_idx = idx_list[0];
+        Q_ASSERT(src_old_idx < dlg_srch_lines.size());
+
+        while (true)
+        {
+            if (dlg_srch_lines[src_old_idx] < line_list[src_new_idx])
+            {
+                dlg_srch_lines[dst_idx++] = dlg_srch_lines[src_old_idx++];
+                if (src_old_idx >= end_old)
+                {
+                    while (src_new_idx < idx_list.size())
+                        dlg_srch_lines[dst_idx++] = line_list[src_new_idx++];
+                    break;
+                }
+            }
+            else
+            {
+                dlg_srch_lines[dst_idx++] = line_list[src_new_idx++];
+                if (src_new_idx >= idx_list.size())
+                {
+                    // no need to copy old data: already in place
+                    Q_ASSERT(false);  // never reached as above "while" would copy last range of new entries
+                    break;
+                }
+            }
+        }
+        Q_ASSERT(dst_idx == size_t(idx_list[idx_list.size() - 1]) + idx_list.size());
+
+        // Step #3: resync display
+        emit layoutChanged();
     }
 }
 
 void SearchListModel::removeLinePreSorted(const std::vector<int>& idx_list)
 {
-    int prev = dlg_srch_lines.size();
-    int idx = 0;
-    while (size_t(idx) < idx_list.size())
+    if (idx_list.size() == 0)
+        return;
+
+    // small list or single consecutive span of removed lines?
+    if (   (dlg_srch_lines.size() <= 20000)
+        || (size_t(idx_list[0]) == idx_list[idx_list.size() - 1] + idx_list.size() - 1))
     {
-        // detect consecutive index values in descending order(!)
-        Q_ASSERT(idx_list[idx] < prev); prev = idx_list[idx];
-        int count = 1;
-        while ((size_t(idx + count) < idx_list.size()) && (idx_list[idx] == idx_list[idx + count] + count))
-            ++count;
-
-        int row = idx_list[idx + count - 1];
-        this->beginRemoveRows(QModelIndex(), row, row + count - 1);
-        dlg_srch_lines.erase(dlg_srch_lines.begin() + row,
-                             dlg_srch_lines.begin() + row + count);
-        this->endRemoveRows();
-
-        idx += count;
-    }
-}
-
-void SearchListModel::removeLines(const std::vector<int>& line_list)
-{
-    int prev = -1;
-    for (size_t line_idx = 0; line_idx < line_list.size(); ++line_idx)
-    {
-        // assert input list is sorted in ascending order
-        Q_ASSERT(line_list[line_idx] > prev); prev = line_list[line_idx];
-
-        int row;
-        if (getLineIdx(line_list[line_idx], row))
+        // yes -> standard way, i.e. keep display in sync with every removal
+        int prev = dlg_srch_lines.size();
+        int idx = 0;
+        while (size_t(idx) < idx_list.size())
         {
-            // detect line values mapped to consecutive index values
-            size_t count = 1;
-            while (   (line_idx + count < line_list.size())
-                   && (dlg_srch_lines[row + count] == line_list[line_idx + count]))
+            // detect consecutive index values in descending order(!)
+            Q_ASSERT(idx_list[idx] < prev); prev = idx_list[idx];
+            int count = 1;
+            while ((size_t(idx + count) < idx_list.size()) && (idx_list[idx] == idx_list[idx + count] + count))
                 ++count;
 
-            // remove lines from display & list
+            int row = idx_list[idx + count - 1];
             this->beginRemoveRows(QModelIndex(), row, row + count - 1);
             dlg_srch_lines.erase(dlg_srch_lines.begin() + row,
                                  dlg_srch_lines.begin() + row + count);
             this->endRemoveRows();
+
+            idx += count;
         }
+    }
+    else  // non-consecutive removals
+    {
+        // following is unnecessarily complex due to input list being in reverse order
+        int dst_idx = idx_list[idx_list.size() - 1];
+        int org_idx = idx_list[idx_list.size() - 1] + 1;
+
+        // Step #1: copy non-removed line numbers to position starting at first removed line
+        for (int src_idx = idx_list.size() - 2; src_idx >= 0; --src_idx)
+        {
+            int next_rm = idx_list[src_idx];
+            while (org_idx < next_rm)
+                dlg_srch_lines[dst_idx++] = dlg_srch_lines[org_idx++];
+            ++org_idx;
+        }
+        // Step #2: remove single remaining gap after last non-removed line from vector
+        dlg_srch_lines.erase(dlg_srch_lines.begin() + dst_idx,
+                             dlg_srch_lines.begin() + idx_list[0] + 1);
+
+        // Step #3: resync display
+        emit layoutChanged();
     }
 }
 
@@ -678,7 +717,7 @@ private:
     bool m_bgForUndo = false;
     bool m_bgDoAdd = false;
 
-#ifndef QT_NO_DEBUG
+#if !defined (QT_NO_DEBUG) && !defined (SEARCH_LIST_NO_DEBUG)
     void invariant() const;
     SearchListModel * m_modelDebug = nullptr;
 public:
@@ -977,7 +1016,7 @@ std::pair<bool,int> SearchListUndo::describeFirstOp(bool forUndo)
     return std::make_pair(doAdd, count);
 }
 
-#ifndef QT_NO_DEBUG
+#if !defined (QT_NO_DEBUG) && !defined (SEARCH_LIST_NO_DEBUG)
 /**
  * This function verifies internal consistency and concistency with the model
  * data.
@@ -1252,7 +1291,7 @@ SearchList::SearchList()
                                        s_mainText->getBgColDefault());
     m_drawBok = new SearchListDrawBok(m_model, s_mainText, s_bookmarks);
     m_undo = new SearchListUndo();
-#ifndef QT_NO_DEBUG
+#if !defined (QT_NO_DEBUG) && !defined (SEARCH_LIST_NO_DEBUG)
     m_undo->connectModelForDebug(m_model);
 #endif
 
@@ -1981,19 +2020,19 @@ void SearchList::cmdUndo()
 {
     m_stline->clearMessage("search");
 
-    int origCount;
-    if (m_undo->hasUndo(&origCount))
+    if (searchAbort())  // must be done first, as result of next check may be altered
     {
-        if (searchAbort())
+        int origCount;
+        if (m_undo->hasUndo(&origCount))
         {
             bool isRedo = false;
             m_undo->prepareUndoRedo(isRedo);
             tid_search_list->start([=](){ bgUndoRedoLoop(isRedo, origCount); });
         }
-    }
-    else
-    {
-        m_stline->showError("search", "Already at oldest change in search list");
+        else
+        {
+            m_stline->showError("search", "Already at oldest change in search list");
+        }
     }
 }
 
@@ -2017,19 +2056,20 @@ void SearchList::extUndo()  /*static*/
 void SearchList::cmdRedo()
 {
     m_stline->clearMessage("search");
-    int origCount;
-    if (m_undo->hasRedo(&origCount))
+
+    if (searchAbort())  // must be done first, as result of next check may be altered
     {
-        if (searchAbort())
+        int origCount;
+        if (m_undo->hasRedo(&origCount))
         {
             bool isRedo = true;
             m_undo->prepareUndoRedo(isRedo);
             tid_search_list->start([=](){ bgUndoRedoLoop(isRedo, origCount); });
         }
-    }
-    else
-    {
-        m_stline->showError("search", "Already at newest change in search list");
+        else
+        {
+            m_stline->showError("search", "Already at newest change in search list");
+        }
     }
 }
 
@@ -2055,19 +2095,35 @@ void SearchList::bgUndoRedoLoop(bool isRedo, int origCount)
     auto anchor = getViewAnchor();
 
     const size_t CHUNK_SIZE = 1000;
-    std::vector<int> lines;
+    std::vector<int> line_list;
     bool doAdd;
-    bool done = m_undo->popUndoRedo(isRedo, &doAdd, lines, CHUNK_SIZE);
+    bool done = m_undo->popUndoRedo(isRedo, &doAdd, line_list, CHUNK_SIZE);
+
+    std::vector<int> idx_list;
+    idx_list.reserve(line_list.size());
 
     if (doAdd != isRedo)
     {
         // undo insertion OR redo removal -> delete lines
-        m_model->removeLines(lines);
+        // reverse order
+        for (ssize_t line_idx = line_list.size() - 1; line_idx >= 0; --line_idx)
+        {
+            int row;
+            if (m_model->getLineIdx(line_list[line_idx], row))  // should always be TRUE
+                idx_list.push_back(row);
+        }
+        m_model->removeLinePreSorted(idx_list);
     }
     else
     {
         // undo addition OR redo insertion -> add lines
-        m_model->insertLines(lines);
+        for (size_t line_idx = 0; line_idx < line_list.size(); ++line_idx)
+        {
+            int row;
+            if (m_model->getLineIdx(line_list[line_idx], row) == false)  // should always be TRUE
+                idx_list.push_back(row);
+        }
+        m_model->insertLinePreSorted(line_list, idx_list);
     }
 
     // select previously selected line again
@@ -2386,17 +2442,19 @@ SearchList::ListViewAnchor SearchList::getViewAnchor()
     auto sel = m_table->selectionModel()->selectedRows();
     if (sel.size() != 0)
     {
-        // keep selection visible
+        // keep first line of selection visible
         line = m_model->getLineOfIdx(sel.front().row());
         haveSel = true;
     }
     else
     {
-        // no selection - check if line near cursor in main win is visible
-        auto midx = m_table->indexAt(m_table->rect().topLeft());
-        if (midx.row() < m_model->lineCount())
-            line = m_model->getLineOfIdx(midx.row());
+        // no selection -> use first visible line as anchor
+        auto row = m_table->rowAt(m_table->viewport()->rect().y());
+        if ((row >= 0) && (row < m_model->lineCount()))
+            line = m_model->getLineOfIdx(row);
     }
+    m_table->selectionModel()->select(QModelIndex(), QItemSelectionModel::Clear);
+
     return std::make_pair(haveSel, line);
 }
 
@@ -2414,16 +2472,17 @@ void SearchList::seeViewAnchor(ListViewAnchor& anchor)
         if (m_model->getLineIdx(anchor.second, idx))
         {
             QModelIndex midx = m_model->index(idx, 0);
-            m_table->scrollTo(midx);
             if (anchor.first)
             {
                 m_ignoreSelCb = idx;
-                m_table->selectionModel()->select(midx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+                m_table->setCurrentIndex(midx);
             }
-            return;
+            else
+            {
+                m_table->scrollTo(midx);
+            }
         }
     }
-    m_table->selectionModel()->select(QModelIndex(), QItemSelectionModel::Clear);
 }
 
 
@@ -2467,10 +2526,10 @@ void SearchList::copyCurrentLine(bool doAdd)
                 line_list.push_back(line);
                 idx_list.push_back(idx);
             }
-
-            c.movePosition(QTextCursor::NextBlock);
             if (c.atEnd())
                 break;
+
+            c.movePosition(QTextCursor::NextBlock);
         }
 
         if (line_list.size() > 0)
@@ -2860,6 +2919,7 @@ void SearchList::cmdLoadFrom(bool)
                 idx_list.reserve(inLines.size());
 
                 // filter lines already in the list: needed for undo list
+                // note: input is an ordered set, thus line numbers are ascending & unique
                 for (int line : inLines)
                 {
                     int idx;

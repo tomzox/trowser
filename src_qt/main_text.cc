@@ -297,7 +297,7 @@ bool MainText::keyCmdText(wchar_t chr)
             case '0' ... '9':
             {
                 last_key_number = last_key_number * 10 + (chr - '0');
-                if (last_key_number > 100000)
+                if (last_key_number > MAX_KEY_NUMBER)  // may also be abs. line number
                 {
                     m_mainWin->mainStatusLine()->showError("keycmd", "Repetition value too large");
                     last_key_number = 0;

@@ -121,6 +121,7 @@ private:
     int           last_inline_dir = 0;
     wchar_t       last_key_char = 0;
     unsigned      last_key_number = 0;
+    static const unsigned  MAX_KEY_NUMBER = 1000000;
     std::unordered_map<KeySet,const std::function<void()>,KeySetHash<KeySet>> m_keyCmdText;
     std::unordered_map<int,const std::function<void()>> m_keyCmdCtrl;
     std::vector<JumpPos> cur_jump_stack;
