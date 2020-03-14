@@ -1,6 +1,5 @@
 - support different font sizes in search list view rows
 - clearing search highlight in large documents blocks GUI for too long
-- search_list: move copyCurrentLine into bg task for large ranges
 - search_list: tip message when enabling delta via menu: "select root line"
 - avoid blocking main window while loading large file into widget - if possible?
 
@@ -10,7 +9,7 @@
 - main text: xview scrolling; yoff position with offset et.al.
 
 clean-up:
-- split search_list file? (3000 lines, 3 internal sub-classes)
+- split search_list file? (3200 lines, 3 internal sub-classes)
 - use signals instead of hard-wired callbacks to dialogs (static interfaces)
 - move undo/redo & bg tasks in umbrella class of search list view (?)
 - split off duplicated "find" toolbar code into separate class

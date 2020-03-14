@@ -72,7 +72,7 @@ public:
     static void signalHighlightReconfigured();
     static void adjustLineNums(int top_l, int bottom_l);
 
-    // static external interfaces (invoked via getInstance() result)
+    // external interfaces (invoked via getInstance() result)
     void copyCurrentLine(bool doAdd);
     void searchMatches(bool do_add, int direction, const SearchPar& par);
     void searchMatches(bool do_add, int direction, const std::vector<SearchPar>& patList);
@@ -120,6 +120,7 @@ private:
     using ListViewAnchor = std::pair<bool,int>;
     ListViewAnchor getViewAnchor();
     void seeViewAnchor(ListViewAnchor& anchor);
+    void bgCopyLoop(bool doAdd, int startLine, int endLine, int line);
     void matchViewInt(int line, int idx = -1);
     void adjustLineNumsInt(int top_l, int bottom_l);
     void saveFile(const QString& fileName, bool lnum_only);
@@ -178,6 +179,11 @@ private:
 
     BgTask            * tid_search_list = nullptr;
     int                 m_ignoreSelCb = -1;
+
+    static const int    COPY_LOOP_CHUNK_SZ = 40000;
+    static const int    UNDO_LOOP_CHUNK_SZ = 10000;
+    static const int    SEARCH_LOOP_TIME_LIMIT_MS = 100;
+    static const int    MAX_SELECTION_SZ = 1000;
 };
 
 #endif /* _SEARCH_LIST_H */

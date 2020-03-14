@@ -22,7 +22,10 @@
  * employ text search in the main text document. The classes replace the use of
  * the "find" interfaces of QTextDocument, which are unusable for very large
  * documents due to not supporting a limit on the search range (i.e. they will
- * block the user interface for an indeterminate amount of time).
+ * block the user interface for an indeterminate amount of time). The classes
+ * here enable a limiting by extracting document content line-by-line and
+ * searching for the expression wichin each line. Notably expressions crossing
+ * ends of lines are not supported.
  *
  * There are two sub-classes, of which the first is instantiated for search via
  * regular expression, and the second for plain sub-string search. The classes
@@ -30,8 +33,9 @@
  * parameters and then keep internal state for repeated calls of their
  * findNext() interface. The search returns if either a match is found, the end
  * of the document is reached, or a maximum number of lines has been searched.
- * The first is sidtinguished by means of the return value, the latter two by
- * means of the isDone() query interface.
+ * In case of the first the return value is TRUE. For the latter two return
+ * value is FALSE; they can be distinguished by means of the isDone() query
+ * interface.
  *
  * Note this class currently returns only the first match per line. The next
  * call of findNext() will proceed to the next line. This is done for
@@ -53,7 +57,7 @@
 // ----------------------------------------------------------------------------
 
 /**
- * Constructor for shared base class
+ * Constructor for the shared base class, storing common parameters.
  */
 MainTextFind::MainTextFind(const QTextDocument* doc, int startPos, bool isFwd)
     : m_isFwd(isFwd)
@@ -87,7 +91,8 @@ private:
 };
 
 /**
- * Search in text document's blocks via regular expression
+ * Search in the text document's blocks via regular expression.
+ * See top of the file for description.
  */
 bool MainTextFindRegExp::findNext(int& matchPos, int& matchLen, QTextBlock *matchBlock)
 {
@@ -168,6 +173,7 @@ private:
 
 /**
  * Search in text document's blocks via sub-string search
+ * See top of the file for description.
  */
 bool MainTextFindSubStr::findNext(int& matchPos, int& matchLen, QTextBlock *matchBlock)
 {

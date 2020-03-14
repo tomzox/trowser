@@ -246,7 +246,7 @@ public:
     {
         return dlg_srch_lines.size();
     }
-    void insertLinePreSorted(const std::vector<int>& line_list, std::vector<int>& idx_list);
+    void insertLinePreSorted(const std::vector<int>& line_list, const std::vector<int>& idx_list);
     void removeLinePreSorted(const std::vector<int>& idx_list);
     void removeAll(std::vector<int>& removedLines);
 
@@ -357,7 +357,7 @@ QVariant SearchListModel::data(const QModelIndex &index, int role) const
 }
 
 void SearchListModel::insertLinePreSorted(const std::vector<int>& line_list,
-                                          std::vector<int>& idx_list)
+                                          const std::vector<int>& idx_list)
 {
     Q_ASSERT(line_list.size() == idx_list.size());
     if (idx_list.size() == 0)
@@ -371,21 +371,16 @@ void SearchListModel::insertLinePreSorted(const std::vector<int>& line_list,
 
         dlg_srch_lines.reserve(dlg_srch_lines.size() + line_list.size());
 
-        // adjust insertion indices for shift caused by preceding insertions
-        // i.e. when inserting two lines at index N, 2nd index indicates N+1
-        for (size_t idx = 1; idx < idx_list.size(); ++idx)
-            idx_list[idx] += idx;
-
         int idx = 0;
         int prev = -1;
         while (size_t(idx) < idx_list.size())
         {
             Q_ASSERT(idx_list[idx] > prev); prev = idx_list[idx];
             int count = 1;
-            while ((size_t(idx + count) < idx_list.size()) && (idx_list[idx] + count == idx_list[idx + count]))
+            while ((size_t(idx + count) < idx_list.size()) && (idx_list[idx] == idx_list[idx + count]))
                 ++count;
 
-            int row = idx_list[idx];
+            int row = idx_list[idx] + idx;
             this->beginInsertRows(QModelIndex(), row, row + count - 1);
             dlg_srch_lines.insert(dlg_srch_lines.begin() + row,
                                   line_list.begin() + idx,
@@ -1321,7 +1316,7 @@ SearchList::SearchList()
         m_hipro->setOrientation(Qt::Horizontal);
         m_hipro->setTextVisible(true);
         m_hipro->setMinimum(0);
-        m_hipro->setMaximum(100);
+        m_hipro->setMaximum(100);  // percent
         m_hipro->setVisible(false);
 
     // Status line overlay: used to display notification text
@@ -2087,14 +2082,15 @@ void SearchList::extRedo()  /*static*/
 
 
 /**
- * This function acts as background process for undo and redo operations.
- * Each iteration of this task works on at most 250-500 lines.
+ * This function acts as background process for undo and redo operations. Each
+ * call of this task handler works on a limited number of lines, then
+ * reschedules itself.
  */
 void SearchList::bgUndoRedoLoop(bool isRedo, int origCount)
 {
     auto anchor = getViewAnchor();
 
-    const size_t CHUNK_SIZE = 1000;
+    const size_t CHUNK_SIZE = UNDO_LOOP_CHUNK_SZ;
     std::vector<int> line_list;
     bool doAdd;
     bool done = m_undo->popUndoRedo(isRedo, &doAdd, line_list, CHUNK_SIZE);
@@ -2245,7 +2241,7 @@ void SearchList::bgSearchLoop(const std::vector<SearchPar> patList, bool do_add,
 
         // limit the runtime of the loop - return start line number for the next invocation
         qint64 now = QDateTime::currentMSecsSinceEpoch();
-        if (now - start_t > 100)
+        if (now - start_t > SEARCH_LOOP_TIME_LIMIT_MS)
             break;
     }
 
@@ -2496,6 +2492,7 @@ void SearchList::copyCurrentLine(bool doAdd)
     if (searchAbort())
     {
         m_table->selectionModel()->select(QModelIndex(), QItemSelectionModel::Clear);
+        m_stline->clearMessage("search");
 
         auto c = s_mainText->textCursor();
         int endPos;
@@ -2508,60 +2505,108 @@ void SearchList::copyCurrentLine(bool doAdd)
             endPos = c.position();
             c.setPosition(c.anchor());
         }
-        std::vector<int> line_list;
-        std::vector<int> idx_list;
+        int endLine = s_mainText->document()->findBlock(endPos).blockNumber();
+        int startLine = c.blockNumber();
 
-        while (c.position() <= endPos)
+        int idx;
+        if ((startLine == endLine) && doAdd && m_model->getLineIdx(startLine, idx))
         {
-            int line = c.blockNumber();
-            int idx;
-            bool found = m_model->getLineIdx(line, idx);
-            if (doAdd && !found)
-            {
-                line_list.push_back(line);
-                idx_list.push_back(idx);
-            }
-            else if (!doAdd && found)
-            {
-                line_list.push_back(line);
-                idx_list.push_back(idx);
-            }
-            if (c.atEnd())
-                break;
+            // single selected line is already in the list -> select it
+            m_ignoreSelCb = idx;
+            m_table->setCurrentIndex(m_model->index(idx, 0));
+            m_stline->showWarning("search", "Selected line is already in the list");
+        }
+        else
+        {
+            m_undo->prepareBgChange(doAdd);
+            // continue actual work in background task
+            tid_search_list->start([=](){ bgCopyLoop(doAdd, startLine, endLine, startLine); });
+        }
+    }
+}
 
-            c.movePosition(QTextCursor::NextBlock);
+
+/**
+ * This function acts as background task for insertion of large ranges of lines
+ * into the search list.
+ */
+void SearchList::bgCopyLoop(bool doAdd, int startLine, int endLine, int line)
+{
+    auto anchor = getViewAnchor();
+    std::vector<int> line_list;
+    std::vector<int> idx_list;
+    line_list.reserve(COPY_LOOP_CHUNK_SZ);
+    idx_list.reserve(COPY_LOOP_CHUNK_SZ);
+
+    int cnt = 0;
+    while ((line <= endLine) && (cnt++ < COPY_LOOP_CHUNK_SZ))
+    {
+        // for each line, check if it's already in the list (or out, i/c/o removal); could be done
+        // more efficiently within the model, but the result is needed for updating the "undo" list
+        int idx;
+        bool found = m_model->getLineIdx(line, idx);
+        if (doAdd && !found)
+        {
+            line_list.push_back(line);
+            idx_list.push_back(idx);
+        }
+        else if (!doAdd && found)
+        {
+            line_list.push_back(line);
+            idx_list.push_back(idx);
+        }
+        line += 1;
+    }
+
+    if (line_list.size() > 0)
+    {
+        if (doAdd)
+        {
+            m_model->insertLinePreSorted(line_list, idx_list);
+        }
+        else
+        {
+            std::reverse(idx_list.begin(), idx_list.end());
+            m_model->removeLinePreSorted(idx_list);
         }
 
-        if (line_list.size() > 0)
+        m_undo->appendBgChange(doAdd, line_list.begin(), line_list.end());
+
+        // select previously selected line again
+        seeViewAnchor(anchor);
+    }
+
+    if (line < endLine)
+    {
+        double ratio = double(line - startLine) / (endLine - startLine);
+        searchProgress(100 * ratio);
+
+        tid_search_list->start([=](){ bgCopyLoop(doAdd, startLine, endLine, line); });
+    }
+    else  // done
+    {
+        m_undo->finalizeBgChange(doAdd);
+
+        // selected added lines, if small
+        if (doAdd && (endLine <= startLine + MAX_SELECTION_SZ))
         {
-            if (doAdd)
+            QItemSelection sel;
+            for (size_t idx = 0; idx < idx_list.size(); ++idx)
             {
-                m_model->insertLinePreSorted(line_list, idx_list);
+                QModelIndex midx = m_model->index(idx_list[idx] + idx, 0);
+                sel.select(midx, midx);
             }
-            else
-            {
-                std::reverse(idx_list.begin(), idx_list.end());
-                m_model->removeLinePreSorted(idx_list);
-            }
+            m_ignoreSelCb = idx_list.front();
 
-            m_undo->appendChange(doAdd, line_list);
-
-            if (doAdd && (line_list.size() <= 1000))
-            {
-                QItemSelection sel;
-                for (int idx : idx_list)  // NOTE idx_list modified by insertLinePreSorted()
-                {
-                    QModelIndex midx = m_model->index(idx, 0);
-                    sel.select(midx, midx);
-                }
-                m_ignoreSelCb = idx_list.front();
-
-                m_table->selectionModel()->select(sel, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-            }
-
-            QModelIndex midx = m_model->index(idx_list.back(), 0);
-            m_table->scrollTo(midx);
+            // Select all added lines
+            m_table->selectionModel()->select(sel, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
         }
+
+        QModelIndex midx = m_model->index(std::min(idx_list.front(), idx_list.back()), 0);
+        m_table->scrollTo(midx);
+
+        searchProgress(100);
+        closeAbortDialog();
     }
 }
 
