@@ -32,7 +32,6 @@
 #include <QWidget>
 #include <QMenu>
 #include <QMenuBar>
-#include <QFrame>
 #include <QVBoxLayout>
 #include <QPlainTextEdit>
 #include <QTextBlock>
@@ -46,6 +45,7 @@
 #include <QFileDialog>
 #include <QFile>
 #include <QTextStream>
+#include <QProgressDialog>
 
 #include <cstdio>
 #include <string>
@@ -519,7 +519,7 @@ void MainWin::closeEvent(QCloseEvent * event)
     {
         ConfigFile::updateRcFile();
 
-        // FIXME connect(quitButton, clicked(), m_mainApp, &QApplication:quit, Qt::QueuedConnection);
+        // FIXME connect(quitButton, clicked(), m_mainApp, &QApplication::quit, Qt::QueuedConnection);
         m_mainApp->quit();
     }
     else if (event)
@@ -566,15 +566,30 @@ void MainWin::loadFromFile(const QString& fileName)
         {
             fh.seek(fh.size() - load_buf_size);
         }
+        if (load_buf_size > size_t(fh.size()))
+        {
+            load_buf_size = fh.size();
+        }
 
         size_t rest = load_buf_size;
-        const size_t CHUNK_SIZE = 64*1024;
+        const size_t CHUNK_SIZE = 1024*1024;
         char * inBuf = new char[CHUNK_SIZE + 1];
+
+        // display modal progress dialog
+        auto progressWid =
+                std::make_unique<QProgressDialog>("Loading text from file...", "Stop",
+                                         0, (load_buf_size + CHUNK_SIZE-1) / CHUNK_SIZE,
+                                         this, Qt::Dialog);
+        progressWid->setWindowModality(Qt::WindowModal);
+        progressWid->setMinimumDuration(1000);  // ms
+        progressWid->show();
+
         while (rest > 0)
         {
             qint64 rdSize = fh.read(inBuf, std::min(rest, CHUNK_SIZE));
             if (rdSize > 0)
             {
+                // insert the loaded chunk of text at the end of the document
                 m_mainText->textCursor().movePosition(QTextCursor::End);
                 inBuf[rdSize] = 0;
                 m_mainText->insertPlainText(QString(inBuf));
@@ -588,6 +603,17 @@ void MainWin::loadFromFile(const QString& fileName)
             }
             else  // EOF
                 break;
+
+            // update progress dialog (modal)
+            progressWid->setValue((load_buf_size - rest + CHUNK_SIZE-1) / CHUNK_SIZE);
+            QApplication::processEvents();
+            if (progressWid->wasCanceled())
+            {
+                m_stline->showWarning("load", QString("Stopped loading after ")
+                                        + QString::number(uint64_t(100)*(load_buf_size - rest)/load_buf_size)
+                                        + "%");
+                break;
+            }
         }
         delete[] inBuf;
 
@@ -665,11 +691,34 @@ void MainWin::loadPipeDone()
     std::vector<QByteArray> dataBuf;
     m_loadPipe->getLoadedData(dataBuf);
 
+    // display modal progress dialog
+    auto progressWid =
+            std::make_unique<QProgressDialog>("Loading text from file...", "Stop",
+                                              0, dataBuf.size(), this, Qt::Dialog);
+    progressWid->setWindowModality(Qt::WindowModal);
+    progressWid->show();
+
+
     // insert the data into the text widget
+    size_t idx = 0;
     for (auto& data : dataBuf)
     {
         m_mainText->textCursor().movePosition(QTextCursor::End);
         m_mainText->insertPlainText(data);
+
+        // update progress dialog (modal)
+        if (++idx % 16 == 0)  // avoid slowing down loading process
+        {
+            progressWid->setValue(++idx);
+            QApplication::processEvents();
+            if (progressWid->wasCanceled())
+            {
+                m_stline->showWarning("load", QString("Stopped loading after ")
+                                        + QString::number(100*idx/dataBuf.size())  // size>0 asserted
+                                        + "%");
+                break;
+            }
+        }
     }
 
     // store buffer size parameter specified in the dialog in the RC file

@@ -697,10 +697,18 @@ void Highlighter::adjustLineNums(int top_l, int bottom_l)
     }
     m_tags = std::move(newMap);
 
-    // re-start initial highlighting, if not complete yet
+    // re-start or abort initial highlighting, if not complete yet
     if (tid_high_init->isActive())
     {
-        highlightInit();
+        if (top_l != bottom_l)
+        {
+            highlightInit();
+        }
+        else  // loading new file: restart later
+        {
+            tid_high_init->stop();
+            m_hipro->setVisible(false);
+        }
     }
 }
 

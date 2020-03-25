@@ -1,3 +1,4 @@
+# TODO list for Tcl/Tk and Python versions
 
 - command line options to read bookmarks or line list
 - search list: allow to pipe text through external command (grep -n)

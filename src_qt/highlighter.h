@@ -87,7 +87,6 @@ public:
     ~Highlighter();
     QJsonArray getRcValues();
     void setRcValues(const QJsonValue& val);
-    void removeInc(QTextDocument * doc);
     void getPatList(std::vector<HiglPatExport>&) const;
     void setPatList(const std::vector<HiglPatExport>& patList);
     void setFmtSpec(HiglId id, const HiglFmtSpec& fmtSpec);
@@ -101,8 +100,10 @@ public:
     void searchHighlightClear();
     void searchHighlightUpdate(const SearchPar& par, bool onlyVisible);
     void searchHighlightAll(HiglId id, int startPos);
+    void removeInc(QTextDocument * doc);
     void bookmarkHighlight(int line, bool enabled);
 
+    // indices of special-purpose entries within m_patList
     static constexpr int INVALID_HIGL_ID = -1;
     static constexpr int HIGL_ID_SEARCH = 0;
     static constexpr int HIGL_ID_SEARCH_INC = 1;
