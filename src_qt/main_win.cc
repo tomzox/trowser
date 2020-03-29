@@ -93,7 +93,7 @@ MainWin::MainWin(QApplication * app)
     auto f2_l = new QLabel("Find:", f2);
         f2_l->setToolTip("Enter a search text or regular expression, then\n"
                          "press RETURN to search for it in the main window.\n"
-                         "Use key up/down for browsing your search history.");
+                         "Use up/down keys for browsing your search history.");
         f2->addWidget(f2_l);
     auto f2_e = new MainFindEnt(m_search, f2);
         f2->addWidget(f2_e);
@@ -280,7 +280,8 @@ void MainWin::menuCmdAbout(bool)
                 "the same extent as less. Key bindings and the cursor positioning concept "
                 "are derived mainly from vim.\n"
                 "</P><P>\n"
-                "Homepage: <A HREF=\"https://github.com/tomzox/trowser\">github.com/tomzox/trowser</A>\n"
+                "Homepage &amp; Documentation: "
+                "<A HREF=\"https://github.com/tomzox/trowser\">github.com/tomzox/trowser</A>\n"
                 "</P><HR><P>\n"
                 "Copyright (C) 2007-2010,2020 Th. Zoerner\n"
                 "</P><P><small>\n"

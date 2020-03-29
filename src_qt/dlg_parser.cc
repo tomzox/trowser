@@ -233,16 +233,16 @@ DlgParser::DlgParser(MainWin * mainWin, MainText * mainText, const ParseSpec& sp
         lab->setToolTip("<P>Enter a regular expression in Perl syntax containing a capture "
                         "group (i.e. parenthesis). The value for the custom column is taken "
                         "from the first line matching the pattern, searching backwards.</P>"
-                        "<P>Note the result is taken from the <B>first</B capture group. "
-                        "Use non-capturing parenthesis <CODE>(?: ... )</CODE> for other "
-                        "purposes.</P>");
+                        "<P>Note the result is taken from the <B>first</B> capture group. "
+                        "Use non-capturing parenthesis <CODE>(?:&nbsp;...&nbsp;)</CODE> for other "
+                        "purposes, such as grouping.</P>");
         layout_f1->addWidget(lab, 0, 0);
     m_valPatEnt = new QLineEdit(frm);
         m_valPatEnt->setText(m_spec.m_valPat);
         layout_f1->addWidget(m_valPatEnt, 0, 1, 1, 2);
 
     lab = new QLabel("Label for column header:", frm);
-        lab->setToolTip("<P>Defines the label shown in the header for your custom column.</P>");
+        lab->setToolTip("<P>Defines the label shown in the search result list header for your custom column.</P>");
         layout_f1->addWidget(lab, 1, 0);
     m_valHeadEnt = new QLineEdit(frm);
         m_valHeadEnt->setText(m_spec.m_valHeader);
@@ -276,8 +276,11 @@ DlgParser::DlgParser(MainWin * mainWin, MainText * mainText, const ParseSpec& sp
     lab = new QLabel("Pattern for frame boundary:", frm);
         lab->setToolTip("<P>Enter a regular expression here if you want to limit the "
                         "backwards search for the value extraction pattern to a line "
-                        "matching this pattern.</P><P>Leave this field entry to limit "
-                        "only by the range value given above.</P>");
+                        "matching this pattern (i.e. inversely, leave this field empty "
+                        "to limit only by the search range value given above).</P>"
+                        "<P>Optionally, you can include a capture group for extracting a value "
+                        "from the matching line and display it in an additional column (by "
+                        "enabling option \"Extract value...\" below.)</P>");
         layout_f2->addWidget(lab, 0, 0);
     m_frmPatEnt = new QLineEdit(frm);
         m_frmPatEnt->setText(m_spec.m_frmPat);
@@ -294,11 +297,12 @@ DlgParser::DlgParser(MainWin * mainWin, MainText * mainText, const ParseSpec& sp
     m_frmCaptureChk = new QCheckBox("Extract value from boundary pattern", frm);
         m_frmCaptureChk->setChecked(m_spec.m_frmCapture);
         m_frmCaptureChk->setToolTip("<P>Check this box if your pattern contains a capture group "
-                                    "(i.e. parenthesis) with a value that you want to show in a column.</P>");
+                                    "(i.e. parenthesis) with a value that you want to show in a "
+                                    "second custom column.</P>");
         connect(m_frmCaptureChk, &QCheckBox::stateChanged, [=](){ updateWidgetState(); });
         layout_f2->addWidget(m_frmCaptureChk, 2, 1);
     lab = new QLabel("Label for column header:", frm);
-        lab->setToolTip("<P>Defines the label shown in the header for your custom \"frame number\" column.</P>");
+        lab->setToolTip("<P>Defines the label shown in the search result list header for the second custom column.</P>");
         layout_f2->addWidget(lab, 3, 0);
     m_frmHeadEnt = new QLineEdit(frm);
         m_frmHeadEnt->setText(m_spec.m_frmHeader);

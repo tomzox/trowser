@@ -477,10 +477,15 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainText * mainText, M
                                      QDialogButtonBox::Apply |
                                      QDialogButtonBox::Ok,
                                      Qt::Horizontal, central_wid);
-        m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(false);
+        m_cmdButs->button(QDialogButtonBox::Ok)->setToolTip("<P>Apply changes and close the dialog window.</P>");
+        m_cmdButs->button(QDialogButtonBox::Cancel)->setToolTip("<P>Discard all changes (if any, since last 'Apply') and close the dialog window.</P>");
+        m_cmdButs->button(QDialogButtonBox::Apply)->setToolTip("<P>Apply search pattern or mark-up changes to the text in the main window.</P>");
         connect(m_cmdButs, &QDialogButtonBox::clicked, this, &DlgHigl::cmdButton);
-        connect(m_model, &DlgHiglModel::dataChanged, this, &DlgHigl::cbDataChanged);
         layout_top->addWidget(m_cmdButs);
+
+    // enable "Apply" button only upon modification of model data
+    m_cmdButs->button(QDialogButtonBox::Apply)->setEnabled(false);
+    connect(m_model, &DlgHiglModel::dataChanged, this, &DlgHigl::cbDataChanged);
 
     // Status line overlay: used to display notification text
     m_stline = new StatusLine(m_table);
@@ -496,23 +501,39 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainText * mainText, M
     auto f1_l = new QLabel("Edit:", f1);
         f1->addWidget(f1_l);
     auto m_f1_add = new QPushButton(this->style()->standardIcon(QStyle::SP_FileIcon), "Add new item", f1);
+        m_f1_add->setToolTip("<P>Create a new highlight entry in the list, containing main window's "
+                             "current search parameters and a default background mark-up. Note the "
+                             "context menu also allows duplicating existing entries.</P>");
+        m_f1_add->setFocusPolicy(Qt::TabFocus);
         connect(m_f1_add, &QPushButton::clicked, this, &DlgHigl::cmdAdd);
         f1->addWidget(m_f1_add);
     m_f1_del = new QPushButton(this->style()->standardIcon(QStyle::SP_TrashIcon), "Remove...", f1);
+        m_f1_del->setToolTip("<P>Delete the currently selected entry from the list. "
+                             "(Can be undone by leaving the dialog window via 'Cancel'.)</P>");
         m_f1_del->setEnabled(false);
         m_f1_del->setShortcut(QKeySequence(Qt::Key_Delete));
+        m_f1_del->setFocusPolicy(Qt::TabFocus);
         connect(m_f1_del, &QPushButton::clicked, this, &DlgHigl::cmdRemove);
         f1->addWidget(m_f1_del);
     m_f1_up = new QPushButton(this->style()->standardIcon(QStyle::SP_ArrowUp), "Move up", f1);
+        m_f1_up->setToolTip("<P>Move all selected entries upwards in the list (unless the top-most entry is selected). "
+                             "Note order of list entries may affect mark-up of text lines that match multiple entries.</P>");
         m_f1_up->setEnabled(false);
+        m_f1_up->setFocusPolicy(Qt::TabFocus);
         connect(m_f1_up, &QPushButton::clicked, this, &DlgHigl::cmdShiftUp);
         f1->addWidget(m_f1_up);
     m_f1_down = new QPushButton(this->style()->standardIcon(QStyle::SP_ArrowDown), "Move down", f1);
+        m_f1_down->setToolTip("<P>Move all selected entries downwards in the list (unless the bottom-most entry is selected). "
+                              "Note order of list entries may affect mark-up of text lines that match multiple entries.</P>");
         m_f1_down->setEnabled(false);
+        m_f1_down->setFocusPolicy(Qt::TabFocus);
         connect(m_f1_down, &QPushButton::clicked, this, &DlgHigl::cmdShiftDown);
         f1->addWidget(m_f1_down);
     m_f1_fmt = new QPushButton("Format...", f1);
+        m_f1_fmt->setToolTip("<P>Open the mark-up editor for the selected entry, which allows "
+                             "modifying the appearance of text lines matching this pattern.</P>");
         m_f1_fmt->setEnabled(false);
+        m_f1_fmt->setFocusPolicy(Qt::TabFocus);
         connect(m_f1_fmt, &QPushButton::clicked, this, &DlgHigl::cmdEditFormat);
         f1->addWidget(m_f1_fmt);
 
@@ -525,24 +546,34 @@ DlgHigl::DlgHigl(Highlighter * higl, MainSearch * search, MainText * mainText, M
     auto f2_l = new QLabel("Find:", f2);
         f2->addWidget(f2_l);
     m_f2_bn = new QPushButton("&Next", f2);
+        m_f2_bn->setToolTip("<P>Start searching forward in the main window for the first occurence of one of the selected patterns.</P>");
         m_f2_bn->setEnabled(false);
+        m_f2_bn->setFocusPolicy(Qt::TabFocus);
         connect(m_f2_bn, &QPushButton::clicked, [=](){ cmdSearch(true); });
         f2->addWidget(m_f2_bn);
     m_f2_bp = new QPushButton("&Prev.", f2);
+        m_f2_bp->setToolTip("<P>Start searching backward in the main window for the first occurence of one of the selected patterns.</P>");
         m_f2_bp->setEnabled(false);
+        m_f2_bp->setFocusPolicy(Qt::TabFocus);
         connect(m_f2_bp, &QPushButton::clicked, [=](){ cmdSearch(false); });
         f2->addWidget(m_f2_bp);
     m_f2_ball = new QPushButton("&All", f2);
+        m_f2_ball->setToolTip("<P>Open a new window showing all lines of the main text that contain a match on one of the selected patterns.</P>");
         m_f2_ball->setEnabled(false);
+        m_f2_ball->setFocusPolicy(Qt::TabFocus);
         connect(m_f2_ball, &QPushButton::clicked, [=](){ cmdSearchList(0); });
         f2->addWidget(m_f2_ball);
     m_f2_ballb = new QPushButton("All below", f2);
+        m_f2_ballb->setToolTip("<P>Open a new window showing all lines of the main text below the currently selected line that contain a match on one of the selected patterns.</P>");
         m_f2_ballb->setEnabled(false);
+        m_f2_ballb->setFocusPolicy(Qt::TabFocus);
         m_f2_ballb->setShortcut(QKeySequence(Qt::ALT + Qt::SHIFT + Qt::Key_N));
         connect(m_f2_ballb, &QPushButton::clicked, [=](){ cmdSearchList(1); });
         f2->addWidget(m_f2_ballb);
     m_f2_balla = new QPushButton("All above", f2);
+        m_f2_balla->setToolTip("<P>Open a new window showing all lines of the main text above the currently selected line that contain a match on one of the selected patterns.</P>");
         m_f2_balla->setEnabled(false);
+        m_f2_balla->setFocusPolicy(Qt::TabFocus);
         m_f2_balla->setShortcut(QKeySequence(Qt::ALT + Qt::SHIFT + Qt::Key_P));
         connect(m_f2_balla, &QPushButton::clicked, [=](){ cmdSearchList(-1); });
         f2->addWidget(m_f2_balla);

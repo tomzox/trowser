@@ -132,7 +132,7 @@ QVariant DlgHistoryModel::headerData(int section, Qt::Orientation orientation, i
         {
             switch (section)
             {
-                case COL_IDX_PAT: return QVariant("<P>Shows the search text or regular expression. (Double-click to start editong the text.)</P>");
+                case COL_IDX_PAT: return QVariant("<P>Shows the search text or regular expression. (Double-click to start editing the text.)</P>");
                 case COL_IDX_REGEXP: return QVariant("<P>Shows \"true\" if the search string is a Regular Expression (Perl syntax), or \"false\" if it is a plain sub-string.</P>");
                 case COL_IDX_CASE: return QVariant("<P>Shows \"true\" if text matches only when in the same case as in the given pattern.</P>");
                 default: break;
@@ -276,24 +276,34 @@ DlgHistory::DlgHistory()
     auto f2_l = new QLabel("Find:", f2);
         f2->addWidget(f2_l);
     m_f2_bn = new QPushButton("&Next", f2);
+        m_f2_bn->setToolTip("<P>Start searching forward in the main window for the first occurence of one of the selected patterns.</P>");
         m_f2_bn->setEnabled(false);
+        m_f2_bn->setFocusPolicy(Qt::TabFocus);
         connect(m_f2_bn, &QPushButton::clicked, [=](){ cmdSearch(true); });
         f2->addWidget(m_f2_bn);
     m_f2_bp = new QPushButton("&Prev.", f2);
+        m_f2_bp->setToolTip("<P>Start searching backward in the main window for the first occurence of one of the selected patterns.</P>");
         m_f2_bp->setEnabled(false);
+        m_f2_bp->setFocusPolicy(Qt::TabFocus);
         connect(m_f2_bp, &QPushButton::clicked, [=](){ cmdSearch(false); });
         f2->addWidget(m_f2_bp);
     m_f2_ball = new QPushButton("&All", f2);
+        m_f2_ball->setToolTip("<P>Open a new window showing all lines of the main text that contain a match on one of the selected patterns.</P>");
         m_f2_ball->setEnabled(false);
+        m_f2_ball->setFocusPolicy(Qt::TabFocus);
         connect(m_f2_ball, &QPushButton::clicked, [=](){ cmdSearchList(0); });
         f2->addWidget(m_f2_ball);
     m_f2_ballb = new QPushButton("All below", f2);
+        m_f2_ballb->setToolTip("<P>Open a new window showing all lines of the main text below the currently selected line that contain a match on one of the selected patterns.</P>");
         m_f2_ballb->setEnabled(false);
+        m_f2_ballb->setFocusPolicy(Qt::TabFocus);
         m_f2_ballb->setShortcut(QKeySequence(Qt::ALT + Qt::SHIFT + Qt::Key_N));
         connect(m_f2_ballb, &QPushButton::clicked, [=](){ cmdSearchList(1); });
         f2->addWidget(m_f2_ballb);
     m_f2_balla = new QPushButton("All above", f2);
+        m_f2_balla->setToolTip("<P>Open a new window showing all lines of the main text above the currently selected line that contain a match on one of the selected patterns.</P>");
         m_f2_balla->setEnabled(false);
+        m_f2_balla->setFocusPolicy(Qt::TabFocus);
         m_f2_balla->setShortcut(QKeySequence(Qt::ALT + Qt::SHIFT + Qt::Key_P));
         connect(m_f2_balla, &QPushButton::clicked, [=](){ cmdSearchList(-1); });
         f2->addWidget(m_f2_balla);

@@ -1,10 +1,5 @@
 - support different font sizes in search list view rows
 - clearing search highlight in large documents blocks GUI for too long
-- search_list: tip message when enabling delta via menu: "select root line"
-
-- add more documentation
-- add more tool-tips
-- add help (e.g. load HTML manual page into QTextEdit)
 - main text: xview scrolling; yoff position with offset et.al.
 
 clean-up:
@@ -12,10 +7,12 @@ clean-up:
   move undo/redo & bg tasks in umbrella class of search list view
 - use signals instead of hard-wired callbacks to dialogs (static interfaces)
 - split off duplicated "find" toolbar code into separate class
-- limit access to MainText QPlainText base class interface
-- use QCommandLineParser class instead of legacy C code
+- MainText: limit access to QPlainText base class interface
+- MainText: redesign keyCmdText() handler, esp. for numeric prefix
+- ConfigFile: use QCommandLineParser class instead of legacy C code
 
 optional enhancements:
+- add text from manual page to help menu (e.g. load HTML manual page into QTextEdit)
 - multiple instances of search list window
 - bookmark undo/redo for line list (implemented within Bookmarks class)
 - bookmark adding/removing via text search (all/all above/all below)

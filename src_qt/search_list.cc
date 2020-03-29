@@ -205,14 +205,14 @@ public:
             {
                 switch (section)
                 {
-                    case COL_IDX_BOOK: return QVariant("Bookmarked lines are marked with a blue dot in this column.");
-                    case COL_IDX_LINE: return QVariant("Number of each line in the main window");
-                    case COL_IDX_LINE_D: return QVariant("Line number delta to a selected base line");
-                    case COL_IDX_CUST_VAL: return QVariant("Value extracted from text content as per \"custom column configuration\"");
-                    case COL_IDX_CUST_VAL_DELTA: return QVariant("Delta between extracted value of each line to that of a selected line");
-                    case COL_IDX_CUST_FRM: return QVariant("Frame boundary value extracted from text content as per \"custom column configuration\"");
-                    case COL_IDX_CUST_FRM_DELTA: return QVariant("Delta between frame boundary value of each line to that of a selected line");
-                    case COL_IDX_TXT: return QVariant("Copy of the text in the main window");
+                    case COL_IDX_BOOK: return QVariant("<P>Bookmarked lines are marked with a blue dot in this column.</P>");
+                    case COL_IDX_LINE: return QVariant("<P>Number of each line in the main window</P>");
+                    case COL_IDX_LINE_D: return QVariant("<P>Line number delta to a selected base line</P>");
+                    case COL_IDX_CUST_VAL: return QVariant("<P>Value extracted from text content as per \"custom column configuration\"</P>");
+                    case COL_IDX_CUST_VAL_DELTA: return QVariant("<P>Delta between extracted value of each line to that of a selected line</P>");
+                    case COL_IDX_CUST_FRM: return QVariant("<P>Frame boundary value extracted from text content as per \"custom column configuration\"</P>");
+                    case COL_IDX_CUST_FRM_DELTA: return QVariant("<P>Delta between frame boundary value of each line to that of a selected line</P>");
+                    case COL_IDX_TXT: return QVariant("<P>Copy of the text in the main window</P>");
                     case COL_COUNT: break;
                 }
             }
@@ -251,7 +251,10 @@ public:
     void removeAll(std::vector<int>& removedLines);
 
     void setLineDeltaRoot(int line);
+    bool isValidLineDeltaRoot();
     bool setCustomDeltaRoot(TblColIdx col, int line);
+    bool isValidCustomDeltaRoot(TblColIdx col);
+
     void forceRedraw(TblColIdx col, int line = -1);
     const std::vector<int>& exportLineList() const
     {
@@ -551,6 +554,11 @@ void SearchListModel::setLineDeltaRoot(int line)
     }
 }
 
+bool SearchListModel::isValidLineDeltaRoot()
+{
+    return m_rootLineIdx != 0;
+}
+
 bool SearchListModel::setCustomDeltaRoot(TblColIdx col, int line)
 {
     Q_ASSERT((col == COL_IDX_CUST_VAL_DELTA) || (col == COL_IDX_CUST_FRM_DELTA));
@@ -571,6 +579,12 @@ bool SearchListModel::setCustomDeltaRoot(TblColIdx col, int line)
         }
     }
     return result;
+}
+
+bool SearchListModel::isValidCustomDeltaRoot(TblColIdx col)
+{
+    int line = (col == COL_IDX_CUST_VAL_DELTA) ? m_rootCustVal : m_rootCustFrm;
+    return line != 0;
 }
 
 // called when external state has changed that affects rendering
@@ -1518,7 +1532,6 @@ void SearchList::populateMenus()
         act->setShortcut(QKeySequence(Qt::Key_Ampersand));
         connect(act, &QAction::triggered, s_search, &MainSearch::searchHighlightClear);
 
-
     men = menuBar()->addMenu("&Options");
     act = men->addAction("Highlight all search matches");
         act->setCheckable(true);
@@ -1758,6 +1771,9 @@ void SearchList::cmdToggleShowLineDelta(bool checked)
 {
     m_showCfg.lineDelta = checked;
     configureColumnVisibility();
+
+    if (checked && !m_model->isValidLineDeltaRoot())
+        m_stline->showWarning("menu", "Now select a line in the list and set it as origin for delta");
 }
 
 void SearchList::cmdToggleShowCustom(ParseColumnFlags col, bool checked)
@@ -1768,6 +1784,15 @@ void SearchList::cmdToggleShowCustom(ParseColumnFlags col, bool checked)
         m_showCfg.custom ^= (m_showCfg.custom & col);
 
     configureColumnVisibility();
+
+    if (   checked
+        && (   (   (col == ParseColumnFlags::ValDelta)
+                && !m_model->isValidCustomDeltaRoot(SearchListModel::COL_IDX_CUST_VAL_DELTA))
+            || (   (col == ParseColumnFlags::FrmDelta)
+                && !m_model->isValidCustomDeltaRoot(SearchListModel::COL_IDX_CUST_FRM_DELTA)) ))
+    {
+        m_stline->showWarning("menu", "Now select a line in the list and set it as origin for delta");
+    }
 }
 
 void SearchList::cmdSetLineIdxRoot(bool)
