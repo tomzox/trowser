@@ -3,7 +3,7 @@
 exec wish "$0" -- "$@"
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2010,2019-2020 Th. Zoerner
+# Copyright (C) 2007-2010,2019-2022 Th. Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -832,11 +832,11 @@ proc SearchOverlapCheck {is_fwd start_pos pos match_len} {
 
 
 #
-# This function handles the result of a text search in the main window.
-# If a match was found, the cursor is moved to the start of the match and
-# the word, line are highlighted. Optionally, a background process to
-# highlight all matches is started.  If no match is found, any previously
-# applies highlights are removed.
+# This function handles the result of a text search in the main window. If
+# a match was found, the cursor is moved to the start of the match and the
+# matching section and complete line are highlighted. Optionally, a background
+# process to highlight all matches is started. If no match is found, any
+# previously applied search highlighting is removed.
 #
 proc Search_HandleMatch {pos match_len pat opt is_changed} {
   global tlb_find_line tlb_hall tlb_cur_hall_opt
@@ -1000,13 +1000,13 @@ proc SearchExprCheck {pat is_re display} {
 
 
 #
-# This function returns the start address for a search.  The first search
+# This function returns the start position for a search.  The first search
 # starts at the insertion cursor. If the cursor is not visible, the search
 # starts at the top or bottom of the visible text. When a search is repeated,
-# the search must behind the previous match (for a forward search) to prevent
-# finding the same word again, or finding an overlapping match. (For backwards
-# searches overlaps cannot be handled via search arguments; such results are
-# filtered out when a match is found.)
+# the search must start behind the previous match (for a forward search) to
+# prevent finding the same word again, or finding an overlapping match. (For
+# backwards searches overlaps cannot be handled via search arguments; such
+# results are filtered out when a match is found.)
 #
 proc Search_GetBase {is_fwd is_init} {
   if {[.f1.t bbox insert] eq ""} {
@@ -1095,7 +1095,7 @@ proc SearchNext {is_fwd} {
     }
 
   } else {
-    DisplayStatusLine search error "No pattern defined for search repeat"
+    DisplayStatusLine search error "No pattern defined for search repetition"
     set found ""
   }
   return $found
@@ -1110,32 +1110,36 @@ proc SearchNext {is_fwd} {
 proc SearchAll {raise_win direction} {
   global tlb_find tlb_regexp tlb_case tlb_last_wid tlb_find_focus
 
-  if {[SearchExprCheck $tlb_find $tlb_regexp 1]} {
-    set pat $tlb_find
-    set is_re $tlb_regexp
-    set use_case $tlb_case
+  if {$tlb_find ne ""} {
+    if {[SearchExprCheck $tlb_find $tlb_regexp 1]} {
+      set pat $tlb_find
+      set is_re $tlb_regexp
+      set use_case $tlb_case
 
-    Search_AddHistory $tlb_find $tlb_regexp $tlb_case
+      Search_AddHistory $tlb_find $tlb_regexp $tlb_case
 
-    # make focus return and cursor jump back to original position
-    if {$tlb_find_focus} {
-      SearchHighlightClear
-      SearchReset
+      # make focus return and cursor jump back to original position
+      if {$tlb_find_focus} {
+        SearchHighlightClear
+        SearchReset
 
-      # note more clean-up is triggered via the focus-out event
-      focus .f1.t
+        # note more clean-up is triggered via the focus-out event
+        focus .f1.t
 
-      if {$tlb_last_wid ne ""} {
-        focus $tlb_last_wid
-        # raise the caller's window above the main window
-        if {[regsub {^(\.[^\.]*).*} $tlb_last_wid {\1} top_wid]} {
-          raise $top_wid .
+        if {$tlb_last_wid ne ""} {
+          focus $tlb_last_wid
+          # raise the caller's window above the main window
+          if {[regsub {^(\.[^\.]*).*} $tlb_last_wid {\1} top_wid]} {
+            raise $top_wid .
+          }
         }
       }
-    }
 
-    SearchList_Open $raise_win
-    SearchList_SearchMatches 1 $pat $is_re $use_case $direction
+      SearchList_Open $raise_win
+      SearchList_SearchMatches 1 $pat $is_re $use_case $direction
+    }
+  } else {
+    DisplayStatusLine search error "No pattern defined for search repetition"
   }
 }
 
@@ -1288,7 +1292,7 @@ proc SearchReturn {} {
       set tlb_find [lindex $hl 0]
       set restart 1
     } else {
-      DisplayStatusLine search error "No pattern defined for search repeat"
+      DisplayStatusLine search error "No pattern defined for search repetition"
     }
   }
 
@@ -1585,7 +1589,7 @@ proc SearchCharInLine {char dir} {
 #
 proc Search_EscapeSpecialChars {word is_re} {
   if {$is_re} {
-    regsub -all {[^[:alnum:][:blank:]_\-\:\=\%\"\!\'\;\,\#\/\<\>]\@} $word {\\&} word
+    regsub -all {[^[:alnum:][:blank:]_\-\:\=\%\"\!\'\;\,\#\/\<\>\@]} $word {\\&} word
   }
   return $word
 }
@@ -2676,7 +2680,7 @@ proc KeyCmd_ExecSearch {is_fwd} {
         incr count
       }
     } else {
-      DisplayStatusLine search error "No pattern defined for search repeat"
+      DisplayStatusLine search error "No pattern defined for search repetition"
     }
   } else {
     DisplayStatusLine keycmd error "Search repetition requires a numeric value as input."
@@ -2729,8 +2733,9 @@ proc ParseFrameTickNo {pos {cache_ref {}}} {
       scan [.f1.t index $pos] "%d" line
       if {($line >= [lindex $prev_rslt 0]) && ($line < [lindex $prev_rslt 1])} {
         # line is within the range of the most recently parsed frame
-        set fn_cache($pos) [list [lindex $prev_rslt 2] [lindex $prev_rslt 3]]
-        return [list [lindex $prev_rslt 2] [lindex $prev_rslt 3]]
+        set prefix [list [lindex $prev_rslt 2] [lindex $prev_rslt 3]]
+        set fn_cache($pos) $prefix
+        return $prefix
       }
     }
   }
@@ -2740,55 +2745,47 @@ proc ParseFrameTickNo {pos {cache_ref {}}} {
     if {$tick_pat_sep ne ""} {
       # determine frame number by searching forwards and backwards for frame boundaries
       # marked by a frame separator pattern; then within these boundaries search for FN
-      set prefix ""
-      set tick_no 0
+      set fn ""
+      set tick_no ""
       set pos1 [.f1.t search -regexp -backwards -- $tick_pat_sep [list $pos lineend] 1.0]
       if {$pos1 ne ""} {
         set dump [ExtractText $pos1 [list $pos1 lineend]]
-        regexp -- {([1-9][0-9]*)} $dump foo tick_no
+        regexp -- $tick_pat_sep $dump foo tick_no
       } else {
         set pos1 "1.0"
       }
       set pos2 [.f1.t search -regexp -forwards -- $tick_pat_sep [list $pos lineend] end]
       if {$pos2 eq ""} {set pos2 end}
       set pos3 [.f1.t search -regexp -count match_len -- $tick_pat_num $pos1 $pos2]
-      set fn_off 0
-      if {($pos3 eq "") && ($pos2 eq "end")} {
-        # line frame contains no TDMA FN: use last one +1
-        set pos2 $pos1
-        set pos1 [.f1.t search -regexp -backwards -- $tick_pat_sep $pos1 1.0]
-        set pos3 [.f1.t search -regexp -count match_len -- $tick_pat_num $pos1 $pos2]
-        set fn_off 1
-      }
       if {$pos3 ne ""} {
         set dump [ExtractText $pos3 [list $pos3 + $match_len chars]]
-        if {[regexp -- $tick_pat_num $dump foo fn]} {
-          set prefix "$tick_no $fn"
-
-          if {$cache_ref ne ""} {
-            # add result to the cache
-            set fn_cache($pos) [list $tick_no $fn]
-            # add a special entry to the cache remembering the extent of the current frame
-            scan [.f1.t index $pos1] "%d" line1
-            scan [.f1.t index $pos2] "%d" line2
-            set fn_cache(-1) [list $line1 $line2 $tick_no $fn]
-          }
-        }
+        regexp -- $tick_pat_num $dump foo fn
       }
+      set prefix [list $fn $tick_no]
+
+      if {$cache_ref ne ""} {
+        # add result to the cache
+        set fn_cache($pos) $prefix
+        # add a special entry to the cache remembering the extent of the current frame
+        scan [.f1.t index $pos1] "%d" line1
+        scan [.f1.t index $pos2] "%d" line2
+        set fn_cache(-1) [list $line1 $line2 $fn $tick_no]
+      }
+
     } elseif {$tick_pat_num ne ""} {
       # determine frame number by searching backwards for the line holding the FN
-      set prefix ""
+      set fn ""
       set pos3 [.f1.t search -regexp -backwards -count match_len -- $tick_pat_num [concat $pos lineend] 1.0]
       if {$pos3 ne ""} {
         set dump [ExtractText $pos3 [list $pos3 + $match_len chars]]
-        if {[regexp -- $tick_pat_num $dump foo fn]} {
-          set prefix $fn
-
-          if {$cache_ref ne ""} {
-            set fn_cache($pos) [list $tick_no $fn]
-          }
-        }
+        regexp -- $tick_pat_num $dump foo fn
       }
+      set prefix [list $fn ""]
+
+      if {$cache_ref ne ""} {
+        set fn_cache($pos) $prefix
+      }
+
     } else {
       # FN parsing is disabled: omit the prefix
       set prefix ""
@@ -2813,7 +2810,7 @@ proc Mark_Toggle {line {txt {}}} {
       set fn_prefix [ParseFrameTickNo insert]
       set txt [ExtractText "$line.0" "$line.0 lineend"]
       set txt [string trim $txt]
-      set mark_list($line) "$tick_str_prefix$fn_prefix $txt"
+      set mark_list($line) "$tick_str_prefix[eval concat $fn_prefix] $txt"
     } else {
       set mark_list($line) $txt
     }
@@ -3918,6 +3915,7 @@ proc SearchList_Open {raise_win} {
   global dlg_srch_shown dlg_srch_geom dlg_srch_sel dlg_srch_lines dlg_srch_fn_cache
   global dlg_srch_show_fn dlg_srch_show_tick dlg_srch_tick_delta dlg_srch_tick_root
   global dlg_srch_highlight dlg_srch_undo dlg_srch_redo
+  global tick_pat_sep tick_pat_num
 
   PreemptBgTasks
   if {![info exists dlg_srch_shown]} {
@@ -3928,6 +3926,9 @@ proc SearchList_Open {raise_win} {
       wm title .dlg_srch "Search matches"
     }
     wm group .dlg_srch .
+
+    set with_tick_num [expr {($tick_pat_sep eq "") ? "disabled" : "normal"}]
+    set with_fn [expr {($tick_pat_num eq "") ? "disabled" : "normal"}]
 
     menu .dlg_srch.menubar
     .dlg_srch config -menu .dlg_srch.menubar
@@ -3962,12 +3963,12 @@ proc SearchList_Open {raise_win} {
     .dlg_srch.menubar.search add separator
     .dlg_srch.menubar.search add command -label "Clear search highlight" -command {SearchHighlightClear} -accelerator "&"
     menu .dlg_srch.menubar.options -tearoff 0 -postcommand MenuPosted
-    .dlg_srch.menubar.options add checkbutton -label "Show frame number" -command SearchList_ToggleFrameNo -variable dlg_srch_show_fn -accelerator "ALT-f"
-    .dlg_srch.menubar.options add checkbutton -label "Show tick number" -command SearchList_ToggleFrameNo -variable dlg_srch_show_tick -accelerator "ALT-t"
-    .dlg_srch.menubar.options add checkbutton -label "Show tick num. delta" -command SearchList_ToggleFrameNo -variable dlg_srch_tick_delta -accelerator "ALT-d"
+    .dlg_srch.menubar.options add checkbutton -label "Show frame number" -command SearchList_ToggleFrameNo -state $with_fn -variable dlg_srch_show_fn -accelerator "ALT-f"
+    .dlg_srch.menubar.options add checkbutton -label "Show tick number" -command SearchList_ToggleFrameNo -state $with_tick_num -variable dlg_srch_show_tick -accelerator "ALT-t"
+    .dlg_srch.menubar.options add checkbutton -label "Show tick num. delta" -command SearchList_ToggleFrameNo -state $with_tick_num -variable dlg_srch_tick_delta -accelerator "ALT-d"
     .dlg_srch.menubar.options add checkbutton -label "Highlight search" -command SearchList_ToggleHighlight -variable dlg_srch_highlight -accelerator "ALT-h"
     .dlg_srch.menubar.options add separator
-    .dlg_srch.menubar.options add command -label "Select line as origin for tick delta" -command SearchList_SetFnRoot -accelerator "ALT-0"
+    .dlg_srch.menubar.options add command -label "Select line as origin for tick delta" -command SearchList_SetFnRoot -state $with_tick_num -accelerator "ALT-0"
 
     frame .dlg_srch.f1
     text .dlg_srch.f1.l -width 1 -height 1 -wrap none -font $font_content -cursor top_left_arrow \
@@ -4144,7 +4145,7 @@ proc SearchList_ContextMenu {xcoo ycoo} {
   if {([llength $sel] == 1) && (($tick_pat_sep ne "") || ($tick_pat_num ne ""))} {
     set line [lindex $dlg_srch_lines [lindex $sel 0]]
     set fn [ParseFrameTickNo "$line.0" dlg_srch_fn_cache]
-    if {$fn ne ""} {
+    if {[llength $fn] > 0} {
       if {$c > 0} {.dlg_srch.ctxmen add separator}
       .dlg_srch.ctxmen add command -label "Select line as origin for tick delta" \
                                    -command SearchList_SetFnRoot
@@ -4256,31 +4257,25 @@ proc SearchList_ToggleFrameNo {} {
   global dlg_srch_sel dlg_srch_lines dlg_srch_fn_cache tick_pat_sep tick_pat_num
   global dlg_srch_show_fn dlg_srch_show_tick dlg_srch_tick_delta dlg_srch_tick_root
 
-  if {($tick_pat_sep ne "") || ($tick_pat_num ne "")} {
-    if {[SearchList_SearchAbort]} {
-      if {$dlg_srch_tick_delta && ($dlg_srch_tick_root == -1)} {
-        set sel [TextSel_GetSelection dlg_srch_sel]
-        if {[llength $sel] > 0} {
-          set line [lindex $dlg_srch_lines [lindex $sel 0]]
-          set fn [ParseFrameTickNo "$line.0" dlg_srch_fn_cache]
-          if {[llength $fn] != 0} {
-            set dlg_srch_tick_root [lindex $fn 0]
-          } else {
-            DisplayStatusLine search warn "Failed to extract a frame number from the selected line"
-          }
-        } else {
-          DisplayStatusLine search warn "Please select a line as origin for tick deltas"
-        }
-      }
-
-      SearchList_Refill
-    }
-
-  } else {
+  if {$tick_pat_num eq ""} {
     DisplayStatusLine search error "No patterns defined in the RC file for parsing frame numbers"
     set dlg_srch_tick_delta 0
     set dlg_srch_show_tick 0
     set dlg_srch_show_fn 0
+
+  } elseif {($tick_pat_sep eq "") && ($dlg_srch_tick_delta || $dlg_srch_show_tick)} {
+    DisplayStatusLine search error "No tick separator pattern defined in the RC file"
+    set dlg_srch_tick_delta 0
+    set dlg_srch_show_tick 0
+
+  } else {
+    if {[SearchList_SearchAbort]} {
+      if {$dlg_srch_tick_delta && ($dlg_srch_tick_root == -1)} {
+        SearchList_SetFnRoot
+      } else {
+        SearchList_Refill
+      }
+    }
   }
 }
 
@@ -4295,18 +4290,24 @@ proc SearchList_SetFnRoot {} {
   global dlg_srch_sel dlg_srch_lines dlg_srch_fn_cache tick_pat_sep tick_pat_num
   global dlg_srch_show_fn dlg_srch_show_tick dlg_srch_tick_delta dlg_srch_tick_root
 
-  if {($tick_pat_sep ne "") || ($tick_pat_num ne "")} {
+  if {$tick_pat_sep ne ""} {
     if {[SearchList_SearchAbort]} {
       set sel [TextSel_GetSelection dlg_srch_sel]
       if {[llength $sel] > 0} {
         set line [lindex $dlg_srch_lines [lindex $sel 0]]
         # extract the frame number from the text in the main window around the referenced line
         set fn [ParseFrameTickNo "$line.0" dlg_srch_fn_cache]
-        if {[llength $fn] != 0} {
-          set dlg_srch_tick_delta 1
-          set dlg_srch_tick_root [lindex $fn 0]
-          SearchList_Refill
+        if {[llength $fn] > 0} {
+          set fn [expr {([lindex $fn 1] eq "") ? [lindex $fn 0] : [lindex $fn 1]}]
+          if {![catch {expr {$fn + 0}}]} {
+            set dlg_srch_tick_delta 1
+            set dlg_srch_tick_root $fn
+            DisplayStatusLine search info "Selected root number: $fn"
+            SearchList_Refill
 
+          } else {
+            DisplayStatusLine search error "Match returned by frame number pattern is not a numeric"
+          }
         } else {
           DisplayStatusLine search error "Select a line as origin for tick deltas"
         }
@@ -4315,7 +4316,7 @@ proc SearchList_SetFnRoot {} {
       }
     }
   } else {
-    DisplayStatusLine search error "No patterns defined in the RC file for parsing frame numbers"
+    DisplayStatusLine search error "No tick separator pattern defined in the RC file"
   }
 }
 
@@ -5265,16 +5266,18 @@ proc SearchList_InsertLine {txt_line ins_pos} {
   if {$dlg_srch_tick_delta || $dlg_srch_show_fn || $dlg_srch_show_tick} {
     set fn [ParseFrameTickNo $pos dlg_srch_fn_cache]
     if {[llength $fn] > 0} {
-      set tick_no [lindex $fn 0]
-      if {[catch {expr {$tick_no + 0}}]} {
-        set tick_no 0
-      }
+      set tick_no [lindex $fn 1]
+      set fn [lindex $fn 0]
     } else {
-      set tick_no 0
+      set tick_no "?"
+      set fn "?"
     }
     set prefix ""
     if {$dlg_srch_tick_delta} {
-      append prefix [expr {$tick_no - $dlg_srch_tick_root}]
+      if {[catch {set delta [expr {$tick_no - $dlg_srch_tick_root}]}]} {
+        set delta "?"
+      }
+      append prefix $delta
     }
     if {$dlg_srch_show_tick} {
       if {$prefix ne ""} {append prefix ":"}
@@ -5282,7 +5285,7 @@ proc SearchList_InsertLine {txt_line ins_pos} {
     }
     if {$dlg_srch_show_fn} {
       if {$prefix ne ""} {append prefix ":"}
-      append prefix $tick_str_prefix [lindex $fn 1]
+      append prefix $tick_str_prefix $fn
     }
     set prefix "   $prefix "
   } else {
@@ -5394,9 +5397,9 @@ proc SearchList_GetLen {} {
 # + bottom_l: this line and all below have been removed, or 0 if none
 #
 proc SearchList_AdjustLineNums {top_l bottom_l} {
-  global dlg_srch_sel dlg_srch_lines dlg_srch_undo dlg_srch_redo dlg_srch_fn_cache
+  global dlg_srch_shown dlg_srch_undo dlg_srch_redo dlg_srch_fn_cache
 
-  if {[info exists dlg_srch_lines]} {
+  if {[info exists dlg_srch_shown]} {
     if {$bottom_l == 0} {
       # delete from 1 ... $topl
       set idx [SearchList_GetLineIdx $top_l]
@@ -7131,7 +7134,7 @@ proc OpenAboutDialog {} {
     label .about.name -text "Trace Browser"
     pack .about.name -side top -pady 8
 
-    label .about.copyr1 -text "Copyright (C) 2007-2010,2019-2020 Tom Zoerner" -font $font_normal
+    label .about.copyr1 -text "Copyright (C) 2007-2010,2019-2022 Tom Zoerner" -font $font_normal
     pack .about.copyr1 -side top
 
     message .about.m -font $font_normal -text {
@@ -9114,9 +9117,15 @@ set col_palette [list \
   {#eeee8e} \
   {#ffffff}]
 
-# These variables hold patterns which are used to parse timestamps out of
-# the text content: the first two are regular expressions, the third a
-# plain string; set patterns to empty strings to disable the feature
+# These variables hold patterns which are used to parse frame numbers or
+# timestamps out of the text content, for use in the "Search list" dialog: The
+# first two are regular expressions, the third a plain string; set patterns to
+# empty strings to disable the feature.  Either specify both patterns as
+# non-empty, or only the first. Both patterns have to include a capture (i.e.
+# parenthesis), which will be used to extract the portion of text to be
+# displayed as marker, when enabled via "Options" menu in the search list
+# dialog. The extracted text may also be non-numerical, but then the "delta"
+# feature will obviously not work.
 set tick_pat_sep {}
 set tick_pat_num {}
 set tick_str_prefix ""

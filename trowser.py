@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2010,2019-2020 Th. Zoerner
+# Copyright (C) 2007-2010,2019-2022 Th. Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -174,7 +174,7 @@ def CreateMainWindow():
   wt.f1_t.configure(yscrollcommand=wt.f1_sb.set)
   wt.f1.pack(side=TOP, fill=BOTH, expand=1)
 
-  wt.f1_t.focus()
+  wt.f1_t.focus_set()
   # note: order is important: "find" must be lower than highlighting tags
   HighlightConfigure(wt.f1_t, "find", fmt_find)
   HighlightConfigure(wt.f1_t, "findinc", fmt_findinc)
@@ -852,11 +852,11 @@ def SearchOverlapCheck(is_fwd, start_pos, pos, match_len):
 
 
 #
-# This function handles the result of a text search in the main window.
-# If a match was found, the cursor is moved to the start of the match and
-# the word, line are highlighted. Optionally, a background process to
-# highlight all matches is started.  If no match is found, any previously
-# applies highlights are removed.
+# This function handles the result of a text search in the main window. If
+# a match was found, the cursor is moved to the start of the match and the
+# matching section and complete line are highlighted. Optionally, a background
+# process to highlight all matches is started. If no match is found, any
+# previously applied search highlighting is removed.
 #
 def Search_HandleMatch(pos, match_len, pat, opt, is_changed):
   global tlb_find_line, tlb_hall, tlb_cur_hall_opt
@@ -999,13 +999,13 @@ def SearchExprCheck(pat, is_re, display):
 
 
 #
-# This function returns the start address for a search.  The first search
+# This function returns the start position for a search.  The first search
 # starts at the insertion cursor. If the cursor is not visible, the search
 # starts at the top or bottom of the visible text. When a search is repeated,
-# the search must behind the previous match (for a forward search) to prevent
-# finding the same word again, or finding an overlapping match. (For backwards
-# searches overlaps cannot be handled via search arguments; such results are
-# filtered out when a match is found.)
+# the search must start behind the previous match (for a forward search) to
+# prevent finding the same word again, or finding an overlapping match. (For
+# backwards searches overlaps cannot be handled via search arguments; such
+# results are filtered out when a match is found.)
 #
 def Search_GetBase(is_fwd, is_init):
   if wt.f1_t.bbox("insert") is None:
@@ -1089,7 +1089,7 @@ def SearchNext(is_fwd):
       Search_HandleNoMatch(hl[0], is_fwd)
 
   else:
-    DisplayStatusLine("search", "error", "No pattern defined for search repeat")
+    DisplayStatusLine("search", "error", "No pattern defined for search repetition")
     found = False
 
   return found
@@ -1104,28 +1104,32 @@ def SearchAll(raise_win, direction):
   global tlb_find, tlb_regexp, tlb_case, tlb_last_wid, tlb_find_focus
 
   pat = tlb_find.get()
-  if SearchExprCheck(pat, tlb_regexp.get(), True):
-    is_re = tlb_regexp.get()
-    use_case = tlb_case.get()
+  if pat:
+    if SearchExprCheck(pat, tlb_regexp.get(), True):
+      is_re = tlb_regexp.get()
+      use_case = tlb_case.get()
 
-    Search_AddHistory(pat, is_re, use_case)
+      Search_AddHistory(pat, is_re, use_case)
 
-    # make focus return and cursor jump back to original position
-    if tlb_find_focus:
-      SearchHighlightClear()
-      SearchReset()
+      # make focus return and cursor jump back to original position
+      if tlb_find_focus:
+        SearchHighlightClear()
+        SearchReset()
 
-      # note more clean-up is triggered via the focus-out event
-      wt.f1_t.focus_set()
+        # note more clean-up is triggered via the focus-out event
+        wt.f1_t.focus_set()
 
-      if tlb_last_wid is not None:
-        tlb_last_wid.focus_set()
-        # raise the caller's window above the main window
-        top_wid = tlb_last_wid.winfo_toplevel()
-        top_wid.lift()
+        if tlb_last_wid is not None:
+          tlb_last_wid.focus_set()
+          # raise the caller's window above the main window
+          top_wid = tlb_last_wid.winfo_toplevel()
+          top_wid.lift()
 
-    SearchList_Open(raise_win)
-    SearchList_SearchMatches(True, pat, is_re, use_case, direction)
+      SearchList_Open(raise_win)
+      SearchList_SearchMatches(True, pat, is_re, use_case, direction)
+
+  else:
+    DisplayStatusLine("search", "error", "No pattern defined for search repetition")
 
 
 #
@@ -1176,7 +1180,7 @@ def SearchEnter(is_fwd, wid=None):
 
   tlb_last_dir = is_fwd
   tlb_find.set("")
-  wt.f2_e.focus()
+  wt.f2_e.focus_set()
 
   # clear "highlight all" since search pattern is reset above
   SearchHighlightClear()
@@ -1203,7 +1207,12 @@ def SearchLeave():
     tid_search_inc = None
 
   # ignore if the keyboard focus is leaving towards another application
-  focus_nam = tk.focus_get()
+  try:
+    focus_nam = tk.focus_get()
+  except:
+    # exception within tkinter occurs when switching to menu bar
+    focus_nam = None
+
   if focus_nam is not None:
     pat = tlb_find.get()
     if SearchExprCheck(pat, tlb_regexp.get(), 0):
@@ -1268,7 +1277,7 @@ def SearchReturn():
       tlb_find.set(hl[0])
       restart = True
     else:
-      DisplayStatusLine("search", "error", "No pattern defined for search repeat")
+      DisplayStatusLine("search", "error", "No pattern defined for search repetition")
 
   if SearchExprCheck(tlb_find.get(), tlb_regexp.get(), True):
     if restart:
@@ -1529,7 +1538,8 @@ def SearchCharInLine(char, dir):
 #
 def Search_EscapeSpecialChars(word, is_re):
   if is_re:
-    return re.escape(word)
+    #return re.escape(word) # safer, but also escapes space
+    return re.sub(r"([^\w\s_\-\:\=\%\"\!\'\;\,\#\/\<\>\@])", r"\\\1", word)
   else:
     return word
 
@@ -1912,7 +1922,7 @@ def CursorGotoLine(wid, where):
     try:
       where_val = int(where)
       if where_val >= 0:
-        wid.mark_set("insert", where + ".0")
+        wid.mark_set("insert", str(where) + ".0")
       else:
         wt.f1_t.mark_set("insert", "end - %d lines linestart" % (1 - where_val))
     except:
@@ -2412,7 +2422,7 @@ def KeyCmd_KeyPress(ev):
     # work-around: keysym <Key-bar> doesn't work on German keyboard
     KeyCmd_ExecAbsColumn()
     return "break"
-  elif not ev.char.isdigit() and re.match(r"[[:graph:][:space:]]", ev.char):
+  elif not ev.char.isdigit() and re.match(r'[\x21-\x7e]\s', ev.char): # [[:graph:]][[:space:]]
     return "break"
   else:
     return None
@@ -2423,9 +2433,11 @@ def KeyCmd_KeyPress(ev):
 # dialog window. The window is destroyed.
 #
 def KeyCmd_Leave():
+  global keycmd_ent
+
   wt.f1_t.focus_set()
   wt.dlg_key.destroy()
-  keycmd_ent = None
+  del keycmd_ent
 
 
 #
@@ -2492,7 +2504,7 @@ def KeyCmd_ExecCursorVertSet(where):
     return
 
   ClearStatusLine("keycmd")
-  CursorSetLine(wt.f1_t, where, keycmd_ent.get())
+  CursorSetLine(wt.f1_t, where, val)
   KeyCmd_Leave()
 
 
@@ -2560,7 +2572,7 @@ def KeyCmd_ExecSearch(is_fwd):
                             "Only %d of %d matches until %d of file" % (count, val, limit))
       count += 1
   else:
-    DisplayStatusLine("search", "error", "No pattern defined for search repeat")
+    DisplayStatusLine("search", "error", "No pattern defined for search repetition")
 
 
 #
@@ -2607,7 +2619,7 @@ def ParseFrameTickNo(pos, fn_cache=None):
       line = int(wt.f1_t.index(pos).split(".")[0])
       if (line >= prev_rslt[0]) and (line < prev_rslt[1]):
         # line is within the range of the most recently parsed frame
-        fn_cache[pos] = [prev_rslt[2], prev_rslt[3]]
+        fn_cache[pos] = prev_rslt[2:4]
         return fn_cache[pos]
 
   # catch Reg-Exp exceptions because patterns are supplied by user
@@ -2615,63 +2627,60 @@ def ParseFrameTickNo(pos, fn_cache=None):
     if tick_pat_sep != "":
       # determine frame number by searching forwards and backwards for frame boundaries
       # marked by a frame separator pattern; then within these boundaries search for FN
-      prefix = ""
-      tick_no = 0
+      fn = ""
+      tick_no = ""
       pos1 = wt.f1_t.search(tick_pat_sep, pos+" lineend", "1.0", regexp=1, backwards=1)
       if pos1 != "":
         dump = ExtractText(pos1, pos1 + " lineend")
-        match = re.match(r"[1-9][0-9]*", dump)
+        match = re.match(tick_pat_sep, dump)
         if match:
-          tick_no = match.group(0)
+          tick_no = match.group(1)
       else:
         pos1 = "1.0"
 
-      pos2 = wt.f1_t.search(tick_pat_sep, pos+" lineend", "end", regexp=1, forward=1)
+      pos2 = wt.f1_t.search(tick_pat_sep, pos+" lineend", "end", regexp=1, forwards=1)
       if pos2 == "": pos2 = "end"
 
       match_len = IntVar(tk, 0)
       pos3 = wt.f1_t.search(tick_pat_num, pos1, pos2, regexp=1, count=match_len)
-      fn_off = 0
-      if (pos3 == "") and (pos2 == "end"):
-        # line frame contains no FN: use last one +1
-        pos2 = pos1
-        pos1 = wt.f1_t.search(tick_pat_sep, pos1, "1.0", regexp=1, backwards=1)
-        pos3 = wt.f1_t.search(tick_pat_num, pos1, pos2, regexp=1, count=match_len)
-        fn_off = 1
-
       if pos3 != "":
         dump = ExtractText(pos3, "%s + %d chars" % (pos3, match_len.get()))
         match = re.match(tick_pat_num, dump)
         if match:
-          prefix = tick_no + " " + match.group(1)
+          fn = match.group(1)
 
-          if fn_cache is not None:
-            # add result to the cache
-            fn_cache[pos] = [tick_no, fn]
-            # add a special entry to the cache remembering the extent of the current frame
-            line1 = int(wt.f1_t.index(pos1).split(".")[0])
-            line2 = int(wt.f1_t.index(pos2).split(".")[0])
-            fn_cache[-1] = [line1, line2, tick_no, fn]
+      prefix = [fn, tick_no]
+
+      if fn_cache is not None:
+        # add result to the cache
+        fn_cache[pos] = prefix
+        # add a special entry to the cache remembering the extent of the current frame
+        line1 = int(wt.f1_t.index(pos1).split(".")[0])
+        line2 = int(wt.f1_t.index(pos2).split(".")[0])
+        fn_cache[-1] = [line1, line2, fn, tick_no]
 
     elif tick_pat_num != "":
       # determine frame number by searching backwards for the line holding the FN
-      prefix = ""
+      match_len = IntVar(tk, 0)
+      prefix = []
       pos3 = wt.f1_t.search(tick_pat_num, pos + " lineend", "1.0", regexp=1, backwards=1, count=match_len)
       if pos3 != "":
         dump = ExtractText(pos3, "%s + %d chars" % (pos3, match_len.get()))
         match = re.match(tick_pat_num, dump)
         if match:
-          prefix = match.group(1)
+          prefix = [match.group(1), ""]
 
-          if fn_cache is not None:
-            fn_cache[pos] = [tick_no, fn]
+      if fn_cache is not None:
+        fn_cache[pos] = prefix
 
     else:
       # FN parsing is disabled: omit the prefix
-      prefix = ""
+      prefix = []
 
   except re.error as e:
     print("Warning: tick pattern match error: " + e.msg, file=sys.stderr)
+  except IndexError as e:
+    print("Warning: tick pattern contains no capture", file=sys.stderr)
 
   return prefix
 
@@ -2689,7 +2698,7 @@ def Mark_Toggle(line, txt=""):
     if txt == "":
       fn_prefix = ParseFrameTickNo("insert")
       txt = ExtractText("%d.0" % line, "%d.0 lineend" % line).strip()
-      mark_list[line] = tick_str_prefix + fn_prefix + " " + txt
+      mark_list[line] = tick_str_prefix + " ".join(str(x) for x in fn_prefix) + " " + txt
     else:
       mark_list[line] = txt
 
@@ -2793,7 +2802,7 @@ def Mark_DeleteAll():
     msg = "Really delete %d bookmark%s?" % (count, pls)
     answer = messagebox.askokcancel(parent=tk, message=msg)
     if answer:
-      for line in keys(mark_list):
+      for line in list(mark_list.keys()): # copy keys before erasing from dict
         Mark_Toggle(line)
       mark_list_modified = False
 
@@ -2965,7 +2974,7 @@ def Mark_SaveFileAs():
                                             title="Select bookmark file",
                                             initialfile=os.path.basename(def_name),
                                             initialdir=os.path.dirname(def_name))
-    if filename != "":
+    if filename:
       Mark_SaveFile(filename)
 
   else:
@@ -2998,7 +3007,7 @@ def Mark_OfferSave():
 def MarkList_Insert(idx, line):
   global patlist, mark_list
 
-  tag_list = None
+  tag_list = []
   for tag in wt.f1_t.tag_names("%d.1" % line):
     if re.match(r"^tag\d+$", tag):
       tag_list.append(tag)
@@ -3701,6 +3710,7 @@ def SearchList_Open(raise_win):
   global dlg_srch_shown, dlg_srch_geom, dlg_srch_sel, dlg_srch_lines, dlg_srch_fn_cache
   global dlg_srch_show_fn, dlg_srch_show_tick, dlg_srch_tick_delta, dlg_srch_tick_root
   global dlg_srch_highlight, dlg_srch_undo, dlg_srch_redo
+  global tick_pat_sep, tick_pat_num
 
   PreemptBgTasks()
   if not dlg_srch_shown:
@@ -3717,6 +3727,16 @@ def SearchList_Open(raise_win):
       wt.dlg_srch.wm_title("Search matches - " + cur_filename)
     else:
       wt.dlg_srch.wm_title("Search matches")
+
+    if tick_pat_sep == "":
+      with_tick_num = DISABLED
+    else:
+      with_tick_num = NORMAL
+
+    if tick_pat_num == "":
+      with_fn = DISABLED
+    else:
+      with_fn = NORMAL
 
     wt.dlg_srch.wm_group(tk)
 
@@ -3748,12 +3768,12 @@ def SearchList_Open(raise_win):
     wt.dlg_srch_menubar_search.add_separator()
     wt.dlg_srch_menubar_search.add_command(label="Clear search highlight", command=SearchHighlightClear, accelerator="&")
     wt.dlg_srch_menubar_options = Menu(wt.dlg_srch_menubar, tearoff=0, postcommand=MenuPosted)
-    wt.dlg_srch_menubar_options.add_checkbutton(label="Show frame number", command=SearchList_ToggleFrameNo, variable=dlg_srch_show_fn, accelerator="ALT-f")
-    wt.dlg_srch_menubar_options.add_checkbutton(label="Show tick number", command=SearchList_ToggleFrameNo, variable=dlg_srch_show_tick, accelerator="ALT-t")
-    wt.dlg_srch_menubar_options.add_checkbutton(label="Show tick num. delta", command=SearchList_ToggleFrameNo, variable=dlg_srch_tick_delta, accelerator="ALT-d")
+    wt.dlg_srch_menubar_options.add_checkbutton(label="Show frame number", command=SearchList_ToggleFrameNo, state=with_fn, variable=dlg_srch_show_fn, accelerator="ALT-f")
+    wt.dlg_srch_menubar_options.add_checkbutton(label="Show tick number", command=SearchList_ToggleFrameNo, state=with_tick_num, variable=dlg_srch_show_tick, accelerator="ALT-t")
+    wt.dlg_srch_menubar_options.add_checkbutton(label="Show tick number delta", command=SearchList_ToggleFrameNo, state=with_tick_num, variable=dlg_srch_tick_delta, accelerator="ALT-d")
     wt.dlg_srch_menubar_options.add_checkbutton(label="Highlight search", command=SearchList_ToggleHighlight, variable=dlg_srch_highlight, accelerator="ALT-h")
     wt.dlg_srch_menubar_options.add_separator()
-    wt.dlg_srch_menubar_options.add_command(label="Select line as origin for tick delta", command=SearchList_SetFnRoot, accelerator="ALT-0")
+    wt.dlg_srch_menubar_options.add_command(label="Select line as origin for tick delta", command=SearchList_SetFnRoot, state=with_tick_num, accelerator="ALT-0")
 
     wt.dlg_srch_menubar.add_cascade(label="Control", menu=wt.dlg_srch_menubar_ctrl, underline=0)
     wt.dlg_srch_menubar.add_cascade(label="Edit", menu=wt.dlg_srch_menubar_edit, underline=0)
@@ -3944,7 +3964,7 @@ def SearchList_ContextMenu(xcoo, ycoo):
   if (len(sel) == 1) and ((tick_pat_sep != "") or (tick_pat_num != "")):
     line = dlg_srch_lines[sel[0]]
     fn = ParseFrameTickNo("$line.0", dlg_srch_fn_cache)
-    if fn != "":
+    if fn:
       if c > 0: wt.dlg_srch_ctxmen.add_separator()
       wt.dlg_srch_ctxmen.add_command(label="Select line as origin for tick delta", command=SearchList_SetFnRoot)
       c = 1
@@ -4038,27 +4058,23 @@ def SearchList_ToggleFrameNo():
   global dlg_srch_sel, dlg_srch_lines, dlg_srch_fn_cache, tick_pat_sep, tick_pat_num
   global dlg_srch_show_fn, dlg_srch_show_tick, dlg_srch_tick_delta, dlg_srch_tick_root
 
-  if (tick_pat_sep != "") or (tick_pat_num != ""):
-    if SearchList_SearchAbort():
-      if dlg_srch_tick_delta and (dlg_srch_tick_root == -1):
-        sel = dlg_srch_sel.TextSel_GetSelection()
-        if len(sel) > 0:
-          line = dlg_srch_lines[sel[0]]
-          fn = ParseFrameTickNo("%d.0" % line, dlg_srch_fn_cache)
-          if fn != "":
-            dlg_srch_tick_root = fn.split(" ")[0]
-          else:
-            DisplayStatusLine("search", "warn", "Failed to extract a frame number from the selected line")
-        else:
-          DisplayStatusLine("search", "warn", "Please select a line as origin for tick deltas")
+  if tick_pat_num == "":
+    DisplayStatusLine("search", "error", "No patterns defined in the RC file for parsing frame numbers")
+    dlg_srch_tick_delta.set(False)
+    dlg_srch_show_tick.set(False)
+    dlg_srch_show_fn.set(False)
 
-      SearchList_Refill()
+  elif (tick_pat_sep == "") and (dlg_srch_show_tick.get() or dlg_srch_tick_delta.get()):
+    DisplayStatusLine("search", "error", "No tick separator pattern defined in the RC file")
+    dlg_srch_tick_delta.set(False)
+    dlg_srch_show_tick.set(False)
 
   else:
-    DisplayStatusLine("search", "error", "No patterns defined in the RC file for parsing frame numbers")
-    dlg_srch_tick_delta = 0
-    dlg_srch_show_tick = 0
-    dlg_srch_show_fn = 0
+    if SearchList_SearchAbort():
+      if dlg_srch_tick_delta.get() and (dlg_srch_tick_root == -1):
+        SearchList_SetFnRoot()
+      else:
+        SearchList_Refill()
 
 
 #
@@ -4071,23 +4087,27 @@ def SearchList_SetFnRoot():
   global dlg_srch_sel, dlg_srch_lines, dlg_srch_fn_cache, tick_pat_sep, tick_pat_num
   global dlg_srch_show_fn, dlg_srch_show_tick, dlg_srch_tick_delta, dlg_srch_tick_root
 
-  if (tick_pat_sep != "") or (tick_pat_num != ""):
+  if tick_pat_sep != "":
     if SearchList_SearchAbort():
       sel = dlg_srch_sel.TextSel_GetSelection()
       if len(sel) > 0:
         line = dlg_srch_lines[sel[0]]
         # extract the frame number from the text in the main window around the referenced line
         fn = ParseFrameTickNo("%d.0" % line, dlg_srch_fn_cache)
-        if fn != "":
-          dlg_srch_tick_delta = 1
-          dlg_srch_tick_root = fn.split(" ")[0]
-          SearchList_Refill()
+        if fn:
+          try:
+            dlg_srch_tick_delta.set(True)
+            dlg_srch_tick_root = int(fn[1] if fn[1] else fn[0])
+            DisplayStatusLine("search", "info", "Selected root number: " + str(dlg_srch_tick_root))
+            SearchList_Refill()
+          except:
+            DisplayStatusLine("search", "warn", "Match returned by configured pattern is not a number")
         else:
           DisplayStatusLine("search", "error", "Select a line as origin for tick deltas")
       else:
         DisplayStatusLine("search", "error", "Select a line as origin for tick deltas")
   else:
-    DisplayStatusLine("search", "error", "No patterns defined in the RC file for parsing frame numbers")
+    DisplayStatusLine("search", "error", "No tick separator pattern defined in the RC file")
 
 
 #
@@ -4097,7 +4117,7 @@ def SearchList_SetFnRoot():
 def SearchList_ToggleHighlight():
   global dlg_srch_highlight, tlb_cur_hall_opt
 
-  if dlg_srch_highlight:
+  if dlg_srch_highlight.get():
     # search highlighting was enabled:
     # force update of global highlighting (in main and search result windows)
     tlb_cur_hall_opt = ["", []]
@@ -4515,7 +4535,7 @@ def SearchList_BgSearchTagsLoop(tag_list, tag_idx, direction, line, loop_cnt):
       SearchList_SearchProgress(ratio)
 
       loop_cnt += 1
-      tid_search_list = tk.after(idle, lambda: SearchList_BgSearchTagsLoop(tag_list, tag_idx, direction, line, loop_cnt))
+      tid_search_list = tk.after_idle(lambda: SearchList_BgSearchTagsLoop(tag_list, tag_idx, direction, line, loop_cnt))
 
     else:
       SearchList_BgSearch_FinalizeUndoList(dlg_srch_undo)
@@ -4527,7 +4547,7 @@ def SearchList_BgSearchTagsLoop(tag_list, tag_idx, direction, line, loop_cnt):
         else:
           line = 1
 
-        tid_search_list = tk.after(idle, lambda: SearchList_BgSearchTagsLoop(tag_list, tag_idx, line, direction, loop_cnt))
+        tid_search_list = tk.after_idle(lambda: SearchList_BgSearchTagsLoop(tag_list, tag_idx, line, direction, loop_cnt))
       else:
         tid_search_list = None
         SafeDestroy(wt.dlg_srch_slpro)
@@ -4850,7 +4870,7 @@ def SearchList_HighlightLine(tag, line):
   global tid_high_init
 
   if dlg_srch_shown:
-    if dlg_srch_highlight or (tid_high_init is not None):
+    if dlg_srch_highlight.get() or (tid_high_init is not None):
       idx = SearchList_GetLineIdx(line)
       if (idx < len(dlg_srch_lines)) and (dlg_srch_lines[idx] == line):
         try:
@@ -4944,42 +4964,42 @@ def SearchList_ToggleMark():
 def SearchList_InsertLine(line_idx, ins_pos):
   global dlg_srch_show_fn, dlg_srch_show_tick, dlg_srch_tick_delta, dlg_srch_tick_root
   global dlg_srch_fn_cache
-  global tick_str_prefix, img_marker, mark_list
+  global tick_pat_sep, tick_str_prefix, img_marker, mark_list
 
   # copy text content and tags out of the main window
   pos = "%d.0" % line_idx
   dump = ExtractText(pos + " linestart", pos + " lineend")
   tag_list = [x for x in wt.f1_t.tag_names(pos) if x.startswith("tag")]
 
-  if dlg_srch_tick_delta or dlg_srch_show_fn or dlg_srch_show_tick:
+  if dlg_srch_tick_delta.get() or dlg_srch_show_fn.get() or dlg_srch_show_tick.get():
     fn = ParseFrameTickNo(pos, dlg_srch_fn_cache)
-    if fn != "":
-      try:
-        tick_no = int(fn.split(" ")[0])
-      except:
-        tick_no = 0
+    if fn:
+        fn = fn[0]
+        tick_no = fn[1]
     else:
-      tick_no = 0
+        fn = "?"
+        tick_no = "?"
 
     prefix = ""
-    if dlg_srch_tick_delta:
-      prefix = str(tick_no - dlg_srch_tick_root)
+    if dlg_srch_tick_delta.get():
+      try:
+        prefix = str(int(tick_no) - dlg_srch_tick_root)
+      except:
+        prefix = "?"
 
-    if dlg_srch_show_tick:
+    if dlg_srch_show_tick.get():
       if prefix != "":
-        prefix = prefix + ":" + str(tick_no)
-      else:
-        prefix = prefix + str(tick_no)
+        prefix += ":"
+      prefix += tick_no
 
-    if dlg_srch_show_fn and (fn != ""):
+    if dlg_srch_show_fn.get():
       if prefix != "":
-        prefix = prefix + ":"
-      prefix = prefix + tick_str_prefix + fn.split(" ")[1]
+        prefix += ":"
+      prefix += tick_str_prefix + fn
 
     prefix = "   " + prefix + " "
   else:
     prefix = "   "
-
 
   # display the text
   wt.dlg_srch_f1_l.insert(ins_pos, prefix, [prefix], dump + "\n", tag_list)
@@ -5012,11 +5032,9 @@ def SearchList_BgRefillLoop(off):
     tid_search_list = tk.after(100, lambda: SearchList_BgRefillLoop(off))
 
   elif dlg_srch_shown:
-    end_off = off + 399
-    if end_off >= len(dlg_srch_lines):
-      end_off = len(dlg_srch_lines) - 1
-
-    line_frag = dlg_srch_lines[off : end_off + 1]
+    end_off = off + 400               # end_off is actually last+1
+    if end_off > len(dlg_srch_lines): # not >=
+      end_off = len(dlg_srch_lines)
 
     # replace each line separately with the new format
     while off < end_off:
@@ -5035,7 +5053,7 @@ def SearchList_BgRefillLoop(off):
       ratio = 100.0*off // len(dlg_srch_lines)
       SearchList_SearchProgress(ratio)
 
-      tid_search_list = tk.after(idle, lambda: SearchList_BgRefillLoop(off))
+      tid_search_list = tk.after_idle(lambda: SearchList_BgRefillLoop(off))
 
     else:
       tid_search_list = None
@@ -5077,9 +5095,9 @@ def SearchList_GetLen():
 # + bottom_l: this line and all below have been removed, or 0 if none
 #
 def SearchList_AdjustLineNums(top_l, bottom_l):
-  global dlg_srch_sel, dlg_srch_lines, dlg_srch_undo, dlg_srch_redo, dlg_srch_fn_cache
+  global dlg_srch_shown, dlg_srch_lines, dlg_srch_undo, dlg_srch_redo, dlg_srch_fn_cache
 
-  if dlg_srch_lines:
+  if dlg_srch_shown:
     if bottom_l == 0:
       # delete from 1 ... topl
       idx = SearchList_GetLineIdx(top_l)
@@ -5148,7 +5166,7 @@ def SearchList_SaveFileAs(lnum_only):
                                             title="Select output file",
                                             initialfile=os.path.basename(def_name),
                                             initialdir=os.path.dirname(def_name))
-    if filename != "":
+    if filename:
       SearchList_SaveFile(filename, lnum_only)
 
   else:
@@ -5256,7 +5274,7 @@ def SearchList_BgLoadLoop(line_list, off):
       ratio = 100.0*off // len(line_list)
       SearchList_SearchProgress(ratio)
 
-      tid_search_list = tk.after(idle, lambda: SearchList_BgLoadLoop(line_list, off))
+      tid_search_list = tk.after_idle(lambda: SearchList_BgLoadLoop(line_list, off))
     else:
       SearchList_BgSearch_FinalizeUndoList(dlg_srch_undo)
       tid_search_list = None
@@ -5722,7 +5740,8 @@ def TagList_AddSearch(parent):
     if dup_idx >= 0:
       answer = messagebox.showwarning(parent=parent, type="yesnocancel",
                  message="The same search expression is already used - overwrite this entry?")
-      if answer == "cancel": return
+      if answer == "cancel":
+        return
 
     if answer == "no":
       # append new entry
@@ -5769,7 +5788,7 @@ def TagList_CopyToSearch(pat_idx):
   global patlist
   global tlb_find_focus, tlb_find, tlb_regexp, tlb_case
 
-  if (len(pat_idx) == 1) and (pat_idx < len(patlist)):
+  if pat_idx < len(patlist):
     w = patlist[pat_idx]
 
     # force focus into find entry field & suppress "Enter" event
@@ -5793,7 +5812,7 @@ def TagList_CopyFromSearch(pat_idx):
 
   if pat_idx < len(patlist):
     answer = messagebox.askyesno(type="okcancel", parent=wt.dlg_tags, message="Please confirm overwriting the search pattern for this entry? This cannot be undone")
-    if answer == "ok":
+    if answer:
       w = patlist[pat_idx]
       w[0] = tlb_find.get()
       w[1] = int(tlb_regexp.get())
@@ -5826,7 +5845,7 @@ def TagList_Remove(pat_sel):
       msg = "Really remove all %d selected entries? This cannot be undone" % cnt
 
     answer = messagebox.askyesno(parent=wt.dlg_tags, message=msg)
-    if answer == "yes":
+    if answer:
       for idx in sorted(set(pat_sel), reverse=True):
         if idx < len(patlist):
           tagname = patlist[idx][4]
@@ -6704,7 +6723,7 @@ def OpenAboutDialog():
     wt.about_name = Label(wt.about, text="Trace Browser")
     wt.about_name.pack(side=TOP, pady=8)
 
-    wt.about_copyr1 = Label(wt.about, text="Copyright (C) 2007-2010,2019-2020 Th. Zoerner", font=font_normal)
+    wt.about_copyr1 = Label(wt.about, text="Copyright (C) 2007-2010,2019-2022 Th. Zoerner", font=font_normal)
     wt.about_copyr1.pack(side=TOP)
 
     msg ="""
@@ -6812,7 +6831,7 @@ class TextSel(object):
 
     self.TextSel_ShowSelection()
 
-    if do_callback is not None:
+    if do_callback:
       self.cb_proc(self.sel)
 
 
@@ -7826,7 +7845,7 @@ def MenuCmd_OpenFile():
   Mark_OfferSave()
 
   filename = filedialog.askopenfilename(parent=tk, filetypes=(("trace", "out.*"), ("all", "*")))
-  if filename != "":
+  if filename:
     DiscardContent()
     tk.after_idle(lambda: LoadFile(filename))
 
@@ -8502,11 +8521,17 @@ col_palette = [
   "#eeee8e",
   "#ffffff"]
 
-# These variables hold patterns which are used to parse timestamps out of
-# the text content: the first two are regular expressions, the third a
-# plain string; set patterns to empty strings to disable the feature
-tick_pat_sep = ""
+# These variables hold patterns which are used to parse frame numbers or
+# timestamps out of the text content, for use in the "Search list" dialog: The
+# first two are regular expressions, the third a plain string; set patterns to
+# empty strings to disable the feature.  Either specify both patterns as
+# non-empty, or only the first. Both patterns have to include a capture (i.e.
+# parenthesis), which will be used to extract the portion of text to be
+# displayed as marker, when enabled via "Options" menu in the search list
+# dialog. The extracted text may also be non-numerical, but then the "delta"
+# feature will obviously not work.
 tick_pat_num = ""
+tick_pat_sep = ""
 tick_str_prefix = ""
 
 # This list stores text patterns and associated colors for color-highlighting
