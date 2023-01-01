@@ -3,13 +3,12 @@
 ######################################################################
 
 # Steps:
-#   qmake -project
+#   qmake -project    <-- Creates this file, therefore DO NOT run that
 #   qmake
 #   make
 
 TEMPLATE += app
 QT = core gui widgets
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 TARGET = trowser
 #INCLUDEPATH += .
 

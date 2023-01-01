@@ -39,6 +39,7 @@
 #include <QWidget>
 #include <QAbstractItemModel>
 #include <QPainter>
+#include <QPainterPath>
 #include <QDebug>
 
 #include <cstdio>

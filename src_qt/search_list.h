@@ -150,7 +150,7 @@ private:
         bool            bookmarkMarkup = false;
         bool            lineIdx = false;
         bool            lineDelta = false;
-        ParseColumns    custom = 0;
+        ParseColumns    custom;
     };
     static SearchListShowCfg s_prevShowCfg;
 

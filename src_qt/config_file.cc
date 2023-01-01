@@ -293,7 +293,7 @@ QString ConfigFile::getRcPath()
  */
 QFileDevice::Permissions ConfigFile::backupConfig(QFile& fh)
 {
-    QFileDevice::Permissions bakPerm = 0;
+    QFileDevice::Permissions bakPerm;
 
     if (m_rcFileBackedup == false)
     {
@@ -351,7 +351,7 @@ void ConfigFile::writeConfig()
                    "#\n";
             out << doc.toJson();
 
-            out << flush;
+            out << Qt::flush;
             if (out.status() == QTextStream::Ok)
             {
                 // set permissions if creating a new file after moving original RC file

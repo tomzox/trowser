@@ -349,7 +349,7 @@ bool Bookmarks::saveFile(QWidget * parent, const QString& fileName)
         for (const auto& it : m_bookmarks)
             out << (it.first + 1) << " " << it.second << "\n";
 
-        out << flush;
+        out << Qt::flush;
         if (out.status() != QTextStream::Ok)
         {
             QString msg = QString("Error writing bookmark file ") + fileName + ": " + fh.errorString();

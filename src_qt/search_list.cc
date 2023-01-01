@@ -280,7 +280,7 @@ public:
     }
     ParseColumns getCustomColumns() const
     {
-        return (m_parser.get() ? m_parser->getColumns() : ParseColumns(0));
+        return (m_parser.get() ? m_parser->getColumns() : ParseColumns{});
     }
 
     // implementation of HighlightViewModelIf interfaces
@@ -1741,7 +1741,7 @@ void SearchList::configureColumnVisibility()
         m_table->hideColumn(SearchListModel::COL_IDX_CUST_FRM_DELTA);
 
     // any non-default columns shown -> display header
-    if (m_showCfg.lineDelta || m_showCfg.lineIdx || (m_showCfg.custom != ParseColumns(0)))
+    if (m_showCfg.lineDelta || m_showCfg.lineIdx || (m_showCfg.custom != ParseColumns{}))
         m_table->horizontalHeader()->setVisible(true);
     else
         m_table->horizontalHeader()->setVisible(false);
@@ -1851,7 +1851,7 @@ void SearchList::cmdSetDeltaColRoot(bool)
     bool done = false;
 
     // auto-enable line index if no delta column is configured
-    if (m_showCfg.lineDelta || (m_model->getCustomColumns() == ParseColumns(0)))
+    if (m_showCfg.lineDelta || (m_model->getCustomColumns() == ParseColumns{}))
     {
         cmdSetLineIdxRoot(true);   // dummy parameter
         done = true;
@@ -2817,7 +2817,7 @@ void SearchList::saveFile(const QString& fileName, bool lnum_only)
                 out << (line + 1) << '\t' << block.text() << '\n';
             }
         }
-        out << flush;
+        out << Qt::flush;
         if (out.status() != QTextStream::Ok)
         {
             QString msg = QString("Error writing file ") + fileName + ": " + fh->errorString();

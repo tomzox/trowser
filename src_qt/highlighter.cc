@@ -564,7 +564,7 @@ void Highlighter::setRcValues(const QJsonValue& val)
 
 
 /**
- * This external interface is used by the pattern configuration dialog fpr
+ * This external interface is used by the pattern configuration dialog for
  * retrieving the entire list of user-defined pattern definitions (i.e.
  * special-purpose patterns at the front of the list are omitted). The exported
  * data structure differs from the internal one, as it lacks the character

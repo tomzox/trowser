@@ -124,8 +124,8 @@ def CreateMainWindow():
   wt.menubar_ctrl.add_command(label="Open file...", command=lambda:MenuCmd_OpenFile())
   wt.menubar_ctrl.add_command(label="Reload current file", state=DISABLED, command=lambda:MenuCmd_Reload())
   wt.menubar_ctrl.add_separator()
-  wt.menubar_ctrl.add_command(label="Discard above cursor...", command=lambda:MenuCmd_Discard(0))
-  wt.menubar_ctrl.add_command(label="Discard below cursor...", command=lambda:MenuCmd_Discard(1))
+  wt.menubar_ctrl.add_command(label="Discard above cursor...", command=lambda:MenuCmd_Discard(False))
+  wt.menubar_ctrl.add_command(label="Discard below cursor...", command=lambda:MenuCmd_Discard(True))
   wt.menubar_ctrl.add_separator()
   wt.menubar_ctrl.add_command(label="Font selection...", command=lambda:FontList_OpenDialog())
   wt.menubar_ctrl.add_separator()
@@ -135,9 +135,9 @@ def CreateMainWindow():
   wt.menubar_search.add_command(label="Search history...", command=lambda:SearchHistory_Open())
   wt.menubar_search.add_command(label="Edit highlight patterns...", command=lambda:TagList_OpenDialog())
   wt.menubar_search.add_separator()
-  wt.menubar_search.add_command(label="List all search matches...", command=lambda:SearchAll(1, 0), accelerator="ALT-a")
-  wt.menubar_search.add_command(label="List all matches above...", command=lambda:SearchAll(1, 1), accelerator="ALT-P")
-  wt.menubar_search.add_command(label="List all matches below...", command=lambda:SearchAll(1, 1), accelerator="ALT-N")
+  wt.menubar_search.add_command(label="List all search matches...", command=lambda:SearchAll(True, 0), accelerator="ALT-a")
+  wt.menubar_search.add_command(label="List all matches above...", command=lambda:SearchAll(True, 1), accelerator="ALT-P")
+  wt.menubar_search.add_command(label="List all matches below...", command=lambda:SearchAll(True, 1), accelerator="ALT-N")
   wt.menubar_search.add_separator()
   wt.menubar_search.add_command(label="Clear search highlight", command=lambda:SearchHighlightClear(), accelerator="&")
   wt.menubar_search.add_separator()
@@ -148,8 +148,8 @@ def CreateMainWindow():
   wt.menubar_mark.add_command(label="List bookmarks", command=lambda:MarkList_OpenDialog())
   wt.menubar_mark.add_command(label="Delete all bookmarks", command=lambda:Mark_DeleteAll())
   wt.menubar_mark.add_separator()
-  wt.menubar_mark.add_command(label="Jump to prev. bookmark", command=lambda:Mark_JumpNext(0), accelerator="'-")
-  wt.menubar_mark.add_command(label="Jump to next bookmark", command=lambda:Mark_JumpNext(1), accelerator="'+")
+  wt.menubar_mark.add_command(label="Jump to prev. bookmark", command=lambda:Mark_JumpNext(False), accelerator="'-")
+  wt.menubar_mark.add_command(label="Jump to next bookmark", command=lambda:Mark_JumpNext(True), accelerator="'+")
   wt.menubar_mark.add_separator()
   wt.menubar_mark.add_command(label="Read bookmarks from file...", command=lambda:Mark_ReadFileFrom())
   wt.menubar_mark.add_command(label="Save bookmarks to file...", command=lambda:Mark_SaveFileAs())
@@ -220,9 +220,9 @@ def CreateMainWindow():
   wt.f1_t.bind("<Alt-Key-n>", lambda e: BindCallKeyClrBreak(lambda:SearchNext(1)))
   wt.f1_t.bind("<Alt-Key-p>", lambda e: BindCallKeyClrBreak(lambda:SearchNext(0)))
   wt.f1_t.bind("<Alt-Key-h>", lambda e: BindCallKeyClrBreak(lambda:SearchHighlightOnOff()))
-  wt.f1_t.bind("<Alt-Key-a>", lambda e: BindCallKeyClrBreak(lambda:SearchAll(0, 0)))
-  wt.f1_t.bind("<Alt-Key-N>", lambda e: BindCallKeyClrBreak(lambda:SearchAll(0, 1)))
-  wt.f1_t.bind("<Alt-Key-P>", lambda e: BindCallKeyClrBreak(lambda:SearchAll(0, -1)))
+  wt.f1_t.bind("<Alt-Key-a>", lambda e: BindCallKeyClrBreak(lambda:SearchAll(False, 0)))
+  wt.f1_t.bind("<Alt-Key-N>", lambda e: BindCallKeyClrBreak(lambda:SearchAll(False, 1)))
+  wt.f1_t.bind("<Alt-Key-P>", lambda e: BindCallKeyClrBreak(lambda:SearchAll(False, -1)))
   # misc
   KeyCmdBind(wt.f1_t, "i", lambda: SearchList_CopyCurrentLine())
   KeyCmdBind(wt.f1_t, "u", lambda: SearchList_Undo())
@@ -248,7 +248,7 @@ def CreateMainWindow():
   wt.fs_mh = Menu(tearoff=0)
   wt.f2_bn = Button(text="Next", command=lambda:SearchNext(1), underline=0, pady=2)
   wt.f2_bp = Button(text="Prev.", command=lambda:SearchNext(0), underline=0, pady=2)
-  wt.f2_bl = Button(text="All", command=lambda:SearchAll(1, 0), underline=0, pady=2)
+  wt.f2_bl = Button(text="All", command=lambda:SearchAll(True, 0), underline=0, pady=2)
   wt.f2_bh = Checkbutton(text="Highlight all", variable=tlb_hall, command=lambda:SearchHighlightSettingChange, underline=0)
   wt.f2_cb = Checkbutton(text="Match case", variable=tlb_case, command=lambda:SearchHighlightSettingChange, underline=6)
   wt.f2_re = Checkbutton(text="Reg.Exp.", variable=tlb_regexp, command=lambda:SearchHighlightSettingChange, underline=4)
@@ -261,10 +261,10 @@ def CreateMainWindow():
   wt.f2_e.bind("<Return>", lambda e: BindCallAndBreak(SearchReturn))
   wt.f2_e.bind("<FocusIn>", lambda e: SearchInit())
   wt.f2_e.bind("<FocusOut>", lambda e: SearchLeave())
-  wt.f2_e.bind("<Control-n>", lambda e: BindCallAndBreak(lambda: SearchIncrement(1, 0)))
-  wt.f2_e.bind("<Control-N>", lambda e: BindCallAndBreak(lambda: SearchIncrement(0, 0)))
-  wt.f2_e.bind("<Key-Up>", lambda e: BindCallAndBreak(lambda: Search_BrowseHistory(1)))
-  wt.f2_e.bind("<Key-Down>", lambda e: BindCallAndBreak(lambda: Search_BrowseHistory(0)))
+  wt.f2_e.bind("<Control-n>", lambda e: BindCallAndBreak(lambda: SearchIncrement(1, False)))
+  wt.f2_e.bind("<Control-N>", lambda e: BindCallAndBreak(lambda: SearchIncrement(0, False)))
+  wt.f2_e.bind("<Key-Up>", lambda e: BindCallAndBreak(lambda: Search_BrowseHistory(True)))
+  wt.f2_e.bind("<Key-Down>", lambda e: BindCallAndBreak(lambda: Search_BrowseHistory(False)))
   wt.f2_e.bind("<Control-d>", lambda e: BindCallAndBreak(Search_Complete))
   wt.f2_e.bind("<Control-D>", lambda e: BindCallAndBreak(Search_CompleteLeft))
   wt.f2_e.bind("<Control-x>", lambda e: BindCallAndBreak(Search_RemoveFromHistory))
@@ -274,9 +274,9 @@ def CreateMainWindow():
   #wt.f2_e.bind("<Control-H>", lambda e: BindCallAndBreak(SearchHistory_Open))
   wt.f2_e.bind("<Alt-Key-n>", lambda e: BindCallAndBreak(lambda: SearchNext(1)))
   wt.f2_e.bind("<Alt-Key-p>", lambda e: BindCallAndBreak(lambda: SearchNext(0)))
-  wt.f2_e.bind("<Alt-Key-a>", lambda e: BindCallAndBreak(lambda: SearchAll(0, 0)))
-  wt.f2_e.bind("<Alt-Key-N>", lambda e: BindCallAndBreak(lambda: SearchAll(0, 1)))
-  wt.f2_e.bind("<Alt-Key-P>", lambda e: BindCallAndBreak(lambda: SearchAll(0, -1)))
+  wt.f2_e.bind("<Alt-Key-a>", lambda e: BindCallAndBreak(lambda: SearchAll(False, 0)))
+  wt.f2_e.bind("<Alt-Key-N>", lambda e: BindCallAndBreak(lambda: SearchAll(False, 1)))
+  wt.f2_e.bind("<Alt-Key-P>", lambda e: BindCallAndBreak(lambda: SearchAll(False, -1)))
   wt.f2_e.bind("<Alt-Key-c>", lambda e: BindCallAndBreak(lambda: SearchHighlightToggleVar(tlb_case)))
   wt.f2_e.bind("<Alt-Key-e>", lambda e: BindCallAndBreak(lambda: SearchHighlightToggleVar(tlb_regexp)))
   tlb_find.trace("w", SearchVarTrace) # add variable tlb_find write SearchVarTrace
@@ -788,7 +788,7 @@ def Search_Atomic(pat, is_re, use_case, is_fwd, is_changed):
 
     tlb_last_dir = is_fwd
     search_opt = Search_GetOptions(pat, is_re, use_case, tlb_last_dir)
-    start_pos = Search_GetBase(is_fwd, 0)
+    start_pos = Search_GetBase(is_fwd, False)
     CursorJumpPushPos(wt.f1_t)
 
     if is_fwd:
@@ -907,7 +907,7 @@ def SearchVarTrace(name1, name2, op):
   global tlb_last_dir
 
   if tid_search_inc is not None: tk.after_cancel(tid_search_inc)
-  tid_search_inc = tk.after(50, lambda: SearchIncrement(tlb_last_dir, 1))
+  tid_search_inc = tk.after(50, lambda: SearchIncrement(tlb_last_dir, True))
 
 
 #
@@ -989,13 +989,13 @@ def SearchExprCheck(pat, is_re, display):
   if is_re:
     try:
       re.compile(pat)
-      return 1
+      return True
     except re.error as e:
       if display:
         DisplayStatusLine("search", "error", "Syntax error in search expression: " + e.msg)
-      return 0
+      return False
   else:
-    return 1
+    return True
 
 
 #
@@ -1215,7 +1215,7 @@ def SearchLeave():
 
   if focus_nam is not None:
     pat = tlb_find.get()
-    if SearchExprCheck(pat, tlb_regexp.get(), 0):
+    if SearchExprCheck(pat, tlb_regexp.get(), False):
       if tlb_hall.get():
         SearchHighlightUpdateCurrent()
 
@@ -1238,7 +1238,7 @@ def SearchAbort():
   global tlb_find, tlb_regexp, tlb_case, tlb_last_wid
 
   pat = tlb_find.get()
-  if SearchExprCheck(pat, tlb_regexp.get(), 0):
+  if SearchExprCheck(pat, tlb_regexp.get(), False):
     Search_AddHistory(pat, tlb_regexp.get(), tlb_case.get())
 
   tlb_find.set("")
@@ -1414,7 +1414,7 @@ def Search_Complete():
       else:
         opt = 0
 
-      if SearchExprCheck(tlb_find.get(), tlb_regexp.get(), 1):
+      if SearchExprCheck(tlb_find.get(), tlb_regexp.get(), True):
         match = re.match("^" + tlb_find.get(), dump, opt)
         if match:
           off = len(match.group(0))
@@ -2229,9 +2229,9 @@ def KeyCmd(wid, char):
       elif char == "$":
         CursorGotoLine(wid, "end")
       elif char == "+":
-        Mark_JumpNext(1)
+        Mark_JumpNext(True)
       elif char == "-":
-        Mark_JumpNext(0)
+        Mark_JumpNext(False)
       else:
         DisplayStatusLine("keycmd", "error", "Undefined key sequence \"'%s\"" % char)
 
@@ -3628,7 +3628,7 @@ def SearchHistory_SearchNext(is_fwd):
     # clear search entry field to avoid confusion (i.e. showing different expr.)
     tlb_find.set("")
 
-    if SearchExprCheck(pat, is_re, 1):
+    if SearchExprCheck(pat, is_re, True):
       found = Search_Atomic(pat, is_re, use_case, is_fwd, True)
       if found == "":
         Search_HandleNoMatch(pat, is_fwd)
@@ -3660,7 +3660,7 @@ def SearchHistory_SearchAll(direction):
     for hl in pat_list:
       Search_AddHistory(hl[0], hl[1], hl[2])
 
-    SearchList_Open(0)
+    SearchList_Open(False)
     SearchList_StartSearchAll(pat_list, 1, direction)
   else:
     DisplayStatusLine("search", "error", "No expression selected")
@@ -3810,7 +3810,7 @@ def SearchList_Open(raise_win):
     KeyCmdBind(wt.dlg_srch_f1_l, "u", SearchList_Undo)
     wt.dlg_srch_f1_l.bind("<Control-Key-r>", lambda e: SearchList_Redo())
     wt.dlg_srch_f1_l.bind("<space>", lambda e:SearchList_SelectionChange(dlg_srch_sel.TextSel_GetSelection()))
-    wt.dlg_srch_f1_l.bind("<Escape>", lambda e:SearchList_SearchAbort(0))
+    wt.dlg_srch_f1_l.bind("<Escape>", lambda e:SearchList_SearchAbort(False))
     wt.dlg_srch_f1_l.bind("<Alt-Key-h>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("highlight")))
     wt.dlg_srch_f1_l.bind("<Alt-Key-f>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("show_fn")))
     wt.dlg_srch_f1_l.bind("<Alt-Key-t>", lambda e:BindCallAndBreak(lambda:SearchList_ToggleOpt("show_tick")))
@@ -3847,7 +3847,7 @@ def SearchList_Open(raise_win):
 def SearchList_Close():
   global dlg_srch_sel, dlg_srch_lines, dlg_srch_fn_cache, dlg_srch_shown
 
-  SearchList_SearchAbort(0)
+  SearchList_SearchAbort(False)
 
   dlg_srch_sel = None
   dlg_srch_lines = []
@@ -3865,7 +3865,7 @@ def SearchList_Clear():
   global dlg_srch_undo, dlg_srch_redo
 
   if dlg_srch_shown:
-    SearchList_SearchAbort(0)
+    SearchList_SearchAbort(False)
 
     if len(dlg_srch_lines) > 0:
       dlg_srch_undo.append([-1, [dlg_srch_lines[-1]]])
@@ -4584,11 +4584,11 @@ def SearchList_SearchProgress(ratio):
 # user selects "Cancel", else it returns 1.  The caller MUST check the
 # return value if parameter "do_warn" is TRUE.
 #
-def SearchList_SearchAbort(do_warn=1):
+def SearchList_SearchAbort(do_warn=True):
   global tid_search_list, dlg_srch_undo, dlg_srch_redo
   global vwait_search_complete
 
-  cancel_new = 0
+  cancel_new = False
 
   if tid_search_list is not None:
     if do_warn:
@@ -4795,7 +4795,7 @@ def SearchList_CopyCurrentLine():
   global dlg_srch_undo, dlg_srch_redo
 
   if not dlg_srch_shown:
-    SearchList_Open(0)
+    SearchList_Open(False)
 
   if dlg_srch_shown and SearchList_SearchAbort():
     pos12 = wt.f1_t.tag_nextrange("sel", "1.0")
@@ -5525,7 +5525,7 @@ def TagList_Search(is_fwd):
     Search_AddHistory(w[0], w[1], w[2])
 
     tagnam = w[4]
-    start_pos = Search_GetBase(is_fwd, 0)
+    start_pos = Search_GetBase(is_fwd, False)
 
     if is_fwd:
       pos12 = wt.f1_t.tag_nextrange(tagnam, start_pos)
@@ -5567,7 +5567,7 @@ def TagList_SearchList(direction):
       tag_list.append(w[4])
 
     ClearStatusLine("search")
-    SearchList_Open(0)
+    SearchList_Open(False)
     SearchList_StartSearchTags(tag_list, direction)
 
   else:
