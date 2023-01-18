@@ -988,9 +988,13 @@ def Search_IncMatch(pos, pat, is_fwd, is_changed):
 def SearchExprCheck(pat, is_re, display):
   if is_re:
     try:
-      re.compile(pat)
+      # Text widget uses Tcl "re_syntax" which slightly differs from Python "re"
+      #re.compile(pat)
+      foo = Text(tk)
+      foo.search(pat, 1.0, regexp=True)
       return True
-    except re.error as e:
+    #except re.error as e:
+    except Exception as e:
       if display:
         DisplayStatusLine("search", "error", "Syntax error in search expression: " + e.msg)
       return False
@@ -1247,7 +1251,7 @@ def SearchAbort():
   wt.f1_t.focus_set()
 
   if tlb_last_wid is not None:
-    tk.focus.set(tlb_last_wid)
+    tk.focus_set(tlb_last_wid)
 
     top_wid = tlb_last_wid.winfo_toplevel()
     top_wid.lift()
@@ -1539,6 +1543,7 @@ def SearchCharInLine(char, dir):
 def Search_EscapeSpecialChars(word, is_re):
   if is_re:
     #return re.escape(word) # safer, but also escapes space
+    # Note target is Tcl's "re_syntax", not Python "re"
     return re.sub(r"([^\w\s_\-\:\=\%\"\!\'\;\,\#\/\<\>\@])", r"\\\1", word)
   else:
     return word
@@ -2632,6 +2637,7 @@ def ParseFrameTickNo(pos, fn_cache=None):
       pos1 = wt.f1_t.search(tick_pat_sep, pos+" lineend", "1.0", regexp=1, backwards=1)
       if pos1 != "":
         dump = ExtractText(pos1, pos1 + " lineend")
+        # FIXME Should not use Python "re" as syntax may be incompatible
         match = re.match(tick_pat_sep, dump)
         if match:
           tick_no = match.group(1)
@@ -2645,6 +2651,8 @@ def ParseFrameTickNo(pos, fn_cache=None):
       pos3 = wt.f1_t.search(tick_pat_num, pos1, pos2, regexp=1, count=match_len)
       if pos3 != "":
         dump = ExtractText(pos3, "%s + %d chars" % (pos3, match_len.get()))
+
+        # FIXME Should not use Python "re" as syntax may be incompatible
         match = re.match(tick_pat_num, dump)
         if match:
           fn = match.group(1)
@@ -3963,7 +3971,7 @@ def SearchList_ContextMenu(xcoo, ycoo):
 
   if (len(sel) == 1) and ((tick_pat_sep != "") or (tick_pat_num != "")):
     line = dlg_srch_lines[sel[0]]
-    fn = ParseFrameTickNo("$line.0", dlg_srch_fn_cache)
+    fn = ParseFrameTickNo("%d.0" % line, dlg_srch_fn_cache)
     if fn:
       if c > 0: wt.dlg_srch_ctxmen.add_separator()
       wt.dlg_srch_ctxmen.add_command(label="Select line as origin for tick delta", command=SearchList_SetFnRoot)
@@ -4974,11 +4982,11 @@ def SearchList_InsertLine(line_idx, ins_pos):
   if dlg_srch_tick_delta.get() or dlg_srch_show_fn.get() or dlg_srch_show_tick.get():
     fn = ParseFrameTickNo(pos, dlg_srch_fn_cache)
     if fn:
-        fn = fn[0]
         tick_no = fn[1]
+        fn = fn[0]
     else:
-        fn = "?"
         tick_no = "?"
+        fn = "?"
 
     prefix = ""
     if dlg_srch_tick_delta.get():
@@ -5091,8 +5099,8 @@ def SearchList_GetLen():
 #
 # This function must be called when portions of the text in the main window
 # have been deleted to update references to text lines. Parameter meaning:
-# + top_l: this is the first line which is not deleted, or 1 if none
-# + bottom_l: this line and all below have been removed, or 0 if none
+# - top_l: this is the first line which is not deleted, or 1 if none
+# - bottom_l: this line and all below have been removed, or 0 if none
 #
 def SearchList_AdjustLineNums(top_l, bottom_l):
   global dlg_srch_shown, dlg_srch_lines, dlg_srch_undo, dlg_srch_redo, dlg_srch_fn_cache
@@ -5101,20 +5109,17 @@ def SearchList_AdjustLineNums(top_l, bottom_l):
     if bottom_l == 0:
       # delete from 1 ... topl
       idx = SearchList_GetLineIdx(top_l)
-      if (idx < len(dlg_srch_lines)) and (dlg_srch_lines[idx] == top_l):
-        idx -= 1
-
       if idx > 0:
         wt.dlg_srch_f1_l.delete("1.0", "%d.0" % (idx + 1))
-        tmpl = [line - top_l + 1 for line in dlg_srch_lines[idx:]]
-        dlg_srch_lines = tmpl
+      tmpl = [line - top_l + 1 for line in dlg_srch_lines[idx:]]
+      dlg_srch_lines = tmpl
 
     else:
       # delete from bottom_l ... end
       idx = SearchList_GetLineIdx(bottom_l)
       if idx < len(dlg_srch_lines):
         wt.dlg_srch_f1_l.delete("%d.0" % (idx + 1), "end")
-        del dlg_srch_lines[:idx]
+        del dlg_srch_lines[idx:]
 
     tmp2 = []
     for cmd in dlg_srch_undo:
@@ -8529,7 +8534,9 @@ col_palette = [
 # parenthesis), which will be used to extract the portion of text to be
 # displayed as marker, when enabled via "Options" menu in the search list
 # dialog. The extracted text may also be non-numerical, but then the "delta"
-# feature will obviously not work.
+# feature will obviously not work. Regular expressions may only use syntax
+# that is valid both in Tcl/Tk "regexp" (see "re_syntax" documentation) and
+# Python "re".
 tick_pat_num = ""
 tick_pat_sep = ""
 tick_str_prefix = ""

@@ -5393,28 +5393,24 @@ proc SearchList_GetLen {} {
 #
 # This function must be called when portions of the text in the main window
 # have been deleted to update references to text lines. Paramater meaning:
-# + top_l: this is the first line which is not deleted, or 1 if none
-# + bottom_l: this line and all below have been removed, or 0 if none
+# - top_l: this is the first line which is not deleted, or 1 if none
+# - bottom_l: this line and all below have been removed, or 0 if none
 #
 proc SearchList_AdjustLineNums {top_l bottom_l} {
-  global dlg_srch_shown dlg_srch_undo dlg_srch_redo dlg_srch_fn_cache
+  global dlg_srch_shown dlg_srch_lines dlg_srch_undo dlg_srch_redo dlg_srch_fn_cache
 
   if {[info exists dlg_srch_shown]} {
     if {$bottom_l == 0} {
       # delete from 1 ... $topl
       set idx [SearchList_GetLineIdx $top_l]
-      if {($idx < [llength $dlg_srch_lines]) &&
-          ([lindex $dlg_srch_lines $idx] == $top_l)} {
-        incr idx -1
-      }
       if {$idx > 0} {
         .dlg_srch.f1.l delete 1.0 "[expr {$idx + 1}].0"
-        set tmpl {}
-        foreach line [lrange $dlg_srch_lines $idx end] {
-          lappend tmpl [expr {$line - $top_l + 1}]
-        }
-        set dlg_srch_lines $tmpl
       }
+      set tmpl {}
+      foreach line [lrange $dlg_srch_lines $idx end] {
+        lappend tmpl [expr {$line - $top_l + 1}]
+      }
+      set dlg_srch_lines $tmpl
     } else {
       # delete from $bottom_l ... end
       set idx [SearchList_GetLineIdx $bottom_l]
@@ -5439,7 +5435,6 @@ proc SearchList_AdjustLineNums {top_l bottom_l} {
     set dlg_srch_undo $tmp2
 
     set dlg_srch_redo {}
-
     array unset dlg_srch_fn_cache
   }
 }
