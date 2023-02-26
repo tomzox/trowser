@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2010,2019-2022 Th. Zoerner
+# Copyright (C) 2007-2010,2019-2023 Th. Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -2942,7 +2942,7 @@ def Mark_DefaultFile(trace_name):
     try:
       st = os.stat(trace_name)
       cur_mtime = st.st_mtime
-    except:
+    except OSError:
       cur_mtime = 0
 
     if cur_mtime != 0:
@@ -2959,7 +2959,7 @@ def Mark_DefaultFile(trace_name):
         else:
           print(sys.argv[0] + ": warning: bookmark file " + name +
                 " is older than content - not loaded", file=sys.stderr)
-      except:
+      except OSError:
         pass
 
   return bok_name
@@ -5931,8 +5931,8 @@ def FontList_OpenDialog():
 
     # frame #4: ok/abort buttons
     wt.dlg_font_f3 = Frame(wt.dlg_font)
-    wt.dlg_font_f3_abort = Button(wt.dlg_font_f3, text="Abort", command=lambda: FontList_Quit(0))
-    wt.dlg_font_f3_ok = Button(wt.dlg_font_f3, text="Ok", default=ACTIVE, command=lambda: FontList_Quit(1))
+    wt.dlg_font_f3_abort = Button(wt.dlg_font_f3, text="Abort", command=lambda: FontList_Quit(False))
+    wt.dlg_font_f3_ok = Button(wt.dlg_font_f3, text="Ok", default=ACTIVE, command=lambda: FontList_Quit(True))
     wt.dlg_font_f3_abort.pack(side=LEFT, padx=10, pady=5)
     wt.dlg_font_f3_ok.pack(side=LEFT, padx=10, pady=5)
     wt.dlg_font_f3.pack(side=TOP)
@@ -6705,8 +6705,9 @@ def PaletteMenu_OtherColor(parent_wid, cmd, col_def):
   if col_def == "":
     col_def = "#000000"
 
+  # result: ((r, g, b), color_object)
   col = colorchooser.askcolor(initialcolor=col_def, parent=parent_wid, title="Select color")
-  if col is not None:
+  if col[1] is not None:
     cmd(col[1])
 
 
@@ -6728,10 +6729,12 @@ def OpenAboutDialog():
     wt.about_name = Label(wt.about, text="Trace Browser")
     wt.about_name.pack(side=TOP, pady=8)
 
-    wt.about_copyr1 = Label(wt.about, text="Copyright (C) 2007-2010,2019-2022 Th. Zoerner", font=font_normal)
+    wt.about_copyr1 = Label(wt.about, text="Copyright (C) 2007-2010,2019-2023 Th. Zoerner", font=font_normal)
     wt.about_copyr1.pack(side=TOP)
 
     msg ="""
+Homepage & Documentation: https://github.com/tomzox/trowser
+
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.  
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
@@ -7072,7 +7075,7 @@ class TextSel(object):
 
         pos = self.wid.index(idx)
         if pos != "":
-          line = int(wt.f1_t.index("insert").split(".")[0])
+          line = int(self.wid.index("insert").split(".")[0])
           if line > 0:
             line -= 1
             if line >= content_len: line = content_len - 1
@@ -7202,7 +7205,7 @@ class TextSel(object):
   def TextSel_AdjustInsert(self, line):
     self.sel = [(x if x < line else x+1) for x in self.sel]
 
-    if sself.anchor_idx >= line:
+    if self.anchor_idx >= line:
       self.anchor_idx += 1
 
 
@@ -7222,10 +7225,10 @@ class TextSel(object):
   # This handler is bound to CTRL-C in the selection and performs <<Copy>>
   # (i.e. copies the content of all selected lines to the clipboard.)
   #
-  def TextSel_CopyClipboard(self, mswin):
+  def TextSel_CopyClipboard(self, to_clipboard):
     msg = "".join([self.wid.get("%d.0" % (line + 1), "%d.0" % (line + 2)) for line in self.sel])
 
-    TextSel_XselectionExport(mswin, msg)
+    TextSel_XselectionExport(to_clipboard, msg)
 
 
 #
@@ -7235,9 +7238,14 @@ class TextSel(object):
 # must be set to be "owned" by the dummy widget, so that it gets querues by the
 # X window system.
 #
-def TextSel_XselectionHandler(off, len):
+def TextSel_XselectionHandler(off, xlen):
   global main_selection_txt
-  return main_selection_txt[off : off+len]
+  try:
+      off = int(off)
+      xlen = int(xlen)
+      return main_selection_txt[off : (off + xlen)]
+  except:
+      return ""
 
 
 #
@@ -7246,16 +7254,16 @@ def TextSel_XselectionHandler(off, len):
 # commands by the user) and X selection mechanism (from where the user can
 # paste it via click with the middle mouse button).
 #
-def TextSel_XselectionExport(mswin, str):
+def TextSel_XselectionExport(to_clipboard, str):
   global main_selection_txt
 
-  if mswin:
+  # update X selection
+  main_selection_txt = str
+  wt.xselection.selection_own()
+
+  if to_clipboard:
     tk.clipboard_clear()
     tk.clipboard_append(str)
-  else:
-    # update X selection only
-    main_selection_txt = str
-    wt.xselection.selection_own()
 
 
 # ----------------------------------------------------------------------------
@@ -7559,7 +7567,7 @@ class LoadPipe(object):
         messagebox.showerror(parent=tk, message="Read error on STDIN: " + self._file_complete)
         try:
           sys.stdin.close()
-        except:
+        except OSError:
           pass
         self.LoadPipe_Insert(True)
 
@@ -7609,7 +7617,7 @@ class LoadPipe(object):
     if from_thread and (self._opt_file_close or self.is_eof):
       try:
         sys.stdin.close()
-      except:
+      except OSError:
         pass
 
       with self._thr_lock:
@@ -7665,12 +7673,18 @@ def LoadFile(filename):
       file.seek(0 - load_buf_size, 2)
 
     # insert the data into the text widget
-    wt.f1_t.insert("end", file.read(load_buf_size))
-
+    data = file.read(load_buf_size)
     file.close()
 
   except OSError as e:
     messagebox.showerror(message="Failed to load file %s: %s" % (filename, e.strerror))
+    data = b""
+
+  wt.f1_t.insert("end", data)
+
+  # add missing newline at end of file
+  if data and (data[-1] != b"\n"[0]):
+    wt.f1_t.insert("end", "\n")
 
   InitContent()
 
@@ -7976,12 +7990,10 @@ def LoadRcFile():
   global load_buf_size
   global rcfile_version, myrcfile
 
-  error = 0
-  ver_check = 0
-  line_no = 0
-  pat_ass = re.compile("^([a-z][a-z0-9_\\:]*)=(.+)$")
-  pat_nil = re.compile("^\\s*(?:#.*)?$")
+  error = False
+  ver_check = False
   rc_compat_version = None
+  line_no = 0
   font_content_opt = {}
 
   home = os.path.expanduser("~")
@@ -7993,10 +8005,10 @@ def LoadRcFile():
         line_no += 1
         if line == "___END___":
           break
-        if pat_nil.match(line):
+        if re.match(r"^\s*(?:#.*)?$", line):
           continue
 
-        match = pat_ass.match(line)
+        match = re.match(r"^([a-z][a-z0-9_\:]*)=(.+)$", line)
         if match:
           var = match.group(1)
           try:
@@ -8028,25 +8040,26 @@ def LoadRcFile():
 
           except json.decoder.JSONDecodeError:
             messagebox.showerror(message="Syntax error decoding rcfile line %d: %s" % (line_no, line[:40]), title="Trace browser")
-            error = 1
+            error = True
 
         elif not error:
-          messagebox.showerror(message="Syntax error in rc file, line #%s: %s" % (line_no, line[:40]), title="Trace browser")
-          error = 1
+          messagebox.showerror(message="Syntax error in rc file, line #%d: %s" % (line_no, line[:40]), title="Trace browser")
+          error = True
 
-        elif ver_check == 0:
+        elif not ver_check:
           # check if the given rc file is from a newer version
           if rc_compat_version is not None:
             if rc_compat_version > rcfile_version:
-              messagebox.showerror(message="rc file 'myrcfile' is from an incompatible, "
-                                   "newer browser version (%s) and cannot be loaded." % rcfile_version, title="Trace browser")
+              messagebox.showerror(message="rc file '%s' is from an incompatible, "
+                                   "newer browser version (%s) and cannot be loaded."
+                                   % (myrcfile, rcfile_version), title="Trace browser")
 
               # change name of rc file so that the newer one isn't overwritten
               myrcfile = myrcfile + "." + rcfile_version
               # abort loading further data (would overwrite valid defaults)
               return
 
-            ver_check = 1
+            ver_check = True
 
     try:
       if font_content.configure() != font_content_opt:
@@ -8083,11 +8096,10 @@ def UpdateRcFile():
   if tid_update_rc_min: tk.after_cancel(tid_update_rc_min)
   tid_update_rc_min = None
 
+  home = os.path.expanduser("~")
+  rcfilename = home + "/" + myrcfile
   try:
-    home = os.path.expanduser("~")
-    rcfilename = home + "/" + myrcfile
-    rcfile = tempfile.NamedTemporaryFile(mode="w", delete=False, dir=home, prefix=myrcfile, suffix=".tmp")
-    try:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=home, prefix=myrcfile, suffix=".tmp") as rcfile:
       timestamp = str(datetime.now())
       print("#\n"
             "# trowser configuration file\n"
@@ -8140,43 +8152,38 @@ def UpdateRcFile():
       # misc (note the head/tail mode is omitted intentionally)
       print("load_buf_size=", json.dumps(load_buf_size), file=rcfile)
 
-      rcfile.close()
-
-      # copy attributes on the new file
+    # copy attributes on the new file
+    try:
+      st = os.stat(rcfilename)
       try:
-        st = os.stat(rcfilename)
         os.chmod(rcfile.name, st.st_mode & 0o777)
         if (os.name == "posix"):
           os.chown(rcfile.name, st.st_uid, st.st_gid)
-      except Exception as e:
-        print(e)
-        print("Warning: Failed to update mode/permissions on %s: %s" % (rcfilename, e.strerror), file=sys.stderr)
-
-      # move the new file over the old one
-      try:
-        # Windows does not allow renaming when the target file already exists,
-        # so we need to remove the target first. DISADVANTAGE: operation is not atomic
-        if (os.name != "posix"):
-            os.remove(rcfilename)
-        os.rename(rcfile.name, rcfilename)
-        rc_file_error = False
       except OSError as e:
-        if not rc_file_error:
-          messagebox.showerror(message="Could not replace rc file %s: %s" % (rcfilename, e.strerror), title="Trace browser")
-        os.remove(rcfile.name)
-        rc_file_error = True
-
+        print("Warning: Failed to update mode/permissions on %s: %s" % (rcfilename, e.strerror), file=sys.stderr)
     except OSError as e:
-      # write error - remove the file fragment, report to user
-      os.remove(rcfile.name)
-      if not rc_file_error:
-        messagebox.showerror(message="Write error in file %s: %s" % (rcfilename, e.strerror), title="Trace browser")
-        rc_file_error = True
+      pass
 
-  except:
-    if not rc_file_error:
-      messagebox.showerror(message="Could not create temporary rc file in directory %s" % home, title="Trace browser")
+    # move the new file over the old one
+    try:
+      # MS-Windows does not allow renaming when the target file already exists,
+      # so we need to remove the target first. DISADVANTAGE: operation is not atomic
+      if (os.name != "posix"):
+        os.remove(rcfilename)
+      os.rename(rcfile.name, rcfilename)
+      rc_file_error = False
+    except OSError as e:
+      if not rc_file_error:
+        messagebox.showerror(message="Could not replace rc file %s: %s" % (rcfilename, e.strerror), title="Trace browser")
+      os.remove(rcfile.name)
       rc_file_error = True
+
+  except OSError as e:
+    # write error - remove the file fragment, report to user
+    if not rc_file_error:
+      messagebox.showerror(message="Failed to write file %s: %s" % (rcfilename, e.strerror), title="Trace browser")
+      rc_file_error = True
+    os.remove(rcfile.name)
 
 
 #
@@ -8472,7 +8479,7 @@ dlg_srch_shown = False
 dlg_tags_shown = False
 
 # These variables hold the font and color definitions for the main text content.
-font_content_opt = {"family": "helvetica", "size": 9, "weight": tkf.NORMAL}
+font_content_opt = {"family": "helvetica", "size": 10, "weight": tkf.NORMAL}
 col_bg_content = "#e2e2e8"
 col_fg_content = "#000000"
 
@@ -8560,8 +8567,8 @@ tick_str_prefix = ""
 # 14: relief borderwidth: 1,2,...,9
 # 15: spacing: 0,1,2,...
 patlist = [
-  ["----", 0, 1, "default", "tag0", "", "#000000", "#FFFFFF", 1, 0, 0, "", "", "", 1, 0],
-  ["^, *#", 1, 1, "default", "tag1", "", "", "#008800", 1, 0, 0, "", "", "", 1, 0]
+  [": Failure", False, True, "default", "tag0", "", "#e73c39", "", True, False, False, "", "", "", 1, 0],
+  ["^\\[ ", True, True, "default", "tag1", "", "#b4e79c", "", False, False, False, "", "", "", 1, 0]
 ]
 
 # This variable contains the mode and limit for file load. The mode can be

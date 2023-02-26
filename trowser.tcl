@@ -3,7 +3,7 @@
 exec wish "$0" -- "$@"
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2010,2019-2022 Th. Zoerner
+# Copyright (C) 2007-2010,2019-2023 Th. Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -7129,10 +7129,12 @@ proc OpenAboutDialog {} {
     label .about.name -text "Trace Browser"
     pack .about.name -side top -pady 8
 
-    label .about.copyr1 -text "Copyright (C) 2007-2010,2019-2022 Tom Zoerner" -font $font_normal
+    label .about.copyr1 -text "Copyright (C) 2007-2010,2019-2023 Tom Zoerner" -font $font_normal
     pack .about.copyr1 -side top
 
     message .about.m -font $font_normal -text {
+Homepage & Documentation: https://github.com/tomzox/trowser
+
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.  
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
@@ -8320,7 +8322,13 @@ proc LoadFile {filename} {
     }
 
     # insert the data into the text widget
-    .f1.t insert end [read $file $load_buf_size]
+    set data [read $file $load_buf_size]
+    .f1.t insert end $data
+
+    # add missing newline at end of file
+    if {[string length $data] && ([string index $data end] ne "\n")} {
+      .f1.t insert end "\n"
+    }
 
     close $file
   } cerr] != 0} {
@@ -9058,7 +9066,7 @@ set tid_resume_bg {}
 set block_bg_tasks 0
 
 # These variables hold the font and color definitions for the main text content.
-set font_content {helvetica 9 normal}
+set font_content {helvetica 10 normal}
 set col_bg_content {#e2e2e8}
 set col_fg_content {#000000}
 
@@ -9144,8 +9152,8 @@ set tick_str_prefix ""
 # 14: relief borderwidth: 1,2,...,9
 # 15: spacing: 0,1,2,...
 set patlist {
-  {{----} 0 1 default tag0 {} #000000 #FFFFFF 1 0 0 {} {} {} 1 0}
-  {{^ *#} 1 1 default tag1 {} {} #008800 1 0 0 {} {} {} 1 0}
+  {{: Failure} 1 1 default tag0 {} #e73c39 {} 0 0 0 {} {} {} 1 0}
+  {{^\[ } 1 1 default tag1 {} #b4e79c {} 0 0 0 {} {} {} 1 0}
 }
 
 # This variable contains the limit for file load
