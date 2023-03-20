@@ -1636,11 +1636,10 @@ def ClearStatusLine(topic):
 def DisplayLineNumber():
   global cur_filename
 
-  pos = wt.f1_t.bbox("insert")
-  if pos is not None:
-    pos = wt.f1_t.index("insert")
-    if len(pos.split(".")) == 2:
-      (line, char) = map(int, pos.split("."))
+  if wt.f1_t.bbox("insert") is not None:
+    pos = wt.f1_t.index("insert").split(".")
+    if len(pos) == 2:
+      (line, char) = map(int, pos)
       (end_line, char) = map(int, wt.f1_t.index("end").split("."))
       # if the last line is properly terminated with a newline char,
       # Tk inserts an empty line below - this should not be counted
@@ -6894,7 +6893,7 @@ class TextSel(object):
 
   #
   # This function is bound to mouse pointer motion events in the text widget
-  # while the mouse buttin is pressed down. This allows to change the extent
+  # while the mouse button is pressed down. This allows changing the extent
   # of the selection. The originally selected item ("anchor") always remains
   # selected.  If the pointer is moved above or below the widget borders,
   # the text is scrolled.
@@ -6959,9 +6958,9 @@ class TextSel(object):
     if delta < 0:
       self.TextSel_Motion(0, 0)
     else:
-      self.TextSel_Motion(0, wid.winfo_height() - 1)
+      self.TextSel_Motion(0, self.wid.winfo_height() - 1)
 
-    # install the timer gain (possibly with a changed delay if the mouse was moved)
+    # install the timer again (possibly with a changed delay if the mouse was moved)
     self.scroll_tid = tk.after(self.scroll_speed, lambda: self.TextSel_MotionScroll(delta))
 
 
@@ -6995,7 +6994,7 @@ class TextSel(object):
         self.sel.append(line)
 
       if len(self.sel) <= 1:
-        self.anchor_idx = pick_idx
+        self.anchor_idx = line
 
       self.TextSel_ShowSelection()
       self.cb_proc(self.sel)
@@ -7075,7 +7074,7 @@ class TextSel(object):
 
         pos = self.wid.index(idx)
         if pos != "":
-          line = int(self.wid.index("insert").split(".")[0])
+          line = int(pos.split(".")[0])
           if line > 0:
             line -= 1
             if line >= content_len: line = content_len - 1
@@ -8169,7 +8168,10 @@ def UpdateRcFile():
       # MS-Windows does not allow renaming when the target file already exists,
       # so we need to remove the target first. DISADVANTAGE: operation is not atomic
       if (os.name != "posix"):
-        os.remove(rcfilename)
+        try:
+          os.remove(rcfilename)
+        except OSError:
+          pass
       os.rename(rcfile.name, rcfilename)
       rc_file_error = False
     except OSError as e:
