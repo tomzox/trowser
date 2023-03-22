@@ -51,9 +51,9 @@ def InitResources():
   tk.eval("option add *Dialog.msg.font {helvetica 9 bold} userDefault")
 
   # fonts for text and label widgets
-  font_normal = tkf.Font(family="helvetica", size=9, weight=tkf.NORMAL)
-  font_bold = tkf.Font(family="helvetica", size=9, weight=tkf.BOLD)
-  font_hlink = tkf.Font(family="helvetica", size=7, weight=tkf.NORMAL, underline=1)
+  font_normal = font.nametofont("TkDefaultFont")
+  font_bold = DeriveFont(font_normal, 0, "bold")
+  font_hlink = DeriveFont(font_normal, -2, "underline")
 
   # bindings to allow scrolling a text widget with the mouse wheel
   tk.bind_class("TextWheel", "<Button-4>", lambda e: e.widget.yview_scroll(-3, "units"))
@@ -1689,8 +1689,11 @@ def DeriveFont(afont, delta_size, style=None):
   if (delta_size != 0):
     afont.configure(size=afont.cget("size")+delta_size)
 
-  if (style is not None) and (style == "bold"):
-    afont.configure(weight=tkf.BOLD)
+  if style:
+    if style == "bold":
+      afont.configure(weight=tkf.BOLD)
+    elif style == "underline":
+      afont.configure(underline=1)
 
   return afont
 
@@ -7993,7 +7996,7 @@ def LoadRcFile():
   ver_check = False
   rc_compat_version = None
   line_no = 0
-  font_content_opt = {}
+  font_content_opt = ""
 
   home = os.path.expanduser("~")
   filename = home + "/" + myrcfile
@@ -8061,7 +8064,7 @@ def LoadRcFile():
             ver_check = True
 
     try:
-      if font_content.configure() != font_content_opt:
+      if font_content_opt:
         font_content = tkf.Font(**font_content_opt)
     except Exception as e:
       print("Error configuring content font:", str(e), file=sys.stderr)
@@ -8481,7 +8484,7 @@ dlg_srch_shown = False
 dlg_tags_shown = False
 
 # These variables hold the font and color definitions for the main text content.
-font_content_opt = {"family": "helvetica", "size": 10, "weight": tkf.NORMAL}
+font_content_default = "TkFixedFont"
 col_bg_content = "#e2e2e8"
 col_fg_content = "#000000"
 
@@ -8602,7 +8605,7 @@ tlb_case = BooleanVar(tk, tlb_case)
 tlb_regexp = BooleanVar(tk, tlb_regexp)
 tlb_hall = BooleanVar(tk, tlb_hall)
 tlb_find = StringVar(tk, tlb_find)
-font_content = tkf.Font(**font_content_opt)
+font_content = font.nametofont(font_content_default)
 
 # Parse command line parameters & load configuration options
 ParseArgv()
