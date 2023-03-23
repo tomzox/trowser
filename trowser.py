@@ -3281,7 +3281,7 @@ def MarkList_DeleteTag(tag):
   global dlg_mark_shown
 
   if dlg_mark_shown:
-    wt.dlg_mark_l.tag("delete", tag)
+    wt.dlg_mark_l.tag_delete(tag)
 
 
 #
@@ -4868,7 +4868,7 @@ def SearchList_DeleteTag(tag):
   global dlg_srch_shown
 
   if dlg_srch_shown:
-    wt.dlg_srch_f1_l.tag("delete", tag)
+    wt.dlg_srch_f1_l.tag_delete(tag)
 
 
 #
@@ -5225,7 +5225,7 @@ def SearchList_LoadFrom():
               if msg != "": msg = msg + " and"
               msg = msg + (" %d non-empty lines without a number value" % synerr)
 
-            answer = messagebox.showwarning(parent=wt.dlg_srch, message=msg)
+            answer = messagebox.showwarning(parent=wt.dlg_srch, type="okcancel", message=msg)
 
           if answer != "cancel":
             if len(line_list) > 0:
@@ -5818,7 +5818,7 @@ def TagList_CopyFromSearch(pat_idx):
   global patlist
 
   if pat_idx < len(patlist):
-    answer = messagebox.askyesno(type="okcancel", parent=wt.dlg_tags, message="Please confirm overwriting the search pattern for this entry? This cannot be undone")
+    answer = messagebox.askokcancel(parent=wt.dlg_tags, message="Please confirm overwriting the search pattern for this entry? This cannot be undone")
     if answer:
       w = patlist[pat_idx]
       w[0] = tlb_find.get()
@@ -5869,7 +5869,7 @@ def TagList_Remove(pat_sel):
 
       # remove the entry in the listbox
       TagList_Fill()
-      dlg_tags_sel = TextSel_SetSelection([])
+      dlg_tags_sel.TextSel_SetSelection([])
 
 
 #
@@ -7998,11 +7998,8 @@ def LoadRcFile():
   line_no = 0
   font_content_opt = ""
 
-  home = os.path.expanduser("~")
-  filename = home + "/" + myrcfile
-
   try:
-    with open(home + "/" + myrcfile, "r") as rcfile:
+    with open(myrcfile, "r") as rcfile:
       for line in rcfile:
         line_no += 1
         if line == "___END___":
@@ -8098,10 +8095,9 @@ def UpdateRcFile():
   if tid_update_rc_min: tk.after_cancel(tid_update_rc_min)
   tid_update_rc_min = None
 
-  home = os.path.expanduser("~")
-  rcfilename = home + "/" + myrcfile
   try:
-    with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=home, prefix=myrcfile, suffix=".tmp") as rcfile:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=os.path.dirname(myrcfile),
+                                     prefix=myrcfile, suffix=".tmp") as rcfile:
       timestamp = str(datetime.now())
       print("#\n"
             "# trowser configuration file\n"
@@ -8156,13 +8152,13 @@ def UpdateRcFile():
 
     # copy attributes on the new file
     try:
-      st = os.stat(rcfilename)
+      st = os.stat(myrcfile)
       try:
         os.chmod(rcfile.name, st.st_mode & 0o777)
         if (os.name == "posix"):
           os.chown(rcfile.name, st.st_uid, st.st_gid)
       except OSError as e:
-        print("Warning: Failed to update mode/permissions on %s: %s" % (rcfilename, e.strerror), file=sys.stderr)
+        print("Warning: Failed to update mode/permissions on %s: %s" % (myrcfile, e.strerror), file=sys.stderr)
     except OSError as e:
       pass
 
@@ -8172,21 +8168,21 @@ def UpdateRcFile():
       # so we need to remove the target first. DISADVANTAGE: operation is not atomic
       if (os.name != "posix"):
         try:
-          os.remove(rcfilename)
+          os.remove(myrcfile)
         except OSError:
           pass
-      os.rename(rcfile.name, rcfilename)
+      os.rename(rcfile.name, myrcfile)
       rc_file_error = False
     except OSError as e:
       if not rc_file_error:
-        messagebox.showerror(message="Could not replace rc file %s: %s" % (rcfilename, e.strerror), title="Trace browser")
+        messagebox.showerror(message="Could not replace rc file %s: %s" % (myrcfile, e.strerror), title="Trace browser")
       os.remove(rcfile.name)
       rc_file_error = True
 
   except OSError as e:
     # write error - remove the file fragment, report to user
     if not rc_file_error:
-      messagebox.showerror(message="Failed to write file %s: %s" % (rcfilename, e.strerror), title="Trace browser")
+      messagebox.showerror(message="Failed to write file %s: %s" % (myrcfile, e.strerror), title="Trace browser")
       rc_file_error = True
     os.remove(rcfile.name)
 
@@ -8205,6 +8201,32 @@ def UpdateRcAfterIdle():
 
   if not tid_update_rc_min:
     tid_update_rc_min = tk.after(60000, UpdateRcFile)
+
+
+def GetRcFilePath():
+    if (os.name == "posix"):
+        xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+        home = os.path.expanduser("~")
+
+        if xdg_config_home is not None and os.path.exists(xdg_config_home):
+            rc_file = os.path.join(xdg_config_home, "trowser", "trowser.py.rc")
+
+        elif home is not None and os.path.exists(home):
+            config_dir = os.path.join(home, ".config")
+            if os.path.exists(config_dir) and os.path.isdir(config_dir):
+                rc_file = os.path.join(home, ".config", "trowser", "trowser.py.rc")
+            else:
+                rc_file = os.path.join(home, ".trowser.py.rc")
+
+        else:
+            rc_file = ".trowser.py.rc"
+
+        os.makedirs(os.path.dirname(rc_file), exist_ok=True)
+
+    else: # TODO win32
+        rc_file = "trowser.ini"
+
+    return rc_file
 
 
 # ----------------------------------------------------------------------------
@@ -8251,7 +8273,7 @@ def ParseArgInt(opt, val):
 # This function parses and evaluates the command line arguments.
 #
 def ParseArgv():
-  global load_file_mode, load_buf_size_opt, myrcfile
+  global load_file_mode, load_buf_size_opt
 
   file_seen = False
   arg_idx = 1
@@ -8585,7 +8607,6 @@ load_buf_size = 0x100000
 # define RC file version limit for forwards compatibility
 rcfile_compat = 0x02000001
 rcfile_version = 0x02000002
-myrcfile = ".trowserc.py"
 rc_file_error = 0
 
 #
@@ -8608,6 +8629,7 @@ tlb_find = StringVar(tk, tlb_find)
 font_content = font.nametofont(font_content_default)
 
 # Parse command line parameters & load configuration options
+myrcfile = GetRcFilePath()
 ParseArgv()
 LoadRcFile()
 
