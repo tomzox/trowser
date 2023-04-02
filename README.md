@@ -1,19 +1,28 @@
 # Trowser
 
-trowser is a browser for large line-oriented text files with color
-highlighting. It's meant as an alternative to "less".
-Compared to less, trowser adds color highlighting, a persistent search history,
-graphical bookmarking, separate search result (i.e. filter) windows and
-flexible skipping of input from pipes to STDIN.  Trowser has a graphical
-interface, but is designed to allow browsing via the keyboard at least to the
-same extent as less. Key bindings and the cursor positioning concept are
-derived mainly from vim.
+Trowser is a browser for large line-oriented text files with color highlighting
+and a highly flexible search and cherry-picking window.  Trowser was developed
+as an alternative to UNIX-tool "less" when analyzing debug log/trace files
+created by other applications. Trowser integrates well with
+[GtestGui](http://github.com/tomzox/gtest_gui) as viewer for text output of test
+applications using GoogleTest framework.
+
+Compared to plain text viewers, trowser adds color highlighting, a persistent
+search history, graphical bookmarking and a separate search result window. The
+search window is especially designed to be main facility for performing trace
+analysis: Using multiple consecutive searches, manual additions or removals,
+undo/redo and subtractive searches, it can be filled with a condensed view of
+the trace file, holding only the lines relevant to the issue under analysis.
+
+Trowser has a graphical interface, but is designed to allow browsing via the
+keyboard at least to the same extent as less. Key bindings and the cursor
+positioning concept are derived mainly from vim.
 
 Note: In this context "line-oriented" denotes that each line of text is
 considered a data unit.  Color highlighting (including search matches)
 will always apply the highlight to the complete text line.
 
-Due to historical evolvement, implementations of trowser are available in three
+Due to historical evolution, implementations of trowser are available in three
 different programming languages: [Tcl/Tk](http://tcl.tk/),
 [Python](https://www.python.org/), and C++ using [Qt5](https://www.qt.io/).
 The three versions are largely equivalent, however the C++/Qt version has best
@@ -41,8 +50,8 @@ editor sub-dialog at the bottom (which opens when double-clicking on any
 "sample text" in the list).
 
 <LI>The third screenshot shows the search result list, populated by "search
-all" in the main window, or via the search highligh/history dialogs, or by
-manually inserting selected lines from the main window. In the example
+all" in the main window, or via the search highlight and history dialogues, or
+by manually inserting selected lines from the main window. In the example
 screenshot, two lines are bookmarked and thus shown with a leading blue dot. The
 "Date" column is filled with content parsed from the document based on the
 configuration shown in the next screenshot.
@@ -102,7 +111,27 @@ the powerful "text" widgets both Tk and Qt) so there's only a low barrier
 of getting familiar with the source code to allow extending or adapting
 the functionality for your own needs.
 
-## Installing (Tcl/Tk & Python versions)
+## Installing C++ version
+
+The C++ version is only tested on Linux so far. Pre-requisite for building the
+C++ version is installing Qt5 developer packages (qtbase5-dev, qttools5-dev,
+qt5-default). On some platforms, you may additionally need package
+`libqt5serialport5-dev`.
+
+To build the C++ version, change into sub-directory `src_qt`, then run
+`qmake` and then `make`. If all works well, an executable `build/trowser`
+is generated as a result. You can copy this executable file anywhere you want
+or just run it directly.
+
+Usage: Name the file to open on the command line, or "-" to read from a pipe.
+
+First steps when running trowser for the first time usually is selection of an
+appropriate font and configuring expressions for syntax highlighting under menu
+"Search / Edit highlight patterns". Then adjust the window and dialog sizes and
+locations. trowser will remember these settings in its configuration file
+stored in `$HOME/.config/trowser/`.
+
+## Installing Tcl/Tk & Python versions
 
 Software Requirements: trowser can be used on all platforms which are supported
 by either the Tcl/Tk or Python interpreters. This means all UNIX variants,

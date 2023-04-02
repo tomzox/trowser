@@ -5923,7 +5923,7 @@ def FontList_OpenDialog():
 
     # frame #3: demo text
     wt.dlg_font_demo = Text(wt.dlg_font, width=20, height=4, wrap=NONE, exportselection=FALSE, relief=RIDGE, takefocus=0)
-    wt.dlg_font_demo.pack(side=TOP, fill=X, expand=1, padx=15, pady=10)
+    wt.dlg_font_demo.pack(side=TOP, fill=X, padx=15, pady=10)
     wt.dlg_font_demo.bindtags([wt.dlg_font_demo, "TextReadOnly", tk, "all"])
 
     wt.dlg_font_demo.insert("end", "ABCDEFGHIJKLMNOPQRSTUVWXYZ\n")

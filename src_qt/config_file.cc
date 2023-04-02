@@ -351,7 +351,7 @@ void ConfigFile::writeConfig()
                    "#\n";
             out << doc.toJson();
 
-            out << Qt::flush;
+            out.flush();
             if (out.status() == QTextStream::Ok)
             {
                 // set permissions if creating a new file after moving original RC file

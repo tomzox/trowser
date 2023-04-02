@@ -6308,7 +6308,7 @@ proc FontList_OpenDialog {} {
     # frame #3: demo text
     text .dlg_font.demo -width 20 -height 4 -wrap none -exportselection false \
                         -relief ridge -takefocus 0
-    pack .dlg_font.demo -side top -fill x -expand 1 -padx 15 -pady 10
+    pack .dlg_font.demo -side top -fill x -padx 15 -pady 10
     bindtags .dlg_font.demo {.dlg_font.demo TextReadOnly . all}
 
     .dlg_font.demo insert end "ABCDEFGHIJKLMNOPQRSTUVWXYZ\n"

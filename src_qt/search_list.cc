@@ -2817,7 +2817,7 @@ void SearchList::saveFile(const QString& fileName, bool lnum_only)
                 out << (line + 1) << '\t' << block.text() << '\n';
             }
         }
-        out << Qt::flush;
+        out.flush();
         if (out.status() != QTextStream::Ok)
         {
             QString msg = QString("Error writing file ") + fileName + ": " + fh->errorString();
