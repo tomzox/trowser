@@ -1,14 +1,15 @@
 # ---------------------------------------------------------------------------
 # trowser manual page (in Perl's "plain old documentation" format)
 #
-# Use this command to generate the trowser.1 manual page:
+# HTML and other formats can be derived, e.g. via pod2html and pod2rst.
+# Use the following command to generate the trowser.1 UNIX manual page:
 #
 # pod2man -section 1 -center "Trace Browser" -release x.y trowser.pod \
 #   > trowser.1
 #
 # ---------------------------------------------------------------------------
 #
-# Copyright (C) 2007-2009 Tom Zoerner. All rights reserved.
+# Copyright (C) 2007-2009, 2023 Tom Zoerner. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,8 +23,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-# $Id: trowser.pod,v 1.5 2009/03/11 20:24:49 tom Exp $
 # ---------------------------------------------------------------------------
 
 =head1 NAME
@@ -38,13 +37,12 @@ B<trowser> -help
 
 =head1 DESCRIPTION
 
-B<trowser> is a graphical browser for large line-oriented text files
-(e.g. debug trace files - hence the name) written in Tcl/Tk.  It's meant as
-an alternative to "less".  Compared to less, trowser adds color highlighting,
-a persistent search history, graphical bookmarking, separate search result
-(i.e. filter) windows and flexible skipping of input from pipes to STDIN.
+I<Trowser> is a graphical browser for large line-oriented text files with color
+highlighting and a highly flexible search and cherry-picking window. Trowser
+was developed as an alternative to UNIX-tool "less" when analyzing debug log
+files (aka traces - hence the name).
 
-B<trowser> has a graphical interface, but is designed to allow browsing via
+Trowser has a graphical interface, but is designed to allow browsing via
 the keyboard at least to the same extent as less. Key bindings and the cursor
 positioning concept are derived from vim.
 
@@ -105,7 +103,7 @@ I<Options> menu. The search patterns used to locate time-stamps currently
 have to be inserted into the RC file manually.
 
 For performance reasons most search-related commands are executed as
-background processes (actually implemented as idle events in Tcl/Tk.)
+background processes, so that the GUI remains responsive during search.
 For example, this applies to the initial color highlighting, global
 search highlighting, incremental search while editing search patterns
 and filling the search result list.  Such background activity is
@@ -642,8 +640,9 @@ address) and B<HOME> (home directory, for storing the configuration file.)
 
 =over 4
 
-=item B<$HOME/.trowserc>
+=item B<$HOME/.config/trowser/trowser.py.rc>
 
+I<UNIX>:
 Configuration file where all personal settings and the search history are
 stored. Per default this file is created in your home directory, but a
 different path and file name can be specified with the B<--rcfile> option
@@ -712,7 +711,7 @@ Written by Th. Zoerner L<mailto:tomzo@users.sourceforge.net>
 
 =head1 COPYRIGHT
 
-Copyright 2007-2009,2019-2020 Th. Zoerner. All rights reserved.
+Copyright 2007-2009,2019-2020,2023 Th. Zoerner. All rights reserved.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -726,4 +725,3 @@ I<GNU General Public License> for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
-

@@ -230,7 +230,7 @@ def conv_cmd_par(params, bind_par=""):
     else:
       val = "lambda" + bind_par + ": " + cmd + "(" + conv_parl(cmdpar) + ")"
   elif not " " in params:
-    pass
+    val = params
   else:
     val = "lambda: " + params
 
@@ -315,9 +315,8 @@ def conv_wparl(params, is_strict):
     match = re.match("^\-([a-z]+) +\-", params)
     if match:
       opt = match.group(1)
-      sep = match.group(2)
       parl.append(opt + '=1')
-      params = params[len(match.group(0) - 1):]
+      params = params[len(match.group(0)) - 1:]
       continue
 
     # option without parameters at end of list

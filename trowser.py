@@ -51,7 +51,7 @@ def InitResources():
   tk.eval("option add *Dialog.msg.font {helvetica 9 bold} userDefault")
 
   # fonts for text and label widgets
-  font_normal = font.nametofont("TkDefaultFont")
+  font_normal = tkf.nametofont("TkDefaultFont")
   font_bold = DeriveFont(font_normal, 0, "bold")
   font_hlink = DeriveFont(font_normal, -2, "underline")
 
@@ -8626,7 +8626,7 @@ tlb_case = BooleanVar(tk, tlb_case)
 tlb_regexp = BooleanVar(tk, tlb_regexp)
 tlb_hall = BooleanVar(tk, tlb_hall)
 tlb_find = StringVar(tk, tlb_find)
-font_content = font.nametofont(font_content_default)
+font_content = tkf.nametofont(font_content_default)
 
 # Parse command line parameters & load configuration options
 myrcfile = GetRcFilePath()
