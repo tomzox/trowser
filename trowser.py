@@ -60,32 +60,22 @@ def InitResources():
   tk.bind_class("TextWheel", "<Button-5>", lambda e: e.widget.yview_scroll(3, "units"))
   tk.bind_class("TextWheel", "<MouseWheel>", lambda e: e.widget.yview_scroll(int(-(e.delta / 120) * 3), "units"))
 
-  # bindings for a read-only text widget
-  # copy allowed bindings from the regular text widget (i.e. move, mark, copy)
-  for event in ( "<ButtonPress-1>", "<ButtonRelease-1>", "<B1-Motion>", "<Double-Button-1>", "<Shift-Button-1>",
-                 "<Triple-Button-1>", "<Triple-Shift-Button-1>", "<Button-2>", "<B2-Motion>",
-                 "<<Copy>>", "<<Clear>>", "<Shift-Key-Tab>", "<Control-Key-Tab>", "<Control-Shift-Key-Tab>",
-                 "<Key-Prior>", "<Key-Next>",
-                 #"<Key-Down>", "<Key-Up>", "<Key-Left>", "<Key-Right>",
-                 "<Shift-Key-Left>", "<Shift-Key-Right>", "<Shift-Key-Up>", "<Shift-Key-Down>",
-                 "<Shift-Key-Next>", "<Shift-Key-Prior>", "<Control-Key-Down>", "<Control-Key-Up>",
-                 "<Control-Key-Left>", "<Control-Key-Right>", "<Control-Key-Next>", "<Control-Key-Prior>",
-                 "<Key-Home>", "<Key-End>", "<Shift-Key-Home>", "<Shift-Key-End>",
-                 #"<Control-Key-Home>", "<Control-Key-End>",
-                 "<Control-Shift-Key-Home>", "<Control-Shift-Key-End>",
-                 "<Control-Shift-Key-Left>", "<Control-Shift-Key-Right>", "<Control-Shift-Key-Down>",
-                 "<Control-Shift-Key-Up>", "<Control-Key-slash>" ):
-    tk.bind_class("TextReadOnly", event, tk.bind_class("Text", event))
+  text_modifier_events = (
+      "<<Cut>>", "<<Paste>>", "<<PasteSelection>>",
+      "<<Redo>>", "<<Undo>>", "<<TkAccentBackspace>>", "<Key-BackSpace>",
+      "<Key>", "<Key-Delete>", "<Key-Insert>", "<Key-Return>",
+      # Not modifiers, but events are overridden below
+      "<Key-Up>", "<Key-Down>", "<Key-Left>", "<Key-Right>",
+      "<Key-Tab>", "<Control-Key-c>")
+
+  for event in set(tk.bind_class("Text")) - set(text_modifier_events):
+      tk.bind_class("TextReadOnly", event, tk.bind_class("Text", event))
 
   # since Tk 8.6 there are no event handlers for <Key-Up> in tag Text anymore
   tk.bind_class("TextReadOnly", "<Key-Up>", lambda e: CursorMoveUpDown(wt.f1_t, -1))
   tk.bind_class("TextReadOnly", "<Key-Down>", lambda e: CursorMoveUpDown(wt.f1_t, 1))
   tk.bind_class("TextReadOnly", "<Key-Left>", lambda e: CursorMoveLeftRight(wt.f1_t, -1))
   tk.bind_class("TextReadOnly", "<Key-Right>", lambda e: CursorMoveLeftRight(wt.f1_t, 1))
-  #tk.bind_class("TextReadOnly", "<Control-Key-Home>", lambda e: CursorGotoLine(wt.f1_t, "start"))
-  #tk.bind_class("TextReadOnly", "<Control-Key-End>", lambda e: CursorGotoLine(wt.f1_t, "end"))
-  #<Shift-Key-Left> <Shift-Key-Right> <Shift-Key-Up> <Shift-Key-Down>
-  tk.bind_class("TextReadOnly", "<Control-Key-slash>", lambda e: wt.f1_t.tag_add("sel", "1.0", "end"))
 
   # bindings for a selection text widget (listbox emulation)
   # (uses non-standard cursor movement event bindings, hence not added here)

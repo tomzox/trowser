@@ -43,26 +43,40 @@ proc InitResources {} {
   bind TextWheel <Button-5>     {%W yview scroll 3 units}
   bind TextWheel <MouseWheel>   {%W yview scroll [expr {- (%D / 120) * 3}] units}
 
-  # bindings for a read-only text widget
-  # copy allowed bindings from the regular text widget (i.e. move, mark, copy)
-  foreach event {<ButtonPress-1> <ButtonRelease-1> <B1-Motion> <Double-Button-1> <Shift-Button-1> \
-                 <Triple-Button-1> <Triple-Shift-Button-1> <Button-2> <B2-Motion> \
-                 <<Copy>> <<Clear>> <Shift-Key-Tab> <Control-Key-Tab> <Control-Shift-Key-Tab> \
-                 <Key-Prior> <Key-Next> \
-                 <Shift-Key-Next> <Shift-Key-Prior> <Control-Key-Down> <Control-Key-Up> \
-                 <Control-Key-Left> <Control-Key-Right> <Control-Key-Next> <Control-Key-Prior> \
-                 <Key-Home> <Key-End> <Shift-Key-Home> <Shift-Key-End> <Control-Key-Home> \
-                 <Control-Key-End> <Control-Shift-Key-Home> <Control-Shift-Key-End> \
-                 <Control-Shift-Key-Left> <Control-Shift-Key-Right> <Control-Shift-Key-Down>
-                 <Control-Shift-Key-Up>} {
-    bind TextReadOnly $event [bind Text $event]
-  }
   if {[info tclversion] eq "8.5"} {
+    # bindings for a read-only text widget
+    # copy allowed bindings from the regular text widget (i.e. move, mark, copy)
+    foreach event {<ButtonPress-1> <ButtonRelease-1> <B1-Motion> <Double-Button-1> <Shift-Button-1> \
+                   <Triple-Button-1> <Triple-Shift-Button-1> <Button-2> <B2-Motion> \
+                   <<Copy>> <<Clear>> <Shift-Key-Tab> <Control-Key-Tab> <Control-Shift-Key-Tab> \
+                   <Key-Prior> <Key-Next> \
+                   <Shift-Key-Next> <Shift-Key-Prior> <Control-Key-Down> <Control-Key-Up> \
+                   <Control-Key-Left> <Control-Key-Right> <Control-Key-Next> <Control-Key-Prior> \
+                   <Key-Home> <Key-End> <Shift-Key-Home> <Shift-Key-End> <Control-Key-Home> \
+                   <Control-Key-End> <Control-Shift-Key-Home> <Control-Shift-Key-End> \
+                   <Control-Shift-Key-Left> <Control-Shift-Key-Right> <Control-Shift-Key-Down>
+                   <Control-Shift-Key-Up>} {
+      bind TextReadOnly $event [bind Text $event]
+    }
     foreach event {<Key-Down> <Key-Up> <Key-Left> <Key-Right> <Control-Key-slash> \
                    <Shift-Key-Left> <Shift-Key-Right> <Shift-Key-Up> <Shift-Key-Down>} {
       bind TextReadOnly $event [bind Text $event]
     }
   } else {
+    set text_modifier_events {
+        <<Cut>> <<Paste>> <<PasteSelection>>
+        <<Redo>> <<Undo>> <<TkAccentBackspace>> <Key-BackSpace>
+        <Key> <Key-Delete> <Key-Insert> <Key-Return>
+        # Not modifiers, but events are overridden below
+        <Key-Up> <Key-Down> <Key-Left> <Key-Right>
+        <Control-Key-Home> <Control-Key-End> <Key-Tab> <Control-Key-c>}
+
+    foreach event [bind Text] {
+      if {[lsearch -exact $text_modifier_events $event] == -1} {
+        bind TextReadOnly $event [bind Text $event]
+      }
+    }
+
     # since Tk 8.6 there are no event handlers for <Key-Up> in tag Text anymore
     bind TextReadOnly <Key-Up> {CursorMoveUpDown .f1.t -1}
     bind TextReadOnly <Key-Down> {CursorMoveUpDown .f1.t 1}
@@ -70,8 +84,6 @@ proc InitResources {} {
     bind TextReadOnly <Key-Right> {CursorMoveLeftRight .f1.t 1}
     bind TextReadOnly <Control-Key-Home> {CursorGotoLine .f1.t start}
     bind TextReadOnly <Control-Key-End> {CursorGotoLine .f1.t end}
-    #<Shift-Key-Left> <Shift-Key-Right> <Shift-Key-Up> <Shift-Key-Down>
-    bind TextReadOnly <Control-Key-slash> {.f1.t tag add sel 1.0 end}
   }
   # bindings for a selection text widget (listbox emulation)
   # (uses non-standard cursor movement event bindings, hence not added here)
