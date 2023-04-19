@@ -2,21 +2,21 @@
 
 set -e
 
-BASEDIR=deb/trowser_2.0-2
+BASEDIR=deb/trowser_1.4
 
 mkdir -p $BASEDIR/DEBIAN
 cat > $BASEDIR/DEBIAN/control <<EoF
 Package: trowser
 Priority: optional
 Section: text
-Maintainer: Th. Zoerner <tomzo@users.sourceforge.net>
+Maintainer: T. Zoerner <tomzox@gmail.com>
 Architecture: all
-Version: 2.0
-Depends: python3, python3-tk
-Description: Browser for large line-oriented text files in Python/tkinter
+Version: 1.4
+Depends: tcl8.4|tcl8.5|tcl8.6, tk8.4|tk8.5|tk8.6
+Description: Browser for large line-oriented text files based on Tcl/Tk
  Trowser is a browser for large line-oriented text files (such as debug traces)
- implemented in Python using Tk. It is meant as an alternative to "less".
- Compared to less, trowser adds color highlighting, a persistent search history,
+ implemented in Tcl/Tk.  It's meant as an alternative to "less". Compared
+ to less, trowser adds color highlighting, a persistent search history,
  graphical bookmarking, separate search result (i.e. filter) windows and
  flexible skipping of input from pipes to STDIN.  Trowser has a graphical
  interface, but is designed to allow browsing via the keyboard at least
@@ -25,19 +25,19 @@ Description: Browser for large line-oriented text files in Python/tkinter
 EoF
 
 mkdir -p $BASEDIR/usr/bin
-cp -p trowser.py $BASEDIR/usr/bin/trowser
+cp -p trowser.tcl $BASEDIR/usr/bin/trowser
 chmod +x $BASEDIR/usr/bin/trowser
 
 mkdir -p $BASEDIR/usr/share/man/man1
-gzip -n -9 -c trowser.1 > $BASEDIR/usr/share/man/man1/trowser.1.gz
+gzip -n -9 -c doc/trowser.1 > $BASEDIR/usr/share/man/man1/trowser.1.gz
 
 mkdir -p $BASEDIR/usr/share/doc/trowser
 cp -p README.md $BASEDIR/usr/share/doc/trowser/README.txt
 gzip -n -9 -c CHANGELOG > $BASEDIR/usr/share/doc/trowser/changelog.gz
-gzip -n -9 -c trowser.pod > $BASEDIR/usr/share/doc/trowser/trowser.pod.gz
+gzip -n -9 -c doc/trowser.pod > $BASEDIR/usr/share/doc/trowser/trowser.pod.gz
 
 cat > $BASEDIR/usr/share/doc/trowser/copyright <<EoF
-Copyright (C) 2007-2009,2019-2020 Th. Zoerner. All rights reserved.
+Copyright (C) 2007-2009,2019-2020,2023 T. Zoerner. All rights reserved.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -68,4 +68,4 @@ cd ..
 # note "fakeroot" is used to have files owned by user "root"
 # - this is optional for local packages; can be removed if you don't have this script
 
-fakeroot dpkg-deb --build trowser_2.0-2
+fakeroot dpkg-deb --build trowser_1.4

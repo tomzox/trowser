@@ -1,3 +1,16 @@
+trowser (1.4) unstable; urgency=medium
+
+  * updated text key bindings in main text widget to work with Tk-8.6;
+    (selection change via Shift-Key-Up/Down work again)
+  * replaced default/example highlighting patterns to work with Gtest logs
+  * improved default font configuration
+  * improved initial yview for file without newline char in last line
+  * correction "Discard above" menu command when search list is open
+  * correction search completion via Control-D in reg.exp. search mode
+  * added GitHub URL to "About" dialog
+
+ -- maintainer T. Zoerner <tomzox@gmail.com>  Wed, 19 Apr 2023 20:15:09 +0200
+
 trowser (1.3) unstable; urgency=medium
 
   * update highlighting in visible text portion when scrolling during initial

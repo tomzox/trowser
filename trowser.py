@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2010,2019-2023 Th. Zoerner
+# Copyright (C) 2007-2010,2019-2020,2023 T. Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -6721,7 +6721,7 @@ def OpenAboutDialog():
     wt.about_name = Label(wt.about, text="Trace Browser")
     wt.about_name.pack(side=TOP, pady=8)
 
-    wt.about_copyr1 = Label(wt.about, text="Copyright (C) 2007-2010,2019-2023 Th. Zoerner", font=font_normal)
+    wt.about_copyr1 = Label(wt.about, text="Copyright (C) 2007-2010,2019-2020,2023 T. Zoerner", font=font_normal)
     wt.about_copyr1.pack(side=TOP)
 
     msg ="""
@@ -8596,7 +8596,7 @@ load_buf_size = 0x100000
 
 # define RC file version limit for forwards compatibility
 rcfile_compat = 0x02000001
-rcfile_version = 0x02000002
+rcfile_version = 0x02010000
 rc_file_error = 0
 
 #

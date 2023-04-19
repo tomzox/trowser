@@ -279,7 +279,7 @@ As soon as a search expression is typed into the field, an incremental
 search is started and matching lines are highlighted. The cursor in
 the main text isn't actually moved there until the search is completed
 by pressing C<Return>.  The search can be aborted by C<^C> or C<Escape>.
-For more details see L<Key bindings in the search entry field>.
+For more details see L<KEY BINDINGS: Key Bindings in the Search Entry Field>.
 
 =item C<n>, C<N>
 
@@ -289,7 +289,7 @@ always searches forward and C<N> always backwards because the
 standard vim behavior of remembering and reversing the search
 direction with C<N> is very confusing.)
 
-=item S< >C<*>, C<#>
+=item C<*>, C<#>
 
 Searches for the word under the cursor in forward or backwards direction
 respectively (same as in vim)  Note when regular expression search mode
@@ -303,28 +303,28 @@ Remove the highlighting of previous search matches (not in vim as such,
 but can be added via C<map & :nohlsearch^M> in I<.vimrc>)  Note this does
 not disable highlighting in subsequent searches.
 
-=item I<ALT->C<f>
+=item I<ALT-> C<f>
 
 Moves the focus in the search search entry field.  This is equivalent to
 C</> or C<?> but without changing the search direction (not in vim)
 This is equivalent to clicking into the "Find:" entry field with the
 mouse button.
 
-=item I<ALT->C<n>, I<ALT->C<p>
+=item I<ALT-> C<n>, I<ALT-> C<p>
 
 Repeat a previous search, equivalent to C<n> and C<N> (not in vim)
 
-=item I<ALT->C<h>
+=item I<ALT-> C<h>
 
 Enable the "Highlight all" option, i.e. highlight all lines in the text
 where the current search pattern matches (not in vim)
 
-=item I<ALT->C<a>
+=item I<ALT-> C<a>
 
 Open the search result window and fill it with all text lines which match
 the current search pattern (not in vim)
 
-=item I<ALT->C<N>, I<ALT->C<P>
+=item I<ALT-> C<N>, I<ALT-> C<P>
 
 Open the search result window and fill it with all text lines below or
 above the current cursor position respectively which match the current
@@ -387,12 +387,12 @@ exists to avoid confusion about C<i> not working on the current text line.)
 Undo or redo respectively the last addition or removal of text lines in
 the search list done by C<i> or "Search All" (different from vim.)
 
-=item I<ALT->C<+>, I<ALT->C<->
+=item I<ALT-> C<+>, I<ALT-> C<->
 
 Increases or decreases the font size for the text content. Note the behavior
 when reaching the maximum or minimum font size is undefined.
 
-=item I<ALT->C<w>
+=item I<ALT-> C<w>
 
 Toggle line-wrap for text in the main window (i.e. text lines which are
 longer than the window width will wrap into the next line.)
@@ -452,31 +452,31 @@ background color.)
 Remove the currently used pattern in the search history, if the current
 pattern was copied by use of I<Up> or I<Down> (not in vim)
 
-=item I<Alt->C<n>, I<Alt->C<p>
+=item I<ALT-> C<n>, I<ALT-> C<p>
 
 Same as pressing the I<Next> or I<Previous> buttons respectively, i.e. search
 for the current pattern in forward or backwards direction and add the pattern
 to the search history. Keyboard focus remains in the search entry field.
 
-=item I<Alt->C<a>
+=item I<ALT-> C<a>
 
 Open the search result window and fill it with all text lines which match
 the current search pattern (not in vim)  Additionally, keyboard focus is
 moved back into the main window.
 
-=item I<ALT->C<N>, I<ALT->C<P>
+=item I<ALT-> C<N>, I<ALT-> C<P>
 
 Open the search result window and fill it with all text lines below or
 above the current cursor position respectively which match the current
 search pattern (not in vim)  Additionally, the keyboard focus is moved
 back into the main window.
 
-=item I<Alt->C<c>
+=item I<ALT-> C<c>
 
 Toggle the "match case" option, i.e. equivalent to clicking on I<Match case>
 (not in vim)
 
-=item I<Alt->C<e>
+=item I<ALT-> C<e>
 
 Toggle the regular expression search option, i.e. equivalent to clicking
 on button I<Reg.Exp.> (not in vim.)  When this option is enabled, special
@@ -662,10 +662,10 @@ Hence different highlighting for different file types can only be done
 by choosing different configuration files when starting trowser
 (see the I<--rcfile> option.)
 
-Not all vim navigation commands are implemented yet; Command repetition
-is supported only for a small sub-set of commands; Some commands behave
-slightly differently from vim (most notably the bookmark related commands.)
-vim's range and selection commands are not supported at all.
+Vim compatibility: Not all vim navigation commands are implemented; Command
+repetition is supported only for a small sub-set of commands; Some commands
+behave slightly differently from vim (most notably the bookmark related
+commands.) vim's range and selection commands are not supported at all.
 
 Search repetition by pressing "Next" or "Previous" or the search history
 dialog is currently not interruptable and may take quite a while if the
@@ -707,11 +707,11 @@ L<perlre(1)>
 
 =head1 AUTHOR
 
-Written by Th. Zoerner L<mailto:tomzo@users.sourceforge.net>
+Written by T. Zoerner L<mailto:tomzo@users.sourceforge.net>
 
 =head1 COPYRIGHT
 
-Copyright 2007-2009,2019-2020,2023 Th. Zoerner. All rights reserved.
+Copyright 2007-2009,2019-2020,2023 T. Zoerner. All rights reserved.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

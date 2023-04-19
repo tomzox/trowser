@@ -3,7 +3,7 @@
 exec wish "$0" -- "$@"
 
 # ------------------------------------------------------------------------ #
-# Copyright (C) 2007-2010,2019-2023 Th. Zoerner
+# Copyright (C) 2007-2010,2019-2020,2023 T. Zoerner
 # ------------------------------------------------------------------------ #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -7141,7 +7141,7 @@ proc OpenAboutDialog {} {
     label .about.name -text "Trace Browser"
     pack .about.name -side top -pady 8
 
-    label .about.copyr1 -text "Copyright (C) 2007-2010,2019-2023 Tom Zoerner" -font $font_normal
+    label .about.copyr1 -text "Copyright (C) 2007-2010,2019-2020,2023 T. Zoerner" -font $font_normal
     pack .about.copyr1 -side top
 
     message .about.m -font $font_normal -text {
@@ -9175,7 +9175,7 @@ set load_file_mode 0
 
 # define RC file version limit for forwards compatibility
 set rcfile_compat 0x01000000
-set rcfile_version 0x01030002
+set rcfile_version 0x01040000
 set myrcfile "~/.trowserc"
 
 #

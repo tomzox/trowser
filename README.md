@@ -77,7 +77,7 @@ piping output from another application directly into trowser.
 
 ## Documentation
 
-For a detailed description of features please refer to the [manual page](trowser.pod)
+For a detailed description of features please refer to the [manual page](doc/trowser.pod)
 
 ## Rationale
 
