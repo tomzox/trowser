@@ -279,7 +279,7 @@ As soon as a search expression is typed into the field, an incremental
 search is started and matching lines are highlighted. The cursor in
 the main text isn't actually moved there until the search is completed
 by pressing C<Return>.  The search can be aborted by C<^C> or C<Escape>.
-For more details see L<KEY BINDINGS: Key Bindings in the Search Entry Field>.
+For more details see L<"KEY BINDINGS/Key Bindings in the Search Entry Field">.
 
 =item C<n>, C<N>
 

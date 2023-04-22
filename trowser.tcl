@@ -64,7 +64,7 @@ proc InitResources {} {
     }
   } else {
     set text_modifier_events {
-        <<Cut>> <<Paste>> <<PasteSelection>>
+        <<Clear>> <<Cut>> <<Paste>> <<PasteSelection>>
         <<Redo>> <<Undo>> <<TkAccentBackspace>> <Key-BackSpace>
         <Key> <Key-Delete> <Key-Insert> <Key-Return>
         # Not modifiers, but events are overridden below
@@ -7128,7 +7128,7 @@ proc PaletteMenu_OtherColor {parent cmd col_def} {
 # This functions creates the "About" dialog with copyleft info
 #
 proc OpenAboutDialog {} {
-  global dlg_about_shown font_normal
+  global dlg_about_shown font_normal font_bold
 
   PreemptBgTasks
   if {![info exists dlg_about_shown]} {
@@ -7138,22 +7138,24 @@ proc OpenAboutDialog {} {
     wm transient .about .
     wm resizable .about 1 1
 
-    label .about.name -text "Trace Browser"
-    pack .about.name -side top -pady 8
+    label .about.name -text "Trace Browser" -font font_bold
+    pack .about.name -side top -padx 5 -pady 5
 
-    label .about.copyr1 -text "Copyright (C) 2007-2010,2019-2020,2023 T. Zoerner" -font $font_normal
-    pack .about.copyr1 -side top
+    label .about.copyr1 -text "Version 1.4\nCopyright (C) 2007-2010,2019-2020,2023 T. Zoerner"
+    pack .about.copyr1 -side top -padx 5
+
+    set url "https://github.com/tomzox/trowser"
+    label .about.url -text $url -fg "blue" -cursor top_left_arrow
+    pack .about.url -side top -padx 5 -pady 5
 
     message .about.m -font $font_normal -text {
-Homepage & Documentation: https://github.com/tomzox/trowser
-
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.  
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
     }
-    pack .about.m -side top
+    pack .about.m -side top -padx 5
 
     button .about.dismiss -text "Close" -command {destroy .about}
     pack .about.dismiss -pady 10
@@ -7161,6 +7163,7 @@ You should have received a copy of the GNU General Public License along with thi
     bind  .about.dismiss <Destroy> {+ unset -nocomplain dlg_about_shown}
     bind  .about.dismiss <Return> {event generate .about.dismiss <space>}
     bind  .about.dismiss <Escape> {event generate .about.dismiss <space>}
+    bind  .about.url <ButtonRelease-1> "clipboard clear; clipboard append $url"
     focus .about.dismiss
     set dlg_about_shown 1
 
