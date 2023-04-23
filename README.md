@@ -133,6 +133,9 @@ stored in `$HOME/.config/trowser/`.
 
 ## Installing Tcl/Tk & Python versions
 
+The Python variant is available as a package on
+[PyPi](https://pypi.org/project/trowser/)
+
 Software Requirements: trowser can be used on all platforms which are supported
 by either the Tcl/Tk or Python interpreters. This means all UNIX variants,
 Linux, Mac, and even MS Windows. On the other hand, this means a prerequisite
