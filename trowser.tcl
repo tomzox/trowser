@@ -130,6 +130,7 @@ proc CreateMainWindow {} {
   .menubar.ctrl add command -label "Discard below cursor..." -command {MenuCmd_Discard 1}
   .menubar.ctrl add separator
   .menubar.ctrl add command -label "Font selection..." -command FontList_OpenDialog
+  .menubar.ctrl add command -label "Toggle line-wrap" -command ToggleLineWrap -accelerator "Alt-w"
   .menubar.ctrl add separator
   .menubar.ctrl add command -label "Quit" -command {UserQuit; update}
   menu .menubar.search -tearoff 0 -postcommand MenuPosted
@@ -3143,7 +3144,7 @@ proc Mark_OfferSave {} {
   global mark_list mark_list_modified
 
   if {$mark_list_modified && ([array size mark_list] > 0)} {
-    set answer [tk_messageBox -icon question -type yesno -parent . \
+    set answer [tk_messageBox -icon question -type yesnocancel -parent . \
                   -message "Store changes in the bookmark list?"]
 
     if {$answer eq "yes"} {
@@ -3174,8 +3175,11 @@ proc Mark_OfferSave {} {
         after cancel $id
         catch {destroy .minfo}
       }
+    } elseif {$answer eq "cancel"} {
+      return 0
     }
   }
+  return 1
 }
 
 
@@ -8521,6 +8525,11 @@ proc MenuCmd_Discard {is_fwd} {
 proc MenuCmd_Reload {} {
   global cur_filename
 
+  # offer to save old bookmarks before discarding them below
+  if {[Mark_OfferSave] == 0} {
+    return
+  }
+
   if {$cur_filename ne ""} {
     DiscardContent
     after idle [list LoadFile $cur_filename]
@@ -8540,7 +8549,9 @@ proc MenuCmd_Reload {} {
 #
 proc MenuCmd_OpenFile {} {
   # offer to save old bookmarks before discarding them below
-  Mark_OfferSave
+  if {[Mark_OfferSave] == 0} {
+    return
+  }
 
   set filename [tk_getOpenFile -parent . -filetypes {{"trace" {out.*}} {all {*}}}]
   if {$filename ne ""} {
@@ -8556,7 +8567,9 @@ proc MenuCmd_OpenFile {} {
 #
 proc UserQuit {} {
   UpdateRcFile
-  Mark_OfferSave
+  if {[Mark_OfferSave] == 0} {
+    return
+  }
   destroy .
   exit 0
 }

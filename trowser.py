@@ -113,44 +113,45 @@ def CreateMainWindow():
   # menubar at the top of the main window
   wt.menubar = Menu(tk)
 
-  wt.menubar_ctrl = Menu(wt.menubar, tearoff=0, postcommand=lambda:MenuPosted())
-  wt.menubar_ctrl.add_command(label="Open file...", command=lambda:MenuCmd_OpenFile())
-  wt.menubar_ctrl.add_command(label="Reload current file", state=DISABLED, command=lambda:MenuCmd_Reload())
+  wt.menubar_ctrl = Menu(wt.menubar, tearoff=0, postcommand=MenuPosted)
+  wt.menubar_ctrl.add_command(label="Open file...", command=MenuCmd_OpenFile)
+  wt.menubar_ctrl.add_command(label="Reload current file", state=DISABLED, command=MenuCmd_Reload)
   wt.menubar_ctrl.add_separator()
   wt.menubar_ctrl.add_command(label="Discard above cursor...", command=lambda:MenuCmd_Discard(False))
   wt.menubar_ctrl.add_command(label="Discard below cursor...", command=lambda:MenuCmd_Discard(True))
   wt.menubar_ctrl.add_separator()
-  wt.menubar_ctrl.add_command(label="Font selection...", command=lambda:FontList_OpenDialog())
+  wt.menubar_ctrl.add_command(label="Font selection...", command=FontList_OpenDialog)
+  wt.menubar_ctrl.add_command(label="Toggle line-wrap", command=ToggleLineWrap, accelerator="ALT-w")
   wt.menubar_ctrl.add_separator()
-  wt.menubar_ctrl.add_command(label="Quit", command=lambda:UserQuit())
+  wt.menubar_ctrl.add_command(label="Quit", command=UserQuit)
 
-  wt.menubar_search = Menu(wt.menubar, tearoff=0, postcommand=lambda:MenuPosted())
-  wt.menubar_search.add_command(label="Search history...", command=lambda:SearchHistory_Open())
-  wt.menubar_search.add_command(label="Edit highlight patterns...", command=lambda:TagList_OpenDialog())
+  wt.menubar_search = Menu(wt.menubar, tearoff=0, postcommand=MenuPosted)
+  wt.menubar_search.add_command(label="Search history...", command=SearchHistory_Open)
+  wt.menubar_search.add_command(label="Edit highlight patterns...", command=TagList_OpenDialog)
   wt.menubar_search.add_separator()
   wt.menubar_search.add_command(label="List all search matches...", command=lambda:SearchAll(True, 0), accelerator="ALT-a")
   wt.menubar_search.add_command(label="List all matches above...", command=lambda:SearchAll(True, 1), accelerator="ALT-P")
   wt.menubar_search.add_command(label="List all matches below...", command=lambda:SearchAll(True, 1), accelerator="ALT-N")
   wt.menubar_search.add_separator()
-  wt.menubar_search.add_command(label="Clear search highlight", command=lambda:SearchHighlightClear(), accelerator="&")
+  wt.menubar_search.add_command(label="Clear search highlight", command=SearchHighlightClear, accelerator="&")
   wt.menubar_search.add_separator()
   wt.menubar_search.add_command(label="Goto line number...", command=lambda:KeyCmd_OpenDialog("goto"))
 
-  wt.menubar_mark = Menu(wt.menubar, tearoff=0, postcommand=lambda:MenuPosted())
+  wt.menubar_mark = Menu(wt.menubar, tearoff=0, postcommand=MenuPosted)
   wt.menubar_mark.add_command(label="Toggle bookmark", accelerator="m", command=Mark_ToggleAtInsert)
-  wt.menubar_mark.add_command(label="List bookmarks", command=lambda:MarkList_OpenDialog())
-  wt.menubar_mark.add_command(label="Delete all bookmarks", command=lambda:Mark_DeleteAll())
+  wt.menubar_mark.add_command(label="List bookmarks", command=MarkList_OpenDialog)
+  wt.menubar_mark.add_command(label="Delete all bookmarks", command=Mark_DeleteAll)
   wt.menubar_mark.add_separator()
   wt.menubar_mark.add_command(label="Jump to prev. bookmark", command=lambda:Mark_JumpNext(False), accelerator="'-")
   wt.menubar_mark.add_command(label="Jump to next bookmark", command=lambda:Mark_JumpNext(True), accelerator="'+")
   wt.menubar_mark.add_separator()
-  wt.menubar_mark.add_command(label="Read bookmarks from file...", command=lambda:Mark_ReadFileFrom())
-  wt.menubar_mark.add_command(label="Save bookmarks to file...", command=lambda:Mark_SaveFileAs())
+  wt.menubar_mark.add_command(label="Read bookmarks from file...", command=Mark_ReadFileFrom)
+  wt.menubar_mark.add_command(label="Save bookmarks to file...", command=Mark_SaveFileAs)
 
-  wt.menubar_help = Menu(wt.menubar, name="help", tearoff=0, postcommand=lambda:MenuPosted())
+  wt.menubar_help = Menu(wt.menubar, name="help", tearoff=0, postcommand=MenuPosted)
   dlg_help_add_menu_commands(wt.menubar_help)
   wt.menubar_help.add_separator()
-  wt.menubar_help.add_command(label="About", command=lambda:OpenAboutDialog())
+  wt.menubar_help.add_command(label="About", command=OpenAboutDialog)
 
   wt.menubar.add_cascade(label="Control", menu=wt.menubar_ctrl, underline=0)
   wt.menubar.add_cascade(label="Search", menu=wt.menubar_search, underline=0)
@@ -2995,12 +2996,15 @@ def Mark_OfferSave():
   global mark_list, mark_list_modified
 
   if mark_list_modified and (len(mark_list) > 0):
-    answer = messagebox.askyesno(parent=tk, default="yes", title="Trace browser",
-                                 message="Store changes in the bookmark list before quitting?")
+    answer = messagebox.askyesnocancel(parent=tk, default="yes", title="Trace browser",
+                                       message="Store changes in the bookmark list before quitting?")
+    if answer is None:
+        return False
     if answer:
       Mark_SaveFileAs()
       if mark_list_modified == 0:
         DisplayStatusLine("bookmark", "info", "Bookmarks have been saved")
+  return True
 
 
 # ----------------------------------------------------------------------------
@@ -7846,6 +7850,10 @@ def MenuCmd_Discard(is_fwd):
 def MenuCmd_Reload():
   global load_pipe, cur_filename
 
+  # offer to save old bookmarks before discarding them below
+  if not Mark_OfferSave():
+    return
+
   if load_pipe is not None:
     if not load_pipe.is_eof:
       DiscardContent()
@@ -7862,7 +7870,8 @@ def MenuCmd_Reload():
 #
 def MenuCmd_OpenFile():
   # offer to save old bookmarks before discarding them below
-  Mark_OfferSave()
+  if not Mark_OfferSave():
+    return
 
   filename = filedialog.askopenfilename(parent=tk, filetypes=(("trace", "out.*"), ("all", "*")))
   if filename:
@@ -7876,7 +7885,8 @@ def MenuCmd_OpenFile():
 #
 def UserQuit():
   UpdateRcFile()
-  Mark_OfferSave()
+  if not Mark_OfferSave():
+    return
   tk.destroy()
   sys.exit(0)
 
@@ -8650,6 +8660,10 @@ def UpdateRcAfterIdle():
     tid_update_rc_min = tk.after(60000, UpdateRcFile)
 
 
+#
+# This function determines the default path for the configuration file, if none
+# is specified on the command line.
+#
 def GetRcFilePath():
     if (os.name == "posix"):
         xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
@@ -8720,7 +8734,7 @@ def ParseArgInt(opt, val):
 # This function parses and evaluates the command line arguments.
 #
 def ParseArgv():
-  global load_file_mode, load_buf_size_opt
+  global load_file_mode, load_buf_size_opt, myrcfile
 
   file_seen = False
   arg_idx = 1
@@ -8766,7 +8780,7 @@ def ParseArgv():
       elif arg.startswith("--rcfile"):
         match = re.match("^--rcfile=(.+)$", arg)
         if match:
-          myrcfile = match.group(0)
+          myrcfile = match.group(1)
         else:
           PrintUsage(arg, "requires a path argument (e.g. --rcfile=foo/bar)")
 
@@ -9074,7 +9088,7 @@ tlb_case = BooleanVar(tk, tlb_case)
 tlb_regexp = BooleanVar(tk, tlb_regexp)
 tlb_hall = BooleanVar(tk, tlb_hall)
 tlb_find = StringVar(tk, tlb_find)
-font_content = tkf.nametofont(font_content_default)
+font_content = tkf.Font(font=tkf.nametofont(font_content_default))
 
 # Parse command line parameters & load configuration options
 myrcfile = GetRcFilePath()
