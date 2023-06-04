@@ -40,6 +40,13 @@ from tkinter import messagebox
 from tkinter import filedialog
 from tkinter import colorchooser
 
+# Module "appdirs" is required on Windows to learn the directory where to store
+# application configuration files. Install the module via "pip3 install appdirs"
+# if the import fails. (Alternatively, you could replace the one function call
+# into the module with a hard-coded path.)
+if sys.platform == "win32":
+    import appdirs
+
 #
 # This function is used during start-up to define fonts, colors and
 # global event binding tags.
@@ -8684,8 +8691,13 @@ def GetRcFilePath():
 
         os.makedirs(os.path.dirname(rc_file), exist_ok=True)
 
-    else: # TODO win32
-        rc_file = "trowser.ini"
+    else:
+        # Query system library for the common path for application configuration.
+        # e.g. on Win10: C:\Users\USERNAME\AppData\Local\Trowser (hidden directory)
+        config_dir = appdirs.user_config_dir(appname="Trowser", appauthor=False)
+        os.makedirs(config_dir, exist_ok=True)
+
+        rc_file = os.path.join(config_dir, "trowser.rc")
 
     return rc_file
 

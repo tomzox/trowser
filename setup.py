@@ -33,6 +33,8 @@ setup(
     scripts=['bin/trowser.py'],
     packages=[],
 
+    install_requires=['appdirs ; platform_system=="Windows"'],
+
     author='T. Zoerner',
     author_email='tomzox@gmail.com',
 
