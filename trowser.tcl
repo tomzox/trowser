@@ -3554,8 +3554,6 @@ proc MarkList_OpenRename {idx} {
 
       set xcoo [expr {[lindex $coo 0] - 3}]
       set ycoo [expr {[lindex $coo 1] - 3}]
-      set w [winfo width .dlg_mark.l]
-      set h [expr {[lindex $coo 3] + 6}]
       place .dlg_mark.mren -in .dlg_mark.l -anchor nw -x $xcoo -y $ycoo -relwidth 1.0
 
       focus .dlg_mark.mren.e
@@ -4058,6 +4056,7 @@ proc SearchList_Open {raise_win} {
 #
 proc SearchList_Close {} {
   global dlg_srch_sel dlg_srch_lines dlg_srch_fn_cache dlg_srch_shown
+  global dlg_srch_undo dlg_srch_redo
 
   SearchList_SearchAbort 0
 
@@ -4722,7 +4721,7 @@ proc SearchList_BgSearchLoop {pat_list do_add direction line pat_idx loop_cnt} {
 # tags in the main window content into the search list.
 #
 proc SearchList_StartSearchTags {tag_list direction} {
-  global tid_search_list
+  global tid_search_list dlg_srch_redo
 
   if {[SearchList_SearchAbort]} {
     if {$direction == 1} {
@@ -4818,7 +4817,7 @@ proc SearchList_BgSearchTagsLoop {tag_list tag_idx direction line loop_cnt} {
         } else {
           set line 1
         }
-        set tid_search_list [after idle [list SearchList_BgSearchTagsLoop $tag_list $tag_idx $line $direction $loop_cnt]]
+        set tid_search_list [after idle [list SearchList_BgSearchTagsLoop $tag_list $tag_idx $direction $line $loop_cnt]]
       } else {
         set tid_search_list {}
         catch {destroy .dlg_srch.slpro}
@@ -5324,6 +5323,7 @@ proc SearchList_InsertLine {txt_line ins_pos} {
 # the dialog's line number list (note the first line has number 1)
 #
 proc SearchList_Refill {} {
+  global tid_search_list
   # WARNING: caller must invoke SearchList_SearchAbort
   set tid_search_list [after 10 [list SearchList_BgRefillLoop 0]]
 }
@@ -5928,7 +5928,6 @@ proc TagList_Search {is_fwd} {
 proc TagList_SearchList {direction} {
   global patlist dlg_tags_sel
 
-  set min_line -1
   set sel [TextSel_GetSelection dlg_tags_sel]
   if {[llength $sel] > 0} {
     set tag_list {}
@@ -5987,8 +5986,6 @@ proc TagList_Update {pat_idx} {
 
   if {[info exists dlg_tags_shown]} {
     if {$pat_idx < [llength $patlist]} {
-      set w [lindex $patlist $pat_idx]
-
       TagList_Fill
       TextSel_SetSelection dlg_tags_sel {}
 
@@ -6065,7 +6062,6 @@ proc TagList_PopupColorPalette {pat_idx is_fg} {
 
     set w [lindex $patlist $pat_idx]
     set col_idx [expr {$is_fg ? 7 : 6}]
-    set def_col [lindex $w $col_idx]
 
     PaletteMenu_Popup .dlg_tags $rootx $rooty \
                       [list TagList_UpdateColor $pat_idx $is_fg] [lindex $w $col_idx]
@@ -6817,7 +6813,7 @@ proc Markup_ImageButton {wid type} {
 
 #
 # This helper function is invoked when the "drop down" button is pressed
-# on a color selction widget: it opens the color palette menu directly
+# on a color selection widget: it opens the color palette menu directly
 # below the widget.
 #
 proc Markup_PopupColorPalette {wid type} {
@@ -6831,7 +6827,7 @@ proc Markup_PopupColorPalette {wid type} {
 
 #
 # This helper function is invoked when the "drop down" button is pressed
-# on a pattern selction widget: it opens the associated menu directly
+# on a pattern selection widget: it opens the associated menu directly
 # below the widget.
 #
 proc Markup_PopupPatternMenu {wid} {
@@ -6887,7 +6883,7 @@ proc Palette_OpenDialog {} {
     menu .dlg_cols.ctxmen -tearoff 0
 
     set dlg_cols_palette $col_palette
-    Palette_Fill .dlg_cols.c $dlg_cols_palette
+    Palette_Fill .dlg_cols.c $dlg_cols_palette dlg_cols_cid
 
   } else {
     wm deiconify .dlg_cols
@@ -6901,26 +6897,26 @@ proc Palette_OpenDialog {} {
 # each display one of the currently defined colors. Each rectangle gets
 # mouse bindings for a context menu and changing the order of colors.
 #
-proc Palette_Fill {wid pal {sz 20} {sel_cmd {}}} {
-  global dlg_cols_cid
+proc Palette_Fill {wid palette cids_var {sz 20} {sel_cmd {}}} {
+  upvar $cids_var cids
 
   $wid delete all
-  set dlg_cols_cid {}
+  set cids {}
 
   set x 2
   set y 2
   set col_idx 0
   set idx 0
-  foreach col $pal {
+  foreach col $palette {
     set cid [$wid create rect $x $y [expr {$x + $sz}] [expr {$y + $sz}] \
                                      -outline black -fill $col \
                                      -activeoutline black -activewidth 2]
-    lappend dlg_cols_cid $cid
+    lappend cids $cid
 
     if {$sel_cmd eq ""} {
       $wid bind $cid <Double-Button-1> [list Palette_EditColor $idx $cid]
-      $wid bind $cid <B1-Motion> [list Palette_MoveColor $idx $cid %x %y]
-      $wid bind $cid <ButtonRelease-1> [list Palette_MoveColorEnd $idx $cid %x %y]
+      $wid bind $cid <B1-Motion> [list Palette_MoveColor $cid %x %y]
+      $wid bind $cid <ButtonRelease-1> [list Palette_MoveColorEnd $idx %x %y]
     } else {
       $wid bind $cid <Button-1> [linsert $sel_cmd end $col]
     }
@@ -6936,7 +6932,7 @@ proc Palette_Fill {wid pal {sz 20} {sel_cmd {}}} {
   }
 
   $wid configure -width [expr {10 * $sz + 3+3}] \
-                 -height [expr {(int([llength $pal] + (10-1)) / 10) * $sz + 2+2}]
+                 -height [expr {(int([llength $palette] + (10-1)) / 10) * $sz + 2+2}]
 }
 
 
@@ -6955,8 +6951,8 @@ proc Palette_ContextMenu {xcoo ycoo} {
       .dlg_cols.ctxmen add command -label "" -background [lindex $dlg_cols_palette $idx] -state disabled
       .dlg_cols.ctxmen add separator
       .dlg_cols.ctxmen add command -label "Change this color..." -command [list Palette_EditColor $idx $cid]
-      .dlg_cols.ctxmen add command -label "Duplicate this color" -command [list Palette_DuplicateColor $idx $cid]
-      .dlg_cols.ctxmen add command -label "Insert new color (white)" -command [list Palette_InsertColor $idx $cid]
+      .dlg_cols.ctxmen add command -label "Duplicate this color" -command [list Palette_DuplicateColor $idx]
+      .dlg_cols.ctxmen add command -label "Insert new color (white)" -command [list Palette_InsertColor $idx]
       .dlg_cols.ctxmen add separator
       .dlg_cols.ctxmen add command -label "Remove this color" -command [list Palette_RemoveColor $idx]
 
@@ -6973,11 +6969,11 @@ proc Palette_ContextMenu {xcoo ycoo} {
 # color palette context menu.
 #
 proc Palette_RemoveColor {idx} {
-  global dlg_cols_palette
+  global dlg_cols_palette dlg_cols_cid
 
   if {$idx < [llength $dlg_cols_palette]} {
     set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx]
-    Palette_Fill .dlg_cols.c $dlg_cols_palette
+    Palette_Fill .dlg_cols.c $dlg_cols_palette dlg_cols_cid
   }
 }
 
@@ -6987,20 +6983,20 @@ proc Palette_RemoveColor {idx} {
 # color palette entries. It inserts an white color entry at the mouse
 # pointer position.
 #
-proc Palette_InsertColor {idx cid} {
-  global dlg_cols_palette
+proc Palette_InsertColor {idx} {
+  global dlg_cols_palette dlg_cols_cid
 
   set dlg_cols_palette [linsert $dlg_cols_palette $idx {#ffffff}]
-  Palette_Fill .dlg_cols.c $dlg_cols_palette
+  Palette_Fill .dlg_cols.c $dlg_cols_palette dlg_cols_cid
 }
 
-proc Palette_DuplicateColor {idx cid} {
-  global dlg_cols_palette
+proc Palette_DuplicateColor {idx} {
+  global dlg_cols_palette dlg_cols_cid
 
   if {$idx < [llength $dlg_cols_palette]} {
     set col [lindex $dlg_cols_palette $idx]
     set dlg_cols_palette [linsert $dlg_cols_palette $idx $col]
-    Palette_Fill .dlg_cols.c $dlg_cols_palette
+    Palette_Fill .dlg_cols.c $dlg_cols_palette dlg_cols_cid
   }
 }
 
@@ -7025,7 +7021,7 @@ proc Palette_EditColor {idx cid} {
 # This function is bound to motion events on color palette entries while
 # the left mouse button is helt down.
 #
-proc Palette_MoveColor {idx cid xcoo ycoo} {
+proc Palette_MoveColor {cid xcoo ycoo} {
   set sz 20
   set sz_2 [expr {0 - ($sz /2)}]
   incr xcoo $sz_2
@@ -7039,8 +7035,8 @@ proc Palette_MoveColor {idx cid xcoo ycoo} {
 # This function is bound to the mouse button release event on color palette
 # entries. It's used to change the order of colors by drag-and-drop.
 #
-proc Palette_MoveColorEnd {idx cid xcoo ycoo} {
-  global dlg_cols_palette
+proc Palette_MoveColorEnd {idx xcoo ycoo} {
+  global dlg_cols_palette dlg_cols_cid
 
   set sz 20
   incr xcoo -2
@@ -7053,7 +7049,7 @@ proc Palette_MoveColorEnd {idx cid xcoo ycoo} {
   set dlg_cols_palette [lreplace $dlg_cols_palette $idx $idx]
   set dlg_cols_palette [linsert $dlg_cols_palette $new_idx $col]
 
-  Palette_Fill .dlg_cols.c $dlg_cols_palette
+  Palette_Fill .dlg_cols.c $dlg_cols_palette dlg_cols_cid
 }
 
 
@@ -7102,7 +7098,8 @@ proc PaletteMenu_Popup {parent rootx rooty cmd col_def} {
   pack .colsel.f1.b_none -side left -expand 1 -anchor e
   pack .colsel.f1 -side top -fill x -expand 1
 
-  Palette_Fill .colsel.c $col_palette 15 $cmd
+  set cids {}
+  Palette_Fill .colsel.c $col_palette cids 15 $cmd
 
   bind .colsel <ButtonRelease-1> {destroy .colsel}
   focus .colsel.c
@@ -8395,7 +8392,7 @@ proc InitContent {} {
   # set cursor to the end of file
   .f1.t mark set insert "end"
   CursorMoveLine .f1.t 0
-  global cur_jump_stack
+  global cur_jump_stack cur_jump_idx
   set cur_jump_stack {}
   set cur_jump_idx -1
   # read bookmarks from the default file
@@ -8624,7 +8621,7 @@ proc ResumeBgTasks {} {
 # though because it inflicts race conditions.)
 #
 proc ClearBgTasks {flag} {
-  global block_bg_tasks tid_resume_bg
+  global block_bg_tasks block_bg_caller tid_resume_bg
 
   if {$flag} {
     if {$block_bg_tasks == 0}  {

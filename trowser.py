@@ -33,7 +33,6 @@ import tempfile
 import json
 import re
 import traceback
-import tkinter
 import tkinter.font as tkf
 from tkinter import *
 from tkinter import messagebox
@@ -757,16 +756,16 @@ def Search_Background(pat, is_fwd, opt, start, is_changed, callback):
 
   if start != end:
     if is_fwd:
-      next = wt.f1_t.index(start + " + 5000 lines lineend")
+      next_line = wt.f1_t.index(start + " + 5000 lines lineend")
     else:
-      next = wt.f1_t.index(start + " - 5000 lines linestart")
+      next_line = wt.f1_t.index(start + " - 5000 lines linestart")
 
     # invoke the actual search in the text widget content
     match_len = IntVar(tk, 0)
-    pos = wt.f1_t.search(pat, start, next, count=match_len, **opt)
+    pos = wt.f1_t.search(pat, start, next_line, count=match_len, **opt)
 
     if pos == "":
-      tid_search_inc = tk.after_idle(lambda: Search_Background(pat, is_fwd, opt, next, is_changed, callback))
+      tid_search_inc = tk.after_idle(lambda: Search_Background(pat, is_fwd, opt, next_line, is_changed, callback))
     else:
       tid_search_inc = None
       Search_HandleMatch(pos, match_len.get(), pat, opt, is_changed)
@@ -906,6 +905,7 @@ def Search_HandleNoMatch(pat, is_fwd):
 # triggers an incremental search.
 #
 def SearchVarTrace(name1, name2, op):
+  # pylint: disable=unused-argument  # signature cannot be changed
   global tid_search_inc
   global tlb_last_dir
 
@@ -993,13 +993,13 @@ def SearchExprCheck(pat, is_re, display):
     try:
       # Text widget uses Tcl "re_syntax" which slightly differs from Python "re"
       #re.compile(pat)
-      foo = Text(tk)
-      foo.search(pat, 1.0, regexp=True)
+      dummy_wid = Text(tk)
+      dummy_wid.search(pat, 1.0, regexp=True)
       return True
     #except re.error as e:
     except Exception as e:
       if display:
-        DisplayStatusLine("search", "error", "Syntax error in search expression: " + e.msg)
+        DisplayStatusLine("search", "error", "Syntax error in search expression: " + str(e))
       return False
   else:
     return True
@@ -1254,7 +1254,7 @@ def SearchAbort():
   wt.f1_t.focus_set()
 
   if tlb_last_wid is not None:
-    tk.focus_set(tlb_last_wid)
+    tlb_last_wid.focus_set()
 
     top_wid = tlb_last_wid.winfo_toplevel()
     top_wid.lift()
@@ -1503,24 +1503,24 @@ def SearchWord(is_fwd):
 # This function moves the cursor onto the next occurence of the given
 # character in the current line.
 #
-def SearchCharInLine(char, dir):
+def SearchCharInLine(char, direction):
   global last_inline_char, last_inline_dir
 
   ClearStatusLine("search_inline")
   if char != "":
     last_inline_char = char
-    last_inline_dir = dir
+    last_inline_dir = direction
   else:
     if last_inline_char is not None:
       char = last_inline_char
-      dir = dir * last_inline_dir
+      direction = direction * last_inline_dir
     else:
       DisplayStatusLine("search_inline", "error", "No previous in-line character search")
       return
 
   pos = wt.f1_t.index("insert")
   if pos != "":
-    if dir > 0:
+    if direction > 0:
       dump = ExtractText(pos, pos + " lineend")
       idx = dump.find(char)
       if idx != -1:
@@ -1581,7 +1581,7 @@ def Search_RemoveFromHistory():
 # This function creates a small overlay which displays a temporary status
 # message.
 #
-def DisplayStatusLine(topic, type, msg):
+def DisplayStatusLine(topic, msg_type, msg):
   global col_bg_content, tid_status_line, status_line_topic
 
   focus_nam = tk.focus_get()
@@ -1594,9 +1594,9 @@ def DisplayStatusLine(topic, type, msg):
   elif (top_wid == wt.dlg_tags): wid = wt.dlg_tags_f1_l
   else:                          wid = wt.f1_t
 
-  if   type == "error": col = "#ff6b6b"
-  elif type == "warn":  col = "#ffcc5d"
-  else:                 col = col_bg_content
+  if   msg_type == "error": col = "#ff6b6b"
+  elif msg_type == "warn":  col = "#ffcc5d"
+  else:                     col = col_bg_content
 
   if not wt_exists(wt.stline):
     wt.stline = Frame(wid, background=col_bg_content, relief=RIDGE, borderwidth=2, takefocus=0)
@@ -1804,7 +1804,7 @@ def YviewSet(wid, where, col):
       wid.see("insert")
 
   # synchronize the search result list (if open) with the main text
-  (idx_l, idx_c) = map(int, wt.f1_t.index("insert").split("."))
+  idx_l = int(wt.f1_t.index("insert").split(".")[0])
   SearchList_MatchView(idx_l)
 
 
@@ -1833,14 +1833,14 @@ def YviewScroll(wid, delta):
 # This function scrolls the view vertically by half the screen height
 # in the given direction.
 #
-def YviewScrollHalf(wid, dir):
+def YviewScrollHalf(wid, direction):
   global font_content
 
   wh = wid.winfo_height()
   fh = font_content.metrics("linespace")
   if fh > 0:
     wh = int((wh + fh/2) / fh)
-    YviewScroll(wid, int(wh/2 * dir))
+    YviewScroll(wid, int(wh/2 * direction))
 
 #
 # This function moves the cursor into a given line in the current view.
@@ -1852,7 +1852,8 @@ def CursorSetLine(wid, where, off):
     index = wid.index("@1,1 + %d lines" % off)
     if (off > 0) and not IsRowFullyVisible(wid, index):
       # offset out of range - set to bottom instead
-      return CursorSetLine(wid, "bottom", 0)
+      CursorSetLine(wid, "bottom", 0)
+      return
     else:
       wid.mark_set("insert", index)
 
@@ -1868,7 +1869,8 @@ def CursorSetLine(wid, where, off):
         index = wid.index(index + " - 1 lines")
       else:
         # offset out of range - set to top instead
-        return CursorSetLine(wid, "top", 0)
+        CursorSetLine(wid, "top", 0)
+        return
 
     wid.mark_set("insert", index)
   else:
@@ -1947,11 +1949,11 @@ def CursorGotoLine(wid, where):
 # When the cursor is scrolled out of the window, it's placed in the last visible
 # column in scrolling direction.
 #
-def XviewScroll(wid, how, delta, dir):
+def XviewScroll(wid, how, delta, direction):
   pos_old = wid.bbox("insert")
 
   if how == "scroll":
-    wid.xview_scroll(dir * delta, "units")
+    wid.xview_scroll(direction * delta, "units")
   else:
     wid.xview_moveto(delta)
 
@@ -1960,7 +1962,7 @@ def XviewScroll(wid, how, delta, dir):
     pos_new = wid.bbox("insert")
     if (pos_new is None) or (pos_new[2] == 0):
       ycoo = pos_old[1] + pos_old[3] // 2
-      if dir < 0:
+      if direction < 0:
         wid.mark_set("insert", "@%d,%d" % (wid.winfo_width(), ycoo))
       else:
         wid.mark_set("insert", "@1,%d + 1 chars" % ycoo)
@@ -1970,16 +1972,16 @@ def XviewScroll(wid, how, delta, dir):
 # This function scrolls the view horizontally by half the screen width
 # in the given direction.
 #
-def XviewScrollHalf(wid, dir):
+def XviewScrollHalf(wid, direction):
   xpos = wid.xview()
   w = wid.winfo_width()
   if w != 0:
     fract_visible = xpos[1] - xpos[0]
-    off = xpos[0] + dir * (0.5 * fract_visible)
+    off = xpos[0] + direction * (0.5 * fract_visible)
     if off > 1:  off = 1
     if off < 0:  off = 0
 
-  XviewScroll(wid, "moveto", off, dir)
+  XviewScroll(wid, "moveto", off, direction)
 
 
 #
@@ -2033,14 +2035,14 @@ def CursorMoveWord(is_fwd, spc_only, to_end):
       dump = ExtractText(pos, pos + " lineend")
       if spc_only:
         if to_end:
-          match = re.match("^\s*\S*", dump)
+          match = re.match(r"^\s*\S*", dump)
         else:
-          match = re.match("^\S*\s*", dump)
+          match = re.match(r"^\S*\s*", dump)
       else:
         if to_end:
-          match = re.match("^\W*\w*", dump)
+          match = re.match(r"^\W*\w*", dump)
         else:
-          match = re.match("^\w*\W*", dump)
+          match = re.match(r"^\w*\W*", dump)
 
       if match and ((len(match.group(0)) < len(dump)) or to_end):
         wt.f1_t.mark_set("insert", "insert + %d chars" % len(match.group(0)))
@@ -2051,14 +2053,14 @@ def CursorMoveWord(is_fwd, spc_only, to_end):
       dump = ExtractText(pos + " linestart", pos)
       if spc_only:
         if to_end:
-          match = re.search("\s(\s+)$", dump)
+          match = re.search(r"\s(\s+)$", dump)
         else:
-          match = re.search("(\S+\s*)$", dump)
+          match = re.search(r"(\S+\s*)$", dump)
       else:
         if to_end:
-          match = re.search("\w(\W+\w*)$", dump)
+          match = re.search(r"\w(\W+\w*)$", dump)
         else:
-          match = re.search("(\w+|\w+\W+)$", dump)
+          match = re.search(r"(\w+|\w+\W+)$", dump)
 
       if match:
         wt.f1_t.mark_set("insert", "insert - %d chars" % len(match.group(1)))
@@ -2076,12 +2078,9 @@ def IsRowFullyVisible(wid, index):
   global font_content
 
   fh = font_content.metrics("linespace")
-  bbox = wid.bbox("insert")
+  bbox = wid.bbox(index)
 
-  if (bbox is None) or (bbox[3] < fh):
-    return 0
-  else:
-    return 1
+  return bbox and (bbox[3] >= fh)
 
 
 #
@@ -2089,7 +2088,7 @@ def IsRowFullyVisible(wid, index):
 #
 def ExtractText(pos1, pos2):
   dump = []
-  for (key, val, idx) in wt.f1_t.dump(pos1, pos2, text=1):
+  for (key, val, _) in wt.f1_t.dump(pos1, pos2, text=1):
     if key == "text":
       dump.append(val)
 
@@ -2224,9 +2223,10 @@ def KeyCmd(wid, char):
   global last_key_char
 
   reg = key_cmd_reg.get(wid)
-  if reg is None: return
+  if reg is None:
+      return False
 
-  result = 0
+  result = False
   if char != "":
     if last_key_char == "'":
       # single quote char: jump to marker or bookmark
@@ -2246,7 +2246,7 @@ def KeyCmd(wid, char):
         DisplayStatusLine("keycmd", "error", "Undefined key sequence \"'%s\"" % char)
 
       last_key_char = ""
-      result = 1
+      result = True
 
     elif (last_key_char == "z") or (last_key_char == "g"):
       ClearStatusLine("keycmd")
@@ -2258,17 +2258,17 @@ def KeyCmd(wid, char):
         DisplayStatusLine("keycmd", "error", "Undefined key sequence \"%s\"" % char)
 
       last_key_char = ""
-      result = 1
+      result = True
 
     elif last_key_char == "f":
       SearchCharInLine(char, 1)
       last_key_char = ""
-      result = 1
+      result = True
 
     elif last_key_char == "F":
       SearchCharInLine(char, -1)
       last_key_char = ""
-      result = 1
+      result = True
 
     else:
       last_key_char = ""
@@ -2280,13 +2280,13 @@ def KeyCmd(wid, char):
       elif "1" <= char <= "9":
         KeyCmd_OpenDialog("any", char)
         last_key_char = ""
-        result = 1
+        result = True
 
       elif char in "z'fFg":
         last_key_char = char
-        result = 1
+        result = True
 
-  # return 1 if the key was consumed, else 0
+  # return True if the key was consumed, else False
   return result
 
 
@@ -2298,8 +2298,8 @@ def KeyClr():
   global last_key_char
   last_key_char = ""
 
-def KeyHomeEnd(wid, dir):
-  CursorSetColumn(wid, dir)
+def KeyHomeEnd(wid, direction):
+  CursorSetColumn(wid, direction)
   KeyClr()
 
 #
@@ -2361,14 +2361,14 @@ def KeyBinding_LeftRight(wid):
 # number.  The dialog is placed into the upper left corner of the text
 # widget in the main window.
 #
-def KeyCmd_OpenDialog(type, txt=""):
+def KeyCmd_OpenDialog(dlg_type, txt=""):
   global keycmd_ent
 
   PreemptBgTasks()
   if not wt_exists(wt.dlg_key_e):
     wt.dlg_key = Frame(wt.f1_t, borderwidth=2, relief=RAISED)
 
-    if type == "goto":
+    if dlg_type == "goto":
       cmd_text = "Goto line:"
     else:
       cmd_text = "Command:"
@@ -2380,7 +2380,7 @@ def KeyCmd_OpenDialog(type, txt=""):
     wt.dlg_key_e = Entry(wt.dlg_key, width=12, textvariable=keycmd_ent, exportselection=0)
     wt.dlg_key_e.pack(side=LEFT, padx=5)
 
-    if type == "goto":
+    if dlg_type == "goto":
       wt.dlg_key_e.bind("<Return>", lambda e: BindCallAndBreak(KeyCmd_ExecGoto))
     else:
       # line goto key binding
@@ -2534,7 +2534,7 @@ def KeyCmd_ExecAbsColumn():
 
   ClearStatusLine("keycmd")
   # prevent running beyond the end of the line
-  (max_line, max_col) = map(int, wt.f1_t.index("insert lineend").split("."))
+  max_col = int(wt.f1_t.index("insert lineend").split(".")[1])
   if val < max_col:
     wt.f1_t.mark_set("insert", "insert linestart + %d chars" % val)
   else:
@@ -2571,7 +2571,7 @@ def KeyCmd_ExecSearch(is_fwd):
 
   if tlb_find.get() != "":
     count = 0
-    for idx in range(val):
+    for _ in range(val):
       found = Search_Atomic(tlb_find.get(), tlb_regexp.get(), tlb_case.get(), is_fwd, False)
       if found == "":
         limit = "end" if is_fwd else "start"
@@ -2603,7 +2603,7 @@ def KeyCmd_ExecCursorMove(key):
   if val < 10000:
     ClearStatusLine("keycmd")
     KeyCmd_Leave()
-    for idx in range(val):
+    for _ in range(val):
       wt.f1_t.event_generate(key)
   else:
     DisplayStatusLine("keycmd", "error", "Repetition value too large: %d" % val)
@@ -2860,7 +2860,6 @@ def Mark_ReadFile(filename):
   if line_num >= 0:
     modif = mark_list_modified or (len(mark_list) != 0)
 
-    pos = wt.f1_t.index("end")
     max_line = int(wt.f1_t.index("end").split(".")[0])
     warned = False
 
@@ -3212,7 +3211,7 @@ def MarkList_ContextMenu(xcoo, ycoo):
 #
 def MarkList_OpenDialog():
   global font_content, col_bg_content, col_fg_content
-  global cur_filename, dlg_mark_shown, dlg_mark_sel, dlg_mark_geom
+  global cur_filename, dlg_mark_shown, dlg_mark_sel
 
   PreemptBgTasks()
   if not dlg_mark_shown:
@@ -3353,8 +3352,6 @@ def MarkList_OpenRename(idx):
 
       xcoo = coo[0] - 3
       ycoo = coo[1] - 3
-      w = wt.dlg_mark_l.winfo_width()
-      h = coo[3] + 6
       wt.dlg_mark_mren.place(anchor=NW, x=xcoo, y=ycoo, relwidth=1.0) # -in .dlg_mark.l
 
       wt.dlg_mark_mren_e.focus_set()
@@ -3394,7 +3391,7 @@ def MarkList_LeaveRename():
 #
 def SearchHistory_Open():
   global font_content, col_bg_content, col_fg_content, cur_filename
-  global dlg_hist_shown, dlg_hist_sel, dlg_hist_geom
+  global dlg_hist_shown, dlg_hist_sel
 
   PreemptBgTasks()
   if not dlg_hist_shown:
@@ -3723,7 +3720,7 @@ def SearchHistory_GetLen():
 #
 def SearchList_Open(raise_win):
   global font_content, col_bg_content, col_fg_content, cur_filename
-  global dlg_srch_shown, dlg_srch_geom, dlg_srch_sel, dlg_srch_lines, dlg_srch_fn_cache
+  global dlg_srch_shown, dlg_srch_sel, dlg_srch_lines, dlg_srch_fn_cache
   global dlg_srch_show_fn, dlg_srch_show_tick, dlg_srch_tick_delta, dlg_srch_tick_root
   global dlg_srch_highlight, dlg_srch_undo, dlg_srch_redo
   global tick_pat_sep, tick_pat_num
@@ -3775,9 +3772,9 @@ def SearchList_Open(raise_win):
     wt.dlg_srch_menubar_search.add_command(label="Search history...", command=SearchHistory_Open)
     wt.dlg_srch_menubar_search.add_command(label="Edit highlight patterns...", command=TagList_OpenDialog)
     wt.dlg_srch_menubar_search.add_separator()
-    wt.dlg_srch_menubar_search.add_command(label="Insert all search matches...", command=lambda:SearchAll(1, 0), accelerator="ALT-a")
-    wt.dlg_srch_menubar_search.add_command(label="Insert all matches above...", command=lambda:SearchAll(1 -1), accelerator="ALT-P")
-    wt.dlg_srch_menubar_search.add_command(label="Insert all matches below...", command=lambda:SearchAll(1, 1), accelerator="ALT-N")
+    wt.dlg_srch_menubar_search.add_command(label="Insert all search matches...", command=lambda:SearchAll(True, 0), accelerator="ALT-a")
+    wt.dlg_srch_menubar_search.add_command(label="Insert all matches above...", command=lambda:SearchAll(True, -1), accelerator="ALT-P")
+    wt.dlg_srch_menubar_search.add_command(label="Insert all matches below...", command=lambda:SearchAll(True, 1), accelerator="ALT-N")
     wt.dlg_srch_menubar_edit.add_separator()
     wt.dlg_srch_menubar_edit.add_command(label="Add main window search matches", command=lambda:SearchList_AddMatches(0))
     wt.dlg_srch_menubar_edit.add_command(label="Remove main window search matches", command=lambda:SearchList_RemoveMatches(0))
@@ -3834,9 +3831,9 @@ def SearchList_Open(raise_win):
     wt.dlg_srch_f1_l.bind("<Alt-Key-0>", lambda e:BindCallAndBreak(SearchList_SetFnRoot))
     wt.dlg_srch_f1_l.bind("<Alt-Key-n>", lambda e:BindCallAndBreak(lambda:SearchNext(1)))
     wt.dlg_srch_f1_l.bind("<Alt-Key-p>", lambda e:BindCallAndBreak(lambda:SearchNext(0)))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-a>", lambda e:BindCallAndBreak(lambda:SearchAll(0, 0)))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-N>", lambda e:BindCallAndBreak(lambda:SearchAll(0, 1)))
-    wt.dlg_srch_f1_l.bind("<Alt-Key-P>", lambda e:BindCallAndBreak(lambda:SearchAll(0, -1)))
+    wt.dlg_srch_f1_l.bind("<Alt-Key-a>", lambda e:BindCallAndBreak(lambda:SearchAll(False, 0)))
+    wt.dlg_srch_f1_l.bind("<Alt-Key-N>", lambda e:BindCallAndBreak(lambda:SearchAll(False, 1)))
+    wt.dlg_srch_f1_l.bind("<Alt-Key-P>", lambda e:BindCallAndBreak(lambda:SearchAll(False, -1)))
     wt.dlg_srch_f1_l.focus_set()
 
     wt.dlg_srch_ctxmen = Menu(wt.dlg_srch, tearoff=0)
@@ -3862,6 +3859,7 @@ def SearchList_Open(raise_win):
 #
 def SearchList_Close():
   global dlg_srch_sel, dlg_srch_lines, dlg_srch_fn_cache, dlg_srch_shown
+  global dlg_srch_undo, dlg_srch_redo
 
   SearchList_SearchAbort(False)
 
@@ -4469,7 +4467,7 @@ def SearchList_BgSearchLoop(pat_list, do_add, direction, line, pat_idx, loop_cnt
 # tags in the main window content into the search list.
 #
 def SearchList_StartSearchTags(tag_list, direction):
-  global tid_search_list
+  global tid_search_list, dlg_srch_redo
 
   if SearchList_SearchAbort():
     if direction == 1:
@@ -4563,7 +4561,7 @@ def SearchList_BgSearchTagsLoop(tag_list, tag_idx, direction, line, loop_cnt):
         else:
           line = 1
 
-        tid_search_list = tk.after_idle(lambda: SearchList_BgSearchTagsLoop(tag_list, tag_idx, line, direction, loop_cnt))
+        tid_search_list = tk.after_idle(lambda: SearchList_BgSearchTagsLoop(tag_list, tag_idx, direction, line, loop_cnt))
       else:
         tid_search_list = None
         SafeDestroy(wt.dlg_srch_slpro)
@@ -4680,6 +4678,8 @@ def SearchList_SearchAbort(do_warn=True):
 
 
 def SearchList_DestroyCb():
+  global tid_search_list
+
   if vwait_search_complete.get() == "wait":
     if tid_search_list is not None:
       vwait_search_complete.set("cancel_new")
@@ -5031,6 +5031,7 @@ def SearchList_InsertLine(line_idx, ins_pos):
 # the dialog's line number list (note the first line has number 1)
 #
 def SearchList_Refill():
+  global tid_search_list
   # WARNING: caller must invoke SearchList_SearchAbort
   tid_search_list = tk.after(10, lambda: SearchList_BgRefillLoop(0))
 
@@ -5194,6 +5195,8 @@ def SearchList_SaveFileAs(lnum_only):
 # copied from the main window.
 #
 def SearchList_LoadFrom():
+  global tid_search_list
+
   if dlg_srch_shown and SearchList_SearchAbort():
     PreemptBgTasks()
     def_name = ""
@@ -5323,7 +5326,7 @@ def SearchList_DisplayStats():
 #
 def TagList_OpenDialog():
   global font_content, col_bg_content, col_fg_content
-  global dlg_tags_shown, dlg_tags_geom, dlg_tags_sel
+  global dlg_tags_shown, dlg_tags_sel
 
   PreemptBgTasks()
   if not dlg_tags_shown:
@@ -5372,7 +5375,7 @@ def TagList_OpenDialog():
 
     wt.dlg_tags_ctxmen = Menu(wt.dlg_tags, tearoff=0)
 
-    wt.dlg_tags_f1_l.bind("<Double-Button-1>", lambda e:BindCallAndBreak(lambda: TagList_DoubleClick(e.x, e.y)))
+    wt.dlg_tags_f1_l.bind("<Double-Button-1>", lambda e:BindCallAndBreak(lambda: TagList_DoubleClick()))
     wt.dlg_tags_f1_l.bind("<ButtonRelease-3>", lambda e:BindCallAndBreak(lambda: TagList_ContextMenu(e.x, e.y)))
     wt.dlg_tags_f1_l.bind("<Delete>", lambda e:BindCallAndBreak(TagList_RemoveSelection))
     wt.dlg_tags_f1_l.bind("<Key-slash>", lambda e:BindCallAndBreak(lambda: SearchEnter(1, wt.dlg_tags_f1_l)))
@@ -5463,7 +5466,7 @@ def TagList_ContextPopulate(wid, show_all):
 # This function is bound to double mouse button clicks onto an entry in
 # the highlight list. The function opens the markup editor dialog.
 #
-def TagList_DoubleClick(xcoo, ycoo):
+def TagList_DoubleClick():
   global patlist, dlg_tags_sel
 
   sel = dlg_tags_sel.TextSel_GetSelection()
@@ -5571,7 +5574,6 @@ def TagList_Search(is_fwd):
 def TagList_SearchList(direction):
   global patlist, dlg_tags_sel
 
-  min_line = -1
   sel = dlg_tags_sel.TextSel_GetSelection()
   if len(sel) > 0:
     tag_list = []
@@ -5622,8 +5624,6 @@ def TagList_Update(pat_idx):
 
   if dlg_tags_shown:
     if pat_idx < len(patlist):
-      w = patlist[pat_idx]
-
       TagList_Fill()
       dlg_tags_sel.TextSel_SetSelection([])
 
@@ -5689,7 +5689,6 @@ def TagList_PopupColorPalette(pat_idx, is_fg):
 
     w = patlist[pat_idx]
     col_idx = 7 if is_fg else 6
-    def_col = w[col_idx]
 
     PaletteMenu_Popup(wt.dlg_tags, rootx, rooty,
                       lambda col:TagList_UpdateColor(col, pat_idx, is_fg),
@@ -5722,7 +5721,7 @@ def TagList_UpdateColor(col, pat_idx, is_fg):
 
       SearchList_CreateHighlightTags()
       MarkList_CreateHighlightTags()
-    except Exception as e:
+    except Exception:
       messagebox.showerror(parent=wt.dlg_srch, message="Failed to update color")
 
 
@@ -6383,8 +6382,8 @@ def Markup_UpdateFormat():
 # consists of a rectangle which displays the current choice and a button
 # which triggers a popup menu when pressed.
 #
-class Markup_ImageButton(object):
-  def __init__(self, parent, type):
+class Markup_ImageButton:
+  def __init__(self, parent, wid_type):
     global dlg_fmt
 
     CreateButtonBitmap("img_dropdown")
@@ -6397,12 +6396,12 @@ class Markup_ImageButton(object):
     self.wid_b.pack(side=LEFT)
     self.wid_men = Menu(self.wid, tearoff=0)
 
-    if type.endswith("col"):
-      self.wid_b.configure(command=lambda:Markup_PopupColorPalette(self.wid, type))
-    elif type.endswith("pat"):
+    if wid_type.endswith("col"):
+      self.wid_b.configure(command=lambda:Markup_PopupColorPalette(self.wid, wid_type))
+    elif wid_type.endswith("pat"):
       self.wid_c.create_bitmap(2, 2, anchor="nw")
       self.wid_b.configure(command=lambda:Markup_PopupPatternMenu(self.wid, self.wid_men))
-    elif type == "relief":
+    elif wid_type == "relief":
       self.wid_c_w = Frame(self.wid_c, width=10, height=10, borderwidth=2, relief=FLAT)
       self.wid_c.create_window(3, 3, anchor="nw", window=self.wid_c_w, width=12, height=12)
       self.wid_b.configure(command=lambda:Markup_PopupPatternMenu(self.wid, self.wid_men))
@@ -6410,22 +6409,22 @@ class Markup_ImageButton(object):
 
 #
 # This helper function is invoked when the "drop down" button is pressed
-# on a color selction widget: it opens the color palette menu directly
+# on a color selection widget: it opens the color palette menu directly
 # below the widget.
 #
-def Markup_PopupColorPalette(wid, type):
+def Markup_PopupColorPalette(wid, wid_type):
   global dlg_fmt
 
   rootx = wid.winfo_rootx()
   rooty = wid.winfo_rooty() + wid.winfo_height()
   PaletteMenu_Popup(wt.dlg_fmt, rootx, rooty,
-                    lambda col:Markup_UpdateColor(col, type, 0),
-                    dlg_fmt[type].get())
+                    lambda col:Markup_UpdateColor(wid_type, col),
+                    dlg_fmt[wid_type].get())
 
 
 #
 # This helper function is invoked when the "drop down" button is pressed
-# on a pattern selction widget: it opens the associated menu directly
+# on a pattern selection widget: it opens the associated menu directly
 # below the widget.
 #
 def Markup_PopupPatternMenu(wid, wid_men):
@@ -6438,8 +6437,8 @@ def Markup_PopupPatternMenu(wid, wid_men):
 # This helper function is invoked as callback after a color was selected
 # in the palette popup menu.
 #
-def Markup_UpdateColor(col, type, is_fg):
-  dlg_fmt[type].set(col)
+def Markup_UpdateColor(wid_type, col):
+  dlg_fmt[wid_type].set(col)
   Markup_UpdateFormat()
 
 
@@ -6471,16 +6470,18 @@ def Palette_OpenDialog():
     dlg_cols_shown = True
 
     wt.dlg_cols_f2 = Frame(wt.dlg_cols)
-    wt.dlg_cols_f2_abort = Button(wt.dlg_cols_f2, text="Abort", command=lambda:Palette_Save(0))
-    wt.dlg_cols_f2_ok = Button(wt.dlg_cols_f2, text="Ok", default="active", command=lambda:Palette_Save(1))
+    wt.dlg_cols_f2_abort = Button(wt.dlg_cols_f2, text="Abort", command=lambda:Palette_Save(False))
+    wt.dlg_cols_f2_ok = Button(wt.dlg_cols_f2, text="Ok", default="active", command=lambda:Palette_Save(True))
     wt.dlg_cols_f2_abort.pack(side=LEFT, padx=10, pady=5)
     wt.dlg_cols_f2_ok.pack(side=LEFT, padx=10, pady=5)
     wt.dlg_cols_f2.pack(side=TOP)
 
     wt.dlg_cols_ctxmen = Menu(wt.dlg_cols, tearoff=0)
 
-    dlg_cols_palette = col_palette
-    Palette_Fill(wt.dlg_cols_c, dlg_cols_palette)
+    dlg_cols_palette = col_palette.copy()
+    dlg_cols_cid = []
+
+    Palette_Fill(wt.dlg_cols_c, dlg_cols_palette, dlg_cols_cid)
 
   else:
     wt.dlg_cols.wm_deiconify()
@@ -6500,26 +6501,24 @@ def Palette_ClosedDialog():
 # each display one of the currently defined colors. Each rectangle gets
 # mouse bindings for a context menu and changing the order of colors.
 #
-def Palette_Fill(wid, pal, sz=20, sel_cmd=None):
-  global dlg_cols_cid
-
+def Palette_Fill(wid, palette, cids, sz=20, sel_cmd=None):
   wid.delete("all")
-  dlg_cols_cid = []
+  del cids[0:]
 
   x = 2
   y = 2
   col_idx = 0
   idx = 0
-  for col in pal:
+  for col in palette:
     cid = wid.create_rectangle(x, y, x + sz, y + sz,
                                outline="black", fill=col,
                                activeoutline="black", activewidth=2)
-    dlg_cols_cid.append(cid)
+    cids.append(cid)
 
     if sel_cmd is None:
       wid.tag_bind(cid, "<Double-Button-1>", lambda e, idx=idx, cid=cid: Palette_EditColor(idx, cid))
-      wid.tag_bind(cid, "<B1-Motion>", lambda e, idx=idx, cid=cid: Palette_MoveColor(idx, cid, e.x, e.y))
-      wid.tag_bind(cid, "<ButtonRelease-1>", lambda e, idx=idx, cid=cid: Palette_MoveColorEnd(idx, cid, e.x, e.y))
+      wid.tag_bind(cid, "<B1-Motion>", lambda e, idx=idx, cid=cid: Palette_MoveColor(cid, e.x, e.y))
+      wid.tag_bind(cid, "<ButtonRelease-1>", lambda e, idx=idx, cid=cid: Palette_MoveColorEnd(idx, e.x, e.y))
     else:
       wid.tag_bind(cid, "<Button-1>", lambda e, col=col: sel_cmd(col))
 
@@ -6533,7 +6532,7 @@ def Palette_Fill(wid, pal, sz=20, sel_cmd=None):
     idx += 1
 
   wid.configure(width=(10 * sz + 3+3),
-                height=(int((len(pal) + 10-1) / 10) * sz + 2+2))
+                height=(int((len(palette) + 10-1) / 10) * sz + 2+2))
 
 
 #
@@ -6555,8 +6554,8 @@ def Palette_ContextMenu(xcoo, ycoo):
     wt.dlg_cols_ctxmen.add_command(label="", background=dlg_cols_palette[idx], state=DISABLED)
     wt.dlg_cols_ctxmen.add_separator()
     wt.dlg_cols_ctxmen.add_command(label="Change this color...", command=lambda:Palette_EditColor(idx, cid))
-    wt.dlg_cols_ctxmen.add_command(label="Duplicate this color", command=lambda:Palette_DuplicateColor(idx, cid))
-    wt.dlg_cols_ctxmen.add_command(label="Insert new color (white)", command=lambda:Palette_InsertColor(idx, cid))
+    wt.dlg_cols_ctxmen.add_command(label="Duplicate this color", command=lambda:Palette_DuplicateColor(idx))
+    wt.dlg_cols_ctxmen.add_command(label="Insert new color (white)", command=lambda:Palette_InsertColor(idx))
     wt.dlg_cols_ctxmen.add_separator()
     wt.dlg_cols_ctxmen.add_command(label="Remove this color", command=lambda: Palette_RemoveColor(idx))
 
@@ -6570,11 +6569,11 @@ def Palette_ContextMenu(xcoo, ycoo):
 # color palette context menu.
 #
 def Palette_RemoveColor(idx):
-  global dlg_cols_palette
+  global dlg_cols_palette, dlg_cols_cid
 
   if idx < len(dlg_cols_palette):
     del dlg_cols_palette[idx]
-    Palette_Fill(wt.dlg_cols_c, dlg_cols_palette)
+    Palette_Fill(wt.dlg_cols_c, dlg_cols_palette, dlg_cols_cid)
 
 
 #
@@ -6582,20 +6581,20 @@ def Palette_RemoveColor(idx):
 # color palette entries. It inserts an white color entry at the mouse
 # pointer position.
 #
-def Palette_InsertColor(idx, cid):
-  global dlg_cols_palette
+def Palette_InsertColor(idx):
+  global dlg_cols_palette, dlg_cols_cid
 
   dlg_cols_palette.insert(idx, "#ffffff")
-  Palette_Fill(wt.dlg_cols_c, dlg_cols_palette)
+  Palette_Fill(wt.dlg_cols_c, dlg_cols_palette, dlg_cols_cid)
 
 
-def Palette_DuplicateColor(idx, cid):
-  global dlg_cols_palette
+def Palette_DuplicateColor(idx):
+  global dlg_cols_palette, dlg_cols_cid
 
   if idx < len(dlg_cols_palette):
     col = dlg_cols_palette[idx]
     dlg_cols_palette.insert(idx, col)
-    Palette_Fill(wt.dlg_cols_c, dlg_cols_palette)
+    Palette_Fill(wt.dlg_cols_c, dlg_cols_palette, dlg_cols_cid)
 
 
 #
@@ -6617,7 +6616,7 @@ def Palette_EditColor(idx, cid):
 # This function is bound to motion events on color palette entries while
 # the left mouse button is helt down.
 #
-def Palette_MoveColor(idx, cid, xcoo, ycoo):
+def Palette_MoveColor(cid, xcoo, ycoo):
   sz = 20
   sz_2 = 0 - (sz /2)
   xcoo += sz_2
@@ -6630,8 +6629,8 @@ def Palette_MoveColor(idx, cid, xcoo, ycoo):
 # This function is bound to the mouse button release event on color palette
 # entries. It's used to change the order of colors by drag-and-drop.
 #
-def Palette_MoveColorEnd(idx, cid, xcoo, ycoo):
-  global dlg_cols_palette
+def Palette_MoveColorEnd(idx, xcoo, ycoo):
+  global dlg_cols_palette, dlg_cols_cid
 
   sz = 20
   xcoo -= 2
@@ -6647,7 +6646,7 @@ def Palette_MoveColorEnd(idx, cid, xcoo, ycoo):
   else:
     dlg_cols_palette.append(col)
 
-  Palette_Fill(wt.dlg_cols_c, dlg_cols_palette)
+  Palette_Fill(wt.dlg_cols_c, dlg_cols_palette, dlg_cols_cid)
 
 
 #
@@ -6696,7 +6695,8 @@ def PaletteMenu_Popup(parent, rootx, rooty, cmd, col_def):
   wt.colsel_f1_b_none.pack(side=LEFT, expand=1, anchor=E)
   wt.colsel_f1.pack(side=TOP, fill=X, expand=1)
 
-  Palette_Fill(wt.colsel_c, col_palette, 15, cmd)
+  cids = []
+  Palette_Fill(wt.colsel_c, col_palette, cids, 15, cmd)
 
   wt.colsel.bind("<ButtonRelease-1>", lambda e: wt.colsel.destroy())
   wt.colsel_c.focus_set()
@@ -6787,7 +6787,7 @@ You should have received a copy of the GNU General Public License along with thi
 # - anchor element index OR last selection cursor pos
 # - list of indices of selected lines (starting at zero)
 #
-class TextSel(object):
+class TextSel:
   #
   # This constructor is called after a text widget is created for initializing
   # all member variables and for adding key and mouse event bindings for
@@ -7170,6 +7170,7 @@ class TextSel(object):
   # This helper function is used to build a list of all indices between
   # (and including) two given values in increasing order.
   #
+  @staticmethod
   def IdxRange(start, end):
     if start > end:
       return list(range(end, start + 1))
@@ -7266,21 +7267,21 @@ def TextSel_XselectionHandler(off, xlen):
 # commands by the user) and X selection mechanism (from where the user can
 # paste it via click with the middle mouse button).
 #
-def TextSel_XselectionExport(to_clipboard, str):
+def TextSel_XselectionExport(to_clipboard, txt):
   global main_selection_txt
 
   # update X selection
-  main_selection_txt = str
+  main_selection_txt = txt
   wt.xselection.selection_own()
 
   if to_clipboard:
     tk.clipboard_clear()
-    tk.clipboard_append(str)
+    tk.clipboard_append(txt)
 
 
 # ----------------------------------------------------------------------------
 
-class LoadPipe(object):
+class LoadPipe:
   def __init__(self):
     global load_file_mode
 
@@ -7507,7 +7508,7 @@ class LoadPipe(object):
           while self._thr_ctrl == 1:
             self._thr_cv.wait()
           if self._thr_ctrl == 2:
-            break;
+            break
 
           size = 64000
           if (load_file_mode == 0) and (self._read_buffered + size > load_buf_size):
@@ -7738,7 +7739,7 @@ def InitContent():
   wt.f1_t.mark_set("insert", "end")
   CursorMoveLine(wt.f1_t, 0)
 
-  global cur_jump_stack
+  global cur_jump_stack, cur_jump_idx
   cur_jump_stack = []
   cur_jump_idx = -1
   # read bookmarks from the default file
@@ -7932,7 +7933,7 @@ def ResumeBgTasks():
   else:
     block_bg_caller.append(["UNLOCK", traceback.format_tb(sys.exc_info()[2], limit=-2)])
     if tid_resume_bg is not None: tk.after_cancel(tid_resume_bg)
-    tid_resume_bg = tk.after_idle(lambda: ClearBgTasks(1))
+    tid_resume_bg = tk.after_idle(lambda: ClearBgTasks(True))
 
 
 #
@@ -7943,7 +7944,7 @@ def ResumeBgTasks():
 # though because it inflicts race conditions.)
 #
 def ClearBgTasks(flag):
-  global block_bg_tasks, tid_resume_bg
+  global block_bg_tasks, block_bg_caller, tid_resume_bg
 
   if flag:
     if block_bg_tasks == 0:
@@ -7954,7 +7955,7 @@ def ClearBgTasks(flag):
 
     tid_resume_bg = None
   else:
-    tid_resume_bg = tk.after(250, lambda: ClearBgTasks(0))
+    tid_resume_bg = tk.after(250, lambda: ClearBgTasks(False))
 
 
 #
@@ -7988,9 +7989,9 @@ def DebugDumpAllState():
       print(var, "=", val, file=sys.stderr)
 
   print("#--- debug dump of tasks ---#", file=sys.stderr)
-  for id in tk.call("after", "info"):
+  for tid in tk.call("after", "info"):
     try:
-      print(id, "=", tk.call("after", "info", id))
+      print(tid, "=", tk.call("after", "info", tid))
     except:
       pass
 
@@ -8019,7 +8020,7 @@ helpTexts[0] = (('''Description''', 'title1'), ('''
 ''', ''), ('''Trowser has a graphical interface, but is designed to allow browsing via the keyboard at least to the same extent as less. Key bindings and the cursor positioning concept are derived from vim.
 ''', ''), ('''Note in this context "line-oriented" denotes that each line of text is considered a data unit.  Color highlighting (including search matches) will always apply the highlight to a complete line of text.
 ''', ''), ('''When you start trowser for the first time, you'll have to create highlight patterns for your type of file.  To do this, first enter a search pattern and verify that it matches the intended lines. Then open the ''', ''), ('''Edit highlight patterns''', 'underlined'), (''' dialog in the ''', ''), ('''Search''', 'underlined'), (''' menu, press the right mouse button to open the context menu and select ''', ''), ('''Add current search''', 'underlined'), ('''. You can change the highlight color or select a different kind of mark-up by double-clicking on the new entry in the dialog, or by selecting ''', ''), ('''Edit markup''', 'underlined'), (''' in the context menu.  To define new colors, click on ''', ''), ('''Edit color palette''', 'underlined'), (''' at the bottom of the markup editor dialog.
-''', ''), ('''There are several ways to quickly navigate in the file to lines matching search patterns: Firstly, you can search forwards or backwards to any sub-string or pattern you enter in the ''', ''), ('''Find:''', 'underlined'), (''' field. Secondly, you can repeat previous searches by opening the search history dialog and double-clicking on an entry, or by clicking ''', ''), ('''Next''', 'underlined'), (''' or ''', ''), ('''Previous''', 'underlined'), ('''. Third, you can assign bookmarks to selected text lines and jump in-between those lines by clicking on them in the bookmark list dialog or via ''', ''), (''''+''', 'fixed'), (''' and ''', ''), (''''-''', 'fixed'), (''' key bindings (not in vim.) Fourth, you can search for patterns defined in the color highlight list by selecting a pattern in the list and then clicking on ''', ''), ('''Next''', 'underlined'), (''' or ''', ''), ('''Previous''', 'underlined'), (''' in the pattern list dialog. Fifth, you can open the ''', ''), ('''Search result list''', 'underlined'), (''' (via the ''', ''), ('''Search''', 'underlined'), (''' menu or by clicking on ''', ''), ('''List all''', 'underlined'), (''' in any dialog or by entering ''', ''), ('''ALT-a''', 'fixed'), (''') to display all text lines which match a set of patterns and click on an entry in this list to jump to the respective line in the main window. Sixth, you can manually copy arbitrary lines from the main text window into the search result window via the ''', ''), ('''\ 'i'\ ''', 'fixed'), (''' key (not in vim.)
+''', ''), ('''There are several ways to quickly navigate in the file to lines matching search patterns: Firstly, you can search forwards or backwards to any sub-string or pattern you enter in the ''', ''), ('''Find:''', 'underlined'), (''' field. Secondly, you can repeat previous searches by opening the search history dialog and double-clicking on an entry, or by clicking ''', ''), ('''Next''', 'underlined'), (''' or ''', ''), ('''Previous''', 'underlined'), ('''. Third, you can assign bookmarks to selected text lines and jump in-between those lines by clicking on them in the bookmark list dialog or via ''', ''), (''''+''', 'fixed'), (''' and ''', ''), (''''-''', 'fixed'), (''' key bindings (not in vim.) Fourth, you can search for patterns defined in the color highlight list by selecting a pattern in the list and then clicking on ''', ''), ('''Next''', 'underlined'), (''' or ''', ''), ('''Previous''', 'underlined'), (''' in the pattern list dialog. Fifth, you can open the ''', ''), ('''Search result list''', 'underlined'), (''' (via the ''', ''), ('''Search''', 'underlined'), (''' menu or by clicking on ''', ''), ('''List all''', 'underlined'), (''' in any dialog or by entering ''', ''), ('''ALT-a''', 'fixed'), (''') to display all text lines which match a set of patterns and click on an entry in this list to jump to the respective line in the main window. Sixth, you can manually copy arbitrary lines from the main text window into the search result window via the ''', ''), (''' 'i' ''', 'fixed'), (''' key (not in vim.)
 ''', ''), ('''The search filter list is one of the main features of the trace browser, as it allows to consecutively build an arbitrary sub-set of text lines in the main window. You can not only use one or more search patterns to add text, but also add selected text lines from the main text window via the ''', ''), ('''i''', 'fixed'), (''' key binding and remove individual lines again, either manually or by use of a search pattern.  Additionally you can use bookmarks in the search result window. When searching in the main window, the search result list will scroll to show the same region of text. Thus you effectively can navigate the text on three levels: Bookmarks > Search list > Main text.
 ''', ''), ('''Both the bookmark and search result lists support prefixing all entries with a "frame number". This is useful when your input file does not have time-stamp prefixes on each line. In this case trowser can search for a preceding time-stamp and automatically prefix bookmarked lines with this number.  Additionally trowser allows to fetch a "frame number" which is not printed in the same line as the frame interval start line. In this case trowser searches the next frame start lines in forward and backward direction and then inside of that range for a line containing the frame number value.  Note for the search result list this feature is disabled by default for performance reasons. It must be enabled in the dialog's ''', ''), ('''Options''', 'underlined'), (''' menu. The search patterns used to locate time-stamps currently have to be inserted into the RC file manually.
 ''', ''), ('''For performance reasons most search-related commands are executed as background processes, so that the GUI remains responsive during search. For example, this applies to the initial color highlighting, global search highlighting, incremental search while editing search patterns and filling the search result list.  Such background activity is indicated by display of a progress bar and switching the mouse cursor to a watch or hourglass image.  You still can use trowser as usual during this time though.  The background activity is automatically aborted or restarted when a conflicting command is entered (e.g. when the search pattern is modified during global search highlighting.)
@@ -8064,7 +8065,7 @@ helpTexts[1] = (('''Key bindings''', 'title1'), ('''
 ''', 'indent'), (''';''', 'fixed'), (''', ''', ''), (''',''', 'fixed'), (''' (semicolon, comma)
 ''', ''), ('''Repeat a previous in-line search (''', 'indent'), ('''f''', ('fixed', 'indent')), (''' or ''', 'indent'), ('''F''', ('fixed', 'indent')), (''') in the same or opposite direction respectively (same as in vim)
 ''', 'indent'), ('''''''', 'fixed'), (''' (two apostrophes)
-''', ''), ('''Moves the cursor to the position before the latest jump (same as in vim and less.)  A "jump" is one of the following commands: ''', 'indent'), ('''\ '\ ''', ('fixed', 'indent')), (''', ''', 'indent'), ('''G''', ('fixed', 'indent')), (''', ''', 'indent'), ('''/''', ('fixed', 'indent')), (''', ''', 'indent'), ('''?''', ('fixed', 'indent')), (''', ''', 'indent'), ('''n''', ('fixed', 'indent')), (''', ''', 'indent'), ('''N''', ('fixed', 'indent')), (''', ''', 'indent'), ('''L''', ('fixed', 'indent')), (''', ''', 'indent'), ('''M''', ('fixed', 'indent')), (''' and ''', 'indent'), ('''H''', ('fixed', 'indent')), (''' (same as in vim.)  Note movements controlled via the GUI, such as the bookmark list or search result list, do not modify the jump list.
+''', ''), ('''Moves the cursor to the position before the latest jump (same as in vim and less.)  A "jump" is one of the following commands: ''', 'indent'), (''' ' ''', ('fixed', 'indent')), (''', ''', 'indent'), ('''G''', ('fixed', 'indent')), (''', ''', 'indent'), ('''/''', ('fixed', 'indent')), (''', ''', 'indent'), ('''?''', ('fixed', 'indent')), (''', ''', 'indent'), ('''n''', ('fixed', 'indent')), (''', ''', 'indent'), ('''N''', ('fixed', 'indent')), (''', ''', 'indent'), ('''L''', ('fixed', 'indent')), (''', ''', 'indent'), ('''M''', ('fixed', 'indent')), (''' and ''', 'indent'), ('''H''', ('fixed', 'indent')), (''' (same as in vim.)  Note movements controlled via the GUI, such as the bookmark list or search result list, do not modify the jump list.
 ''', 'indent'), (''''+''', 'fixed'), (''', ''', ''), (''''-''', 'fixed'), ('''
 ''', ''), ('''Moves the cursor to the next or previous bookmark (not in vim)
 ''', 'indent'), (''''^''', 'fixed'), (''', ''', ''), (''''$''', 'fixed'), ('''
@@ -8140,7 +8141,7 @@ helpTexts[1] = (('''Key bindings''', 'title1'), ('''
 ''', 'indent'), ('''ALT-''', 'underlined'), (''' ''', ''), ('''c''', 'fixed'), ('''
 ''', ''), ('''Toggle the "match case" option, i.e. equivalent to clicking on ''', 'indent'), ('''Match case''', ('underlined', 'indent')), (''' (not in vim)
 ''', 'indent'), ('''ALT-''', 'underlined'), (''' ''', ''), ('''e''', 'fixed'), ('''
-''', ''), ('''Toggle the regular expression search option, i.e. equivalent to clicking on button ''', 'indent'), ('''Reg.Exp.''', ('underlined', 'indent')), (''' (not in vim.)  When this option is enabled, special characters are parsed according to ''', 'indent'), ('''re_syntax''', ('underlined', 'indent')), (''' Tcl manual page; the syntax is almost identical to Perl with few exceptions (notably ''', 'indent'), ('''\m''', ('fixed', 'indent')), (''' and ''', 'indent'), ('''\M''', ('fixed', 'indent')), (''' to match beginning and end of words)  When the option is not enabled, no characters have a special meaning (i.e. even "''', 'indent'), ('''*''', ('fixed', 'indent')), ('''") and a simple sub-string search is started.
+''', ''), ('''Toggle the regular expression search option, i.e. equivalent to clicking on button ''', 'indent'), ('''Reg.Exp.''', ('underlined', 'indent')), (''' (not in vim.)  When this option is enabled, special characters are parsed according to ''', 'indent'), ('''re_syntax''', ('underlined', 'indent')), (''' Tcl manual page; the syntax is almost identical to Perl with few exceptions (notably ''', 'indent'), ('''\\m''', ('fixed', 'indent')), (''' and ''', 'indent'), ('''\\M''', ('fixed', 'indent')), (''' to match beginning and end of words)  When the option is not enabled, no characters have a special meaning (i.e. even "''', 'indent'), ('''*''', ('fixed', 'indent')), ('''") and a simple sub-string search is started.
 ''', 'indent'), ('''Note: for performance reasons it's recommended to use case-sensitive sub-string searches for color highlighting, especially if you have many patterns. This is usually faster than combining multiple patterns with ''', 'indent'), ('''|''', ('fixed', 'indent')), (''' in a regular expression.
 ''', 'indent'), ('''Key Bindings in the Search Result Window''', 'title2'), ('''
 ''', ''), ('''The following commands can be used in the search result window (i.e. the list filled by "Search All" and lines copied from the main window via the ''', ''), ('''i''', 'fixed'), (''' key binding.)
@@ -8255,13 +8256,13 @@ def dlg_help_define_fonts():
 def dlg_help_add_menu_commands(wid_men):
     global help_titles
 
-    for title, idx in helpIndex.items():
+    for title in helpIndex:
         help_titles.append(title)
 
     Help_dialog.fill_menu(wid_men)
 
 
-class Help_dialog(object):
+class Help_dialog:
     def __init__(self, index, subheading, subrange):
         global win_geom
         self.chapter_idx = -1
@@ -8311,7 +8312,7 @@ class Help_dialog(object):
         for idx in range(len(help_titles)):
             wid_men.add_command(label=help_titles[idx],
                                 command=lambda idx=idx: dlg_help_create_dialog(idx))
-            for foo, sub in sorted([x for x in helpSections.keys() if x[0] == idx]):
+            for _, sub in sorted([x for x in helpSections if x[0] == idx]):
                 title = helpSections[(idx, sub)]
                 wid_men.add_command(label="- " + title,
                             command=lambda idx=idx, title=title: dlg_help_create_dialog(idx, title))
@@ -8425,10 +8426,10 @@ class Help_dialog(object):
         curidx = self.wid_txt.index("current + 1 char")
 
         # determine the range of the 'href' tag under the mouse
-        range = self.wid_txt.tag_prevrange("href", curidx)
+        href_range = self.wid_txt.tag_prevrange("href", curidx)
 
         # cut out the text in that range
-        hlink = self.wid_txt.get(*range)
+        hlink = self.wid_txt.get(*href_range)
 
         # check if the text contains a sub-section specification
         match = re.match(r"(.*): *(.*)", hlink)
@@ -8549,7 +8550,6 @@ def UpdateRcFile():
   global myrcfile, rcfile_compat, rcfile_version
   global tid_update_rc_sec, tid_update_rc_min, rc_file_error
   global tlb_history, tlb_hist_maxlen, tlb_case, tlb_regexp, tlb_hall
-  global dlg_mark_geom, dlg_hist_geom, dlg_srch_geom, dlg_tags_geom, main_win_geom
   global patlist, col_palette, tick_pat_sep, tick_pat_num, tick_str_prefix
   global font_content, col_bg_content, col_fg_content, fmt_find, fmt_findinc
   global fmt_selection, load_buf_size
@@ -8849,9 +8849,9 @@ def wt_exists(obj):
     try:
       obj.configure()
       return True
-    except Exception as e:
-      return False
-    return False
+    except Exception:
+      pass
+  return False
 
 # ----------------------------------------------------------------------------
 #
