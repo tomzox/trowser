@@ -2387,12 +2387,12 @@ def KeyCmd_OpenDialog(dlg_type, txt=""):
       wt.dlg_key_e.bind("<Key-g>", lambda e: BindCallAndBreak(KeyCmd_ExecGoto))
       wt.dlg_key_e.bind("<Shift-Key-G>", lambda e: BindCallAndBreak(KeyCmd_ExecGoto))
       # vertical cursor movement binding
-      wt.dlg_key_e.bind("<Key-minus>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorUpDown(0)))
-      wt.dlg_key_e.bind("<Key-plus>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorUpDown(1)))
-      wt.dlg_key_e.bind("<Return>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorUpDown(1)))
-      wt.dlg_key_e.bind("<Key-bar>", lambda e: KeyCmd_ExecAbsColumn)
-      wt.dlg_key_e.bind("<Key-k>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorUpDown(0)))
-      wt.dlg_key_e.bind("<Key-j>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorUpDown(1)))
+      wt.dlg_key_e.bind("<Key-minus>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorUpDown(False)))
+      wt.dlg_key_e.bind("<Key-plus>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorUpDown(True)))
+      wt.dlg_key_e.bind("<Return>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorUpDown(True)))
+      wt.dlg_key_e.bind("<Key-bar>", lambda e: KeyCmd_ExecAbsColumn()) # pipe character
+      wt.dlg_key_e.bind("<Key-k>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorUpDown(False)))
+      wt.dlg_key_e.bind("<Key-j>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorUpDown(True)))
       wt.dlg_key_e.bind("<Key-H>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorVertSet("top")))
       wt.dlg_key_e.bind("<Key-M>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorVertSet("center")))
       wt.dlg_key_e.bind("<Key-L>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorVertSet("bottom")))
@@ -2410,11 +2410,11 @@ def KeyCmd_OpenDialog(dlg_type, txt=""):
       wt.dlg_key_e.bind("<Key-h>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorMove("<Key-h>")))
       wt.dlg_key_e.bind("<Key-l>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecCursorMove("<Key-l>")))
       # search key binding
-      wt.dlg_key_e.bind("<Key-n>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecSearch(1)))
-      wt.dlg_key_e.bind("<Key-p>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecSearch(0)))
-      wt.dlg_key_e.bind("<Shift-Key-N>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecSearch(0)))
+      wt.dlg_key_e.bind("<Key-n>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecSearch(True)))
+      wt.dlg_key_e.bind("<Key-p>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecSearch(False)))
+      wt.dlg_key_e.bind("<Shift-Key-N>", lambda e: BindCallAndBreak(lambda:KeyCmd_ExecSearch(False)))
       # catch-all
-      wt.dlg_key_e.bind("<KeyPress>", lambda e: KeyCmd_KeyPress(e))
+      wt.dlg_key_e.bind("<KeyPress>", KeyCmd_KeyPress)
 
     wt.dlg_key_e.bind("<Escape>", lambda e: BindCallAndBreak(KeyCmd_Leave))
     wt.dlg_key_e.bind("<Leave>", lambda e: BindCallAndBreak(KeyCmd_Leave))
@@ -2427,12 +2427,20 @@ def KeyCmd_OpenDialog(dlg_type, txt=""):
 
   ResumeBgTasks()
 
+
+#
+# This handler is bound to any key press in the "Key" dialog overlay window.
+# The handler is invoked only, if no more specific handler did match previously
+# (or the handler did not invoked "break"). The handler serves as a catch-all
+# to block unwanted characters to be entered.
+#
 def KeyCmd_KeyPress(ev):
   if ev.char == "|":
     # work-around: keysym <Key-bar> doesn't work on German keyboard
     KeyCmd_ExecAbsColumn()
     return "break"
-  elif not ev.char.isdigit() and re.match(r'[\x21-\x7e]\s', ev.char): # [[:graph:]][[:space:]]
+  elif not ev.char.isdigit() and re.match(r'[\x21-\x7e\s\n]', ev.char): # [[:graph:][:space:]]
+    print("XXX break")
     return "break"
   else:
     return None
@@ -3244,9 +3252,9 @@ def MarkList_OpenDialog():
     wt.dlg_mark_l.focus_set()
 
     dlg_mark_shown = True
-    wt.dlg_mark_l.bind("<Destroy>", lambda e:MarkList_Quit(1), add="+")
+    wt.dlg_mark_l.bind("<Destroy>", lambda e:MarkList_Quit(True), add="+")
     wt.dlg_mark.bind("<Configure>", lambda e:ToplevelResized(e.widget, wt.dlg_mark, wt.dlg_mark, "dlg_mark"))
-    wt.dlg_mark.wm_protocol("WM_DELETE_WINDOW", lambda: MarkList_Quit(0))
+    wt.dlg_mark.wm_protocol("WM_DELETE_WINDOW", lambda: MarkList_Quit(False))
     wt.dlg_mark.wm_geometry(win_geom["dlg_mark"])
     wt.dlg_mark.wm_positionfrom("user")
 
@@ -3756,8 +3764,8 @@ def SearchList_Open(raise_win):
     wt.dlg_srch_menubar = Menu(wt.dlg_srch)
     wt.dlg_srch_menubar_ctrl = Menu(wt.dlg_srch_menubar, tearoff=0, postcommand=MenuPosted)
     wt.dlg_srch_menubar_ctrl.add_command(label="Load line numbers...", command=SearchList_LoadFrom)
-    wt.dlg_srch_menubar_ctrl.add_command(label="Save text as...", command=lambda:SearchList_SaveFileAs(0))
-    wt.dlg_srch_menubar_ctrl.add_command(label="Save line numbers...", command=lambda:SearchList_SaveFileAs(1))
+    wt.dlg_srch_menubar_ctrl.add_command(label="Save text as...", command=lambda:SearchList_SaveFileAs(False))
+    wt.dlg_srch_menubar_ctrl.add_command(label="Save line numbers...", command=lambda:SearchList_SaveFileAs(True))
     wt.dlg_srch_menubar_ctrl.add_separator()
     wt.dlg_srch_menubar_ctrl.add_command(label="Clear all", command=SearchList_Clear)
     wt.dlg_srch_menubar_ctrl.add_command(label="Close", command=wt.dlg_srch.destroy)
