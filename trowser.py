@@ -446,7 +446,7 @@ def HighlightInitBg(pat_idx, cid, line, loop_cnt):
 # (as an idle event, to allow user-interaction in-between.)
 #
 def HighlightLines(pat, tagnam, opt, line):
-  max_line = int(wt.f1_t.index("end").split(".")[0])
+  max_line = int(wt.f1_t.index("end").split(".", maxsplit=1)[0])
   start_t = datetime.now()
   max_delta = timedelta(microseconds=100000)
 
@@ -456,7 +456,7 @@ def HighlightLines(pat, tagnam, opt, line):
       break
 
     # match found, highlight this line
-    line = int(pos.split(".")[0])
+    line = int(pos.split(".", maxsplit=1)[0])
     wt.f1_t.tag_add(tagnam, "%d.0" % line, "%d.0" % (line + 1))
     # trigger the search result list dialog in case the line is included there too
     SearchList_HighlightLine(tagnam, line)
@@ -502,15 +502,15 @@ def HighlightAll(pat, tagnam, opt, line=1, loop_cnt=0):
 def HighlightVisible(pat, tagnam, opt):
   start_pos = wt.f1_t.index("@1,1")
   end_pos = wt.f1_t.index("@%d,%d" % (wt.f1_t.winfo_width() - 1, wt.f1_t.winfo_height() - 1))
-  line = int(start_pos.split(".")[0])
-  max_line = int(end_pos.split(".")[0])
+  line = int(start_pos.split(".", maxsplit=1)[0])
+  max_line = int(end_pos.split(".", maxsplit=1)[0])
   #puts "visible $start_pos...$end_pos: $pat $opt"
 
   while line < max_line:
     pos = wt.f1_t.search(pat, "%d.0" % line, "end", **opt)
     if pos == "":
       break
-    line = int(pos.split(".")[0])
+    line = int(pos.split(".", maxsplit=1)[0])
     wt.f1_t.tag_add(tagnam, "%d.0" % line, "%d.0" % (line + 1))
     line += 1
 
@@ -1756,7 +1756,7 @@ def YviewSet(wid, where, col):
       wid.see("insert")
 
   # synchronize the search result list (if open) with the main text
-  idx_l = int(wt.f1_t.index("insert").split(".")[0])
+  idx_l = int(wt.f1_t.index("insert").split(".", maxsplit=1)[0])
   SearchList_MatchView(idx_l)
 
 
@@ -1945,11 +1945,9 @@ def XviewSet(wid, where):
     fract_insert = (2 + coo[0] + coo[2]) / w
 
     if where == "left":
-      off = xpos[0] + (fract_insert * fract_visible)
-      if off > 1.0: off = 1.0
+      off = min(xpos[0] + (fract_insert * fract_visible), 1.0)
     else:
-      off = xpos[0] - ((1 - fract_insert) * fract_visible)
-      if off < 0.0: off = 0.0
+      off = max(xpos[0] - ((1 - fract_insert) * fract_visible), 0.0)
 
     wid.xview_moveto(off)
     wid.see("insert")
@@ -2052,7 +2050,7 @@ def CursorJumpPushPos(wid):
 
   if wid == wt.f1_t:
     cur_pos = wt.f1_t.index("insert")
-    line = int(cur_pos.split(".")[0])
+    line = int(cur_pos.split(".", maxsplit=1)[0])
     # remove the line if already on the stack
     idx = 0
     for pos in cur_jump_stack:
@@ -2397,6 +2395,7 @@ def KeyCmd_KeyPress(ev):
 # dialog window. The window is destroyed.
 #
 def KeyCmd_Leave():
+  # pylint: disable=W0602  # false positive: "del" requires "global"
   global keycmd_ent
 
   wt.f1_t.focus_set()
@@ -2519,10 +2518,10 @@ def KeyCmd_ExecSearch(is_fwd):
       if found == "":
         limit = "end" if is_fwd else "start"
         if count == 0:
-          DisplayStatusLine("search", "warn", "No match until %d of file: %s" % (limit, tlb_find.get()))
+          DisplayStatusLine("search", "warn", "No match until %s of file: %s" % (limit, tlb_find.get()))
         else:
           DisplayStatusLine("search", "warn",
-                            "Only %d of %d matches until %d of file" % (count, val, limit))
+                            "Only %d of %d matches until %s of file" % (count, val, limit))
       count += 1
   else:
     DisplayStatusLine("search", "error", "No pattern defined for search repetition")
@@ -2565,7 +2564,7 @@ def ParseFrameTickNo(pos, fn_cache=None):
       return fn_cache[pos]
     elif fn_cache.get(-1):
       prev_rslt = fn_cache[-1]
-      line = int(wt.f1_t.index(pos).split(".")[0])
+      line = int(wt.f1_t.index(pos).split(".", maxsplit=1)[0])
       if (line >= prev_rslt[0]) and (line < prev_rslt[1]):
         # line is within the range of the most recently parsed frame
         fn_cache[pos] = prev_rslt[2:4]
@@ -2607,8 +2606,8 @@ def ParseFrameTickNo(pos, fn_cache=None):
         # add result to the cache
         fn_cache[pos] = prefix
         # add a special entry to the cache remembering the extent of the current frame
-        line1 = int(wt.f1_t.index(pos1).split(".")[0])
-        line2 = int(wt.f1_t.index(pos2).split(".")[0])
+        line1 = int(wt.f1_t.index(pos1).split(".", maxsplit=1)[0])
+        line2 = int(wt.f1_t.index(pos2).split(".", maxsplit=1)[0])
         fn_cache[-1] = [line1, line2, fn, tick_no]
 
     elif tick_pat_num != "":
@@ -2631,7 +2630,7 @@ def ParseFrameTickNo(pos, fn_cache=None):
 
   except re.error as e:
     print("Warning: tick pattern match error: " + e.msg, file=sys.stderr)
-  except IndexError as e:
+  except IndexError:
     print("Warning: tick pattern contains no capture", file=sys.stderr)
 
   return prefix
@@ -2679,7 +2678,7 @@ def Mark_Toggle(line, txt=""):
 def Mark_ToggleAtInsert():
   pos = wt.f1_t.index("insert")
   if pos != "":
-    line = int(pos.split(".")[0])
+    line = int(pos.split(".", maxsplit=1)[0])
     Mark_Toggle(line)
 
 
@@ -2709,7 +2708,7 @@ def Mark_JumpNext(is_fwd):
   pos = wt.f1_t.index("insert")
   if pos != "":
     goto = None
-    line = int(pos.split(".")[0])
+    line = int(pos.split(".", maxsplit=1)[0])
     if is_fwd:
       for mark_line in sorted(mark_list.keys()):
         if mark_line > line:
@@ -2796,7 +2795,7 @@ def Mark_ReadFile(filename):
   if line_num >= 0:
     modif = mark_list_modified or (len(mark_list) != 0)
 
-    max_line = int(wt.f1_t.index("end").split(".")[0])
+    max_line = int(wt.f1_t.index("end").split(".", maxsplit=1)[0])
     warned = False
 
     for (line, txt) in bol:
@@ -4207,7 +4206,7 @@ def SearchList_StartSearchAll(pat_list, do_add, direction):
     if direction == 0:
       line = 1
     else:
-      line = int(wt.f1_t.index("insert").split(".")[0])
+      line = int(wt.f1_t.index("insert").split(".", maxsplit=1)[0])
 
     # reset redo list
     dlg_srch_redo = []
@@ -4231,7 +4230,7 @@ def SearchList_BgSearchLoop(pat_list, do_add, direction, line, pat_idx, loop_cnt
     tid_search_list = tk.after(10, lambda line=line: SearchList_BgSearchLoop(pat_list, do_add, direction, line, pat_idx, 0))
 
   elif dlg_srch_shown:
-    max_line = int(wt.f1_t.index("end").split(".")[0])
+    max_line = int(wt.f1_t.index("end").split(".", maxsplit=1)[0])
     anchor = SearchList_GetViewAnchor()
     stop_t = datetime.now() + timedelta(microseconds=100000)
     hl = pat_list[pat_idx]
@@ -4249,7 +4248,7 @@ def SearchList_BgSearchLoop(pat_list, do_add, direction, line, pat_idx, loop_cnt
       if pos == "":
         break
 
-      line = int(pos.split(".")[0])
+      line = int(pos.split(".", maxsplit=1)[0])
       idx = SearchList_GetLineIdx(line)
       if do_add:
         if (idx >= len(dlg_srch_lines)) or (dlg_srch_lines[idx] != line):
@@ -4286,10 +4285,10 @@ def SearchList_BgSearchLoop(pat_list, do_add, direction, line, pat_idx, loop_cnt
       if direction == 0:
         ratio = line / max_line
       elif direction < 0:
-        thresh = int(wt.f1_t.index("insert").split(".")[0])
+        thresh = int(wt.f1_t.index("insert").split(".", maxsplit=1)[0])
         ratio = 1 - (line / thresh)
       else:
-        thresh = int(wt.f1_t.index("insert").split(".")[0])
+        thresh = int(wt.f1_t.index("insert").split(".", maxsplit=1)[0])
         ratio = line / (max_line - thresh)
 
       ratio = int(100.0*(ratio + pat_idx)/len(pat_list))
@@ -4307,7 +4306,7 @@ def SearchList_BgSearchLoop(pat_list, do_add, direction, line, pat_idx, loop_cnt
         if direction == 0:
           line = 1
         else:
-          line = int(wt.f1_t.index("insert").split(".")[0])
+          line = int(wt.f1_t.index("insert").split(".", maxsplit=1)[0])
 
         tid_search_list = tk.after_idle(lambda line=line, loop_cnt=loop_cnt:
                                           SearchList_BgSearchLoop(pat_list, do_add, direction, line, pat_idx, loop_cnt))
@@ -4330,7 +4329,7 @@ def SearchList_StartSearchTags(tag_list, direction):
 
   if SearchList_SearchAbort():
     if direction == 1:
-      line = int(wt.f1_t.index("insert").split(".")[0])
+      line = int(wt.f1_t.index("insert").split(".", maxsplit=1)[0])
     else:
       line = 1
 
@@ -4394,8 +4393,8 @@ def SearchList_BgSearchTagsLoop(tag_list, tag_idx, direction, line, loop_cnt):
 
     if len(pos12) == 2:
       # create or update the progress bar
-      max_line = int(last_line.split(".")[0])
-      thresh = int(wt.f1_t.index("insert").split(".")[0])
+      max_line = int(last_line.split(".", maxsplit=1)[0])
+      thresh = int(wt.f1_t.index("insert").split(".", maxsplit=1)[0])
       if direction == 0:
         ratio = line / max_line
       elif direction < 0:
@@ -4415,7 +4414,7 @@ def SearchList_BgSearchTagsLoop(tag_list, tag_idx, direction, line, loop_cnt):
       if tag_idx < len(tag_list):
         loop_cnt += 1
         if direction == 1:
-          line = int(wt.f1_t.index("insert").split(".")[0])
+          line = int(wt.f1_t.index("insert").split(".", maxsplit=1)[0])
         else:
           line = 1
 
@@ -4559,7 +4558,7 @@ def SearchList_GetViewAnchor():
     return [1, dlg_srch_lines[sel[0]]]
   else:
     # no selection - check if line near cursor in main win is visible
-    line = int(wt.f1_t.index("insert").split(".")[0])
+    line = int(wt.f1_t.index("insert").split(".", maxsplit=1)[0])
     idx = SearchList_GetLineIdx(line)
     if ((idx < len(dlg_srch_lines)) and
         (wt.dlg_srch_f1_l.bbox("%d.0" % idx) is not None)):
@@ -4672,7 +4671,7 @@ def SearchList_CopyCurrentLine():
       SearchList_AddMainSelection()
     else:
       # get line number of the cursor position
-      line = int(wt.f1_t.index("insert").split(".")[0])
+      line = int(wt.f1_t.index("insert").split(".", maxsplit=1)[0])
       idx = SearchList_GetLineIdx(line)
       if (idx >= len(dlg_srch_lines)) or (dlg_srch_lines[idx] != line):
         dlg_srch_lines.insert(idx, line)
@@ -5030,7 +5029,7 @@ def SearchList_LoadFrom():
     if len(filename) != 0:
       try:
         with open(filename, "r") as f:
-          max_line = int(wt.f1_t.index("end").split(".")[0])
+          max_line = int(wt.f1_t.index("end").split(".", maxsplit=1)[0])
           answer = ""
           skipped = 0
           synerr = 0
@@ -6118,8 +6117,7 @@ def Markup_UpdateFormat():
 
   # adjust spacing above first line to center the content vertically
   lh = font_content.metrics("linespace")
-  spc = lh - dlg_fmt["spacing"].get()
-  if spc < 0: spc = 0
+  spc = max(lh - dlg_fmt["spacing"].get(), 0)
   wt.dlg_fmt_sample.tag_configure("spacing", spacing1=spc)
 
   # update the entry widgets
@@ -8354,7 +8352,7 @@ def UpdateRcFile():
           os.chown(rcfile.name, st.st_uid, st.st_gid)
       except OSError as e:
         print("Warning: Failed to update mode/permissions on %s: %s" % (myrcfile, e.strerror), file=sys.stderr)
-    except OSError as e:
+    except OSError:
       pass
 
     # move the new file over the old one
@@ -8472,6 +8470,7 @@ def ParseArgInt(opt, val):
     return int(val)
   except:
     PrintUsage(opt, "\"%s\" is not a numerical value" % val)
+    return 0 # never reached - dummy for pylint
 
 #
 # This function parses and evaluates the command line arguments.

@@ -4,6 +4,7 @@
 #C0115: Missing class docstring (missing-class-docstring)
 #C0116: Missing function or method docstring (missing-function-docstring)
 #C0200: Consider using enumerate instead of iterating with range and len (consider-using-enumerate)
+#C0209: Formatting a regular string which could be a f-string (consider-using-f-string)
 #C0301: Line too long (113/100) (line-too-long)
 #C0302: Too many lines in module (9127/1000) (too-many-lines)
 #C0321: More than one statement on a single line (multiple-statements)
@@ -18,6 +19,7 @@
 #W0614: Unused import MITER from wildcard import (unused-wildcard-import)
 #W0702: No exception type(s) specified (bare-except)
 #W0703: Catching too general exception Exception (broad-except)
+#W1514: Using open without explicitly specifying an encoding (unspecified-encoding)
 #R0201: Method could be a function (no-self-use)
 #R0902: Too many instance attributes (8/7) (too-many-instance-attributes)
 #R0903: Too few public methods (0/2) (too-few-public-methods)
@@ -29,4 +31,6 @@
 #R1714: Consider merging these comparisons with "in" to "last_key_char in ('z', 'g')" (consider-using-in)
 #R1716: Simplify chained comparison between the operands (chained-comparison)
 #R1724: Unnecessary "else" after "continue" (no-else-continue)
-disable=C0102,C0103,C0114,C0115,C0116,C0200,C0301,C0302,C0321,C0325,C0326,C0330,W0108,W0311,W0401,W0601,W0603,W0614,W0702,W0703,R0201,R0902,R0903,R0912,R0913,R0914,R0915,R1705,R1714,R1716,R1724
+#R1730: Consider using 'off = min(off, 1)' instead of unnecessary if block (consider-using-min-builtin)
+#R1731: Consider using 'delay = max(delay, 50)' instead of unnecessary if block (consider-using-max-builtin)
+disable=C0102,C0103,C0114,C0115,C0116,C0200,C0209,C0301,C0302,C0321,C0325,C0326,C0330,W0108,W0311,W0401,W0601,W0603,W0614,W0702,W0703,W1514,R0201,R0902,R0903,R0912,R0913,R0914,R0915,R1705,R1714,R1716,R1724,R1730,R1731
