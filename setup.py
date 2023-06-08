@@ -29,7 +29,7 @@ if os.path.exists("trowser.py"):
 
 setup(
     name='trowser',
-    version='2.1.0',
+    version='2.2.0',
     scripts=['bin/trowser.py'],
     packages=[],
 

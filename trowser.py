@@ -6484,7 +6484,7 @@ def OpenAboutDialog():
     wt.about_name = Label(wt.about, text="Trace Browser", font=font_bold)
     wt.about_name.pack(side=TOP, padx=5, pady=5)
 
-    wt.about_copyr1 = Label(wt.about, text="Version 2.1\n"
+    wt.about_copyr1 = Label(wt.about, text="Version 2.2\n"
                                            "Copyright (C) 2007-2010,2019-2020,2023 T. Zoerner")
     wt.about_copyr1.pack(side=TOP, padx=5)
 

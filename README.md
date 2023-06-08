@@ -144,27 +144,21 @@ is installing either [Tcl/Tk](http://tcl.tk/) (version 8.5 or later) or
 [Python](https://www.python.org/). The latter can be done semi-automatically
 when creating packages using the scripts described below.
 
-Hardware requirements: trowser loads the complete text into memory (i.e. in
-a Tk text widget) and also applies highlighting to the complete text to
-allow fast navigation.  Hence when browsing large files, trowser benefits
-from using a fast machine and at least 5 times your text size in RAM.
-
 trowser can be used without installation, if you copy the script simply in
 the same directory as the files you want to open with it. Note trowser
 expects to be given the name of the file you want to open on the command line.
 
-Otherwise, manual installation on UNIX-like systems is also simple:
-Just copy the script into /usr/bin (optionally you can remove the ".tcl"
-appendix) and the manual page to /usr/share/man/man1.
-However it's recommended to properly install the files using a package,
-as this will also take care of dependencies and allow easy removal.
+The Python version is best installed using `pip3 install trowser`. This will
+automatically download the latest release of the package from pypi.org (plus
+dependency "appdirs" on the Win32 platform) and install them.
 
-If you're using a Debian, Ubuntu or a compatible Linux distribution, you
-can create a package for the Tcl/Tk version using script `create_deb.sh`,
-or for the Python version using `create_deb_py.sh` respectively.
-The scripts will copy the required files into a local sub-directory `deb`
-and then create a package (e.g. `deb/trowser_1.3-3.deb`) which can be installed.
-In summary:
+Alternatively, or if you want to install the latest code found here on GitHub,
+Python and Tcl/Tk versions can be installed as a system package if you're using
+a Debian, Ubuntu or a compatible Linux distribution: You can create a Debian
+package for using script `create_deb.sh` for Tcl/Tk, or using script
+`create_deb_py.sh` for Python respectively. The scripts will copy the required
+files into a local sub-directory `deb` and then create a package which can be
+installed using the generated package file. Example:
 
 ```console
     bash create_deb.sh
@@ -173,9 +167,6 @@ In summary:
 
 The software is released under the
 [GNU General Public License, version 3](http://www.fsf.org/copyleft/gpl.html)
-
-Originally the project homepage was <http://www.nefkom.net/tomzo/prj/trowser/>,
-but this page is now defunct.
 
 ## Troubleshooting (Tcl/Tk version)
 
@@ -190,6 +181,8 @@ In some Tcl/Tk installations "wish" as such may not exist, but instead the
 major and minor version are appended to the executable name (e.g."wish8.5".)
 In this case, change the third line in the trowser.tcl script file accordingly.
 
-As of writing this (2009), trowser is tested against Tcl/Tk version 8.5.6. If the
-above command returns a version older than 8.4.0, you'd have to upgrade
-your Tcl/Tk library.
+Current version of trowser is tested against Tcl/Tk version 8.6, but it should
+also still work with predecessor Tcl/Tk versions 8.5 and 8.4. If the above
+command returns an even older version, you'll have to upgrade your Tcl/Tk
+library for using trowser. In Python, you can determine the version of
+underlying Tcl/Tk simply by running `python -m tkinter`.

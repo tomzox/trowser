@@ -2,7 +2,7 @@
 
 set -e
 
-BASEDIR=deb/trowser_2.1
+BASEDIR=deb/trowser_2.2
 
 mkdir -p $BASEDIR/DEBIAN
 cat > $BASEDIR/DEBIAN/control <<EoF
@@ -11,7 +11,7 @@ Priority: optional
 Section: text
 Maintainer: T. Zoerner <tomzox@gmail.com>
 Architecture: all
-Version: 2.1
+Version: 2.2
 Depends: python3, python3-tk
 Description: Browser for large line-oriented text files in Python/tkinter
  Trowser is a browser for large line-oriented text files (such as debug traces)
@@ -33,7 +33,7 @@ gzip -n -9 -c doc/trowser.1 > $BASEDIR/usr/share/man/man1/trowser.1.gz
 
 mkdir -p $BASEDIR/usr/share/doc/trowser
 cp -p README.md $BASEDIR/usr/share/doc/trowser/README.txt
-gzip -n -9 -c CHANGELOG > $BASEDIR/usr/share/doc/trowser/changelog.gz
+gzip -n -9 -c doc/changelog-py.txt > $BASEDIR/usr/share/doc/trowser/changelog.gz
 gzip -n -9 -c doc/trowser.pod > $BASEDIR/usr/share/doc/trowser/trowser.pod.gz
 
 cat > $BASEDIR/usr/share/doc/trowser/copyright <<EoF
@@ -68,4 +68,4 @@ cd ..
 # note "fakeroot" is used to have files owned by user "root"
 # - this is optional for local packages; can be removed if you don't have this script
 
-fakeroot dpkg-deb --build trowser_2.1
+fakeroot dpkg-deb --build trowser_2.2

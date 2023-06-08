@@ -1,0 +1,31 @@
+trowser (2.2) unstable; urgency=medium
+
+  * changed command line option parser: made file name optional.
+  * no longer apply remembered head/tail size limit when loading from file.
+    The remembered limit is now applied only when lading from a stream.
+  * added "Toggle line wrap" command in "Control" menu: Equivalent to
+    pre-existing key binding "ALT-w".
+  * enhanced question "Store changes in the bookmark list before quitting"
+    with an option to cancel.
+  * bugfix in the color palette editor for syntax highlighting.
+  * several more minor fixes for bugs introduced in the Python port.
+  * added ".pylintrc" suppressing style violation warnings (might be cleaned
+    up later), so that pylint can now be used to detect code bugs.
+  * corrected processing of the "--rcfile" command line option.
+  * win32 only: Moved default location for the user configuration file to
+    the Windows default path: Queried via new module dependency "appdirs".
+
+ -- maintainer T. Zoerner <tomzox@gmail.com>  Tue, 08 Jun 2023 20:57:34 +0200
+
+trowser (2.1) unstable; urgency=medium
+
+  * updated text key bindings in main text widget to work with Tk-8.6;
+    (selection change via Shift-Key-Up/Down work again)
+  * replaced default/example highlighting patterns to work with Gtest logs
+  * improved default font configuration
+  * improved initial yview for file without newline char in last line
+  * correction "Discard above" menu command when search list is open
+  * correction search completion via Control-D in reg.exp. search mode
+  * added GitHub URL to "About" dialog
+
+ -- maintainer T. Zoerner <tomzox@gmail.com>  Wed, 19 Apr 2023 20:15:09 +0200

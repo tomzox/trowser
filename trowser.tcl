@@ -7142,7 +7142,7 @@ proc OpenAboutDialog {} {
     label .about.name -text "Trace Browser" -font font_bold
     pack .about.name -side top -padx 5 -pady 5
 
-    label .about.copyr1 -text "Version 1.4\nCopyright (C) 2007-2010,2019-2020,2023 T. Zoerner"
+    label .about.copyr1 -text "Version 1.5\nCopyright (C) 2007-2010,2019-2020,2023 T. Zoerner"
     pack .about.copyr1 -side top -padx 5
 
     set url "https://github.com/tomzox/trowser"

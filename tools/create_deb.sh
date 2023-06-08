@@ -2,7 +2,7 @@
 
 set -e
 
-BASEDIR=deb/trowser_1.4
+BASEDIR=deb/trowser_1.5
 
 mkdir -p $BASEDIR/DEBIAN
 cat > $BASEDIR/DEBIAN/control <<EoF
@@ -11,7 +11,7 @@ Priority: optional
 Section: text
 Maintainer: T. Zoerner <tomzox@gmail.com>
 Architecture: all
-Version: 1.4
+Version: 1.5
 Depends: tcl8.4|tcl8.5|tcl8.6, tk8.4|tk8.5|tk8.6
 Description: Browser for large line-oriented text files based on Tcl/Tk
  Trowser is a browser for large line-oriented text files (such as debug traces)
@@ -33,7 +33,7 @@ gzip -n -9 -c doc/trowser.1 > $BASEDIR/usr/share/man/man1/trowser.1.gz
 
 mkdir -p $BASEDIR/usr/share/doc/trowser
 cp -p README.md $BASEDIR/usr/share/doc/trowser/README.txt
-gzip -n -9 -c CHANGELOG > $BASEDIR/usr/share/doc/trowser/changelog.gz
+gzip -n -9 -c doc/changelog-tcl.txt > $BASEDIR/usr/share/doc/trowser/changelog.gz
 gzip -n -9 -c doc/trowser.pod > $BASEDIR/usr/share/doc/trowser/trowser.pod.gz
 
 cat > $BASEDIR/usr/share/doc/trowser/copyright <<EoF
@@ -68,4 +68,4 @@ cd ..
 # note "fakeroot" is used to have files owned by user "root"
 # - this is optional for local packages; can be removed if you don't have this script
 
-fakeroot dpkg-deb --build trowser_1.4
+fakeroot dpkg-deb --build trowser_1.5

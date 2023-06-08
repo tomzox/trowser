@@ -2,4 +2,3 @@ include bin/trowser.py
 include setup.py
 include LICENSE
 include README.md
-include doc/trowser.rst
