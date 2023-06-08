@@ -112,10 +112,6 @@ def InitResources():
 # the search control dialog at the bottom.
 #
 def CreateMainWindow():
-  global font_content, col_bg_content, col_fg_content, fmt_selection
-  global win_geom, fmt_find, fmt_findinc
-  global tlb_find, tlb_hall, tlb_case, tlb_regexp
-
   # menubar at the top of the main window
   wt.menubar = Menu(tk)
 
@@ -356,8 +352,6 @@ def CreateButtonBitmap(*args):
 # highlights.
 #
 def HighlightCreateTags():
-  global patlist
-
   for w in patlist:
     tagnam = w[4]
 
@@ -373,7 +367,7 @@ def HighlightCreateTags():
 # The CPU is given up voluntarily after each pattern and after max. 100ms
 #
 def HighlightInit():
-  global patlist, tid_high_init
+  global tid_high_init
 
   if wt_exists(wt.hipro):
     wt.hipro.destroy()
@@ -406,8 +400,7 @@ def HighlightInit():
 # new iteration as an idle event (and limiting each step to 100ms)
 #
 def HighlightInitBg(pat_idx, cid, line, loop_cnt):
-  global block_bg_tasks, tid_search_inc, tid_search_hall, tid_search_list
-  global patlist, tid_high_init
+  global tid_high_init
 
   if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None) or (tid_search_list is not None):
     # background tasks are suspended - re-schedule with timer
@@ -484,7 +477,7 @@ def HighlightLines(pat, tagnam, opt, line):
 # for search highlighting because a separate "cancel ID" is required.)
 #
 def HighlightAll(pat, tagnam, opt, line=1, loop_cnt=0):
-  global tid_high_init, block_bg_tasks
+  global tid_high_init
 
   if block_bg_tasks:
     # background tasks are suspended - re-schedule with timer
@@ -528,16 +521,12 @@ def HighlightVisible(pat, tagnam, opt):
 # task is not complete yet. The event is forwarded to the vertical scrollbar.
 #
 def Highlight_YviewCallback(frac1, frac2):
-  global tid_high_init, tid_search_hall
-
   if tid_high_init is not None:
-    global patlist
     for w in patlist:
       opt = Search_GetOptions(w[0], w[1], w[2])
       HighlightVisible(w[0], w[4], opt)
 
   if tid_search_hall is not None:
-    global tlb_cur_hall_opt
     HighlightVisible(tlb_cur_hall_opt[0], "find", tlb_cur_hall_opt[1])
 
   # automatically remove the redirect if no longer needed
@@ -563,8 +552,6 @@ def Highlight_YviewRedirect():
 # sample text widget.)
 #
 def HighlightConfigure(wid, tagname, w):
-  global font_content
-
   cfg = {}
   if w[8]:
     cfg["font"] = DeriveFont(font_content, 0, "bold")
@@ -630,7 +617,7 @@ def SearchHighlightClear():
 # are changed.
 #
 def SearchHighlightUpdate(pat, opt):
-  global tlb_hall, tlb_cur_hall_opt, tid_search_hall
+  global tlb_cur_hall_opt, tid_search_hall
 
   if pat != "":
     if tlb_hall.get():
@@ -668,8 +655,6 @@ def SearchHighlightUpdate(pat, opt):
 # pattern in the search entry field.
 #
 def SearchHighlightUpdateCurrent():
-  global tlb_hall, tlb_find, tlb_regexp, tlb_case
-
   if tlb_hall.get():
     pat = tlb_find.get()
     if pat != "":
@@ -683,7 +668,7 @@ def SearchHighlightUpdateCurrent():
 # highlighting is complete.
 #
 def SearchHighlightAll(pat, tagnam, opt, line=1, loop_cnt=0):
-  global tid_search_hall, block_bg_tasks
+  global tid_search_hall
 
   if block_bg_tasks:
     # background tasks are suspended - re-schedule with timer
@@ -706,8 +691,6 @@ def SearchHighlightAll(pat, tagnam, opt, line=1, loop_cnt=0):
 # global highlighting.
 #
 def SearchHighlightOnOff():
-  global tlb_hall
-
   tlb_hall.set(not tlb_hall.get())
   UpdateRcAfterIdle()
 
@@ -721,8 +704,6 @@ def SearchHighlightOnOff():
 # or updated (the latter only if global highlighting is enabled)
 #
 def SearchHighlightSettingChange():
-  global tlb_hall
-
   UpdateRcAfterIdle()
 
   SearchHighlightClear()
@@ -741,7 +722,6 @@ def SearchHighlightToggleVar(obj):
 # at any time by canceling the task.
 #
 def Search_Background(pat, is_fwd, opt, start, is_changed, callback):
-  global block_bg_tasks, tid_search_inc, tid_search_list
   global tid_search_inc
 
   if block_bg_tasks:
@@ -783,7 +763,7 @@ def Search_Background(pat, is_fwd, opt, start, is_changed, callback):
 # is found, the cursor is moved there and the line is highlighed.
 #
 def Search_Atomic(pat, is_re, use_case, is_fwd, is_changed):
-  global tlb_hall, tlb_last_dir
+  global tlb_last_dir
 
   pos = ""
   if (pat != "") and SearchExprCheck(pat, is_re, True):
@@ -861,7 +841,7 @@ def SearchOverlapCheck(is_fwd, start_pos, pos, match_len):
 # previously applied search highlighting is removed.
 #
 def Search_HandleMatch(pos, match_len, pat, opt, is_changed):
-  global tlb_find_line, tlb_hall, tlb_cur_hall_opt
+  global tlb_find_line
 
   if (pos != "") or is_changed:
     if not tlb_hall.get() or (tlb_cur_hall_opt[0] != pat):
@@ -907,7 +887,6 @@ def Search_HandleNoMatch(pat, is_fwd):
 def SearchVarTrace(name1, name2, op):
   # pylint: disable=unused-argument  # signature cannot be changed
   global tid_search_inc
-  global tlb_last_dir
 
   if tid_search_inc is not None: tk.after_cancel(tid_search_inc)
   tid_search_inc = tk.after(50, lambda: SearchIncrement(tlb_last_dir, True))
@@ -919,7 +898,7 @@ def SearchVarTrace(name1, name2, op):
 # while the user is typing.
 #
 def SearchIncrement(is_fwd, is_changed):
-  global tlb_find, tlb_regexp, tlb_case, tlb_last_dir, tlb_inc_base, tlb_inc_view
+  global tlb_inc_base, tlb_inc_view
   global tid_search_inc
 
   tid_search_inc = None
@@ -962,7 +941,7 @@ def SearchIncrement(is_fwd, is_changed):
 # cursor position and search highlights are already updated.)
 #
 def Search_IncMatch(pos, pat, is_fwd, is_changed):
-  global tlb_inc_base, tlb_inc_view, tlb_history, tlb_hist_pos, tlb_hist_prefix
+  global tlb_hist_pos, tlb_hist_prefix
 
   if (pos == "") and (tlb_inc_base is not None):
     if is_changed:
@@ -1078,8 +1057,6 @@ def Search_GetOptions(pat, is_re, use_case, is_fwd=-1):
 # previous search.
 #
 def SearchNext(is_fwd):
-  global tlb_find, tlb_regexp, tlb_case, tlb_history
-
   ClearStatusLine("search")
 
   pat = tlb_find.get()
@@ -1108,8 +1085,6 @@ def SearchNext(is_fwd):
 # expression in a separate dialog window.
 #
 def SearchAll(raise_win, direction):
-  global tlb_find, tlb_regexp, tlb_case, tlb_last_wid, tlb_find_focus
-
   pat = tlb_find.get()
   if pat:
     if SearchExprCheck(pat, tlb_regexp.get(), True):
@@ -1183,7 +1158,7 @@ def SearchInit():
 # Escape keys.
 #
 def SearchEnter(is_fwd, wid=None):
-  global tlb_find, tlb_last_dir, tlb_last_wid
+  global tlb_last_dir, tlb_last_wid
 
   tlb_last_dir = is_fwd
   tlb_find.set("")
@@ -1204,7 +1179,6 @@ def SearchEnter(is_fwd, wid=None):
 # It resets the incremental search state.
 #
 def SearchLeave():
-  global tlb_find, tlb_regexp, tlb_case, tlb_hall
   global tlb_inc_base, tlb_inc_view, tlb_find_focus, tlb_last_wid
   global tlb_hist_pos, tlb_hist_prefix
   global tid_search_inc
@@ -1234,7 +1208,7 @@ def SearchLeave():
     tlb_hist_prefix = None
 
     tlb_last_wid = None
-    tlb_find_focus = 0
+    tlb_find_focus = False
 
 
 #
@@ -1242,8 +1216,6 @@ def SearchLeave():
 # The search highlighting is removed and the search text is deleted.
 #
 def SearchAbort():
-  global tlb_find, tlb_regexp, tlb_case, tlb_last_wid
-
   pat = tlb_find.get()
   if SearchExprCheck(pat, tlb_regexp.get(), False):
     Search_AddHistory(pat, tlb_regexp.get(), tlb_case.get())
@@ -1267,7 +1239,6 @@ def SearchAbort():
 # focus is switched to the main window.
 #
 def SearchReturn():
-  global tlb_find, tlb_regexp, tlb_history, tlb_last_dir, tlb_last_wid
   global tid_search_inc
 
   if tid_search_inc is not None:
@@ -1290,7 +1261,6 @@ def SearchReturn():
     if restart:
       # incremental search not completed -> start regular search
       if SearchNext(tlb_last_dir) == "":
-        global tlb_inc_view, tlb_inc_base
         if tlb_inc_base is not None:
           wt.f1_t.xview_moveto(tlb_inc_view[0])
           wt.f1_t.yview_moveto(tlb_inc_view[1])
@@ -1312,7 +1282,7 @@ def SearchReturn():
 # of the stack is the front of the list.
 #
 def Search_AddHistory(txt, is_re, use_case):
-  global tlb_history, tlb_hist_maxlen
+  global tlb_history
 
   if txt != "":
     old_sel = SearchHistory_StoreSel()
@@ -1349,7 +1319,7 @@ def Search_AddHistory(txt, is_re, use_case):
 # search string is displayed again.
 #
 def Search_BrowseHistory(is_up):
-  global tlb_find, tlb_history, tlb_hist_pos, tlb_hist_prefix
+  global tlb_hist_pos, tlb_hist_prefix
 
   if len(tlb_history) > 0:
     if tlb_hist_pos is None:
@@ -1387,8 +1357,6 @@ def Search_BrowseHistory(is_up):
 # string with a given prefix.
 #
 def Search_HistoryComplete(step):
-  global tlb_find, tlb_hist_prefix, tlb_history, tlb_hist_pos, tlb_hist_prefix
-
   pat = tlb_find.get()
   pf_len = len(tlb_hist_prefix)
   idx = tlb_hist_pos
@@ -1408,8 +1376,6 @@ def Search_HistoryComplete(step):
 # characters in the word matched by the current expression.
 #
 def Search_Complete():
-  global tlb_find, tlb_regexp, tlb_case
-
   pos = wt.f1_t.index("insert")
   if pos != "":
     dump = ExtractText(pos, pos + " lineend")
@@ -1446,8 +1412,6 @@ def Search_Complete():
 # before the current cursor position.
 #
 def Search_CompleteLeft():
-  global tlb_find, tlb_regexp
-
   pos = wt.f1_t.index("insert")
   if pos != "":
     dump = ExtractText(pos + " linestart", pos)
@@ -1468,8 +1432,6 @@ def Search_CompleteLeft():
 # backwards direction respectively.
 #
 def SearchWord(is_fwd):
-  global tlb_find, tlb_regexp, tlb_case
-
   pos = wt.f1_t.index("insert")
   if pos != "":
     # extract word to the right starting at the cursor position
@@ -1557,7 +1519,7 @@ def Search_EscapeSpecialChars(word, is_re):
 # removes the current entry from the search history.
 #
 def Search_RemoveFromHistory():
-  global tlb_history, tlb_hist_pos, tlb_hist_prefix
+  global tlb_hist_pos, tlb_hist_prefix
 
   if (tlb_hist_pos is not None) and (tlb_hist_pos < len(tlb_history)):
     old_sel = SearchHistory_StoreSel()
@@ -1582,7 +1544,7 @@ def Search_RemoveFromHistory():
 # message.
 #
 def DisplayStatusLine(topic, msg_type, msg):
-  global col_bg_content, tid_status_line, status_line_topic
+  global tid_status_line, status_line_topic
 
   focus_nam = tk.focus_get()
   focus_wid = tk._nametowidget(focus_nam) if focus_nam is not None else None
@@ -1637,8 +1599,6 @@ def ClearStatusLine(topic):
 # (i.e. same as VIM)
 #
 def DisplayLineNumber():
-  global cur_filename
-
   if wt.f1_t.bbox("insert") is not None:
     pos = wt.f1_t.index("insert").split(".")
     if len(pos) == 2:
@@ -1673,8 +1633,6 @@ def DisplayLineNumber():
 # is the reason for passing widget and compare parameters.
 #
 def ToplevelResized(wid, top, cmp, var_id):
-  global win_geom
-
   if wid == cmp:
     new_size = top.wm_geometry()
 
@@ -1706,8 +1664,6 @@ def DeriveFont(afont, delta_size, style=None):
 # adjust the content font size (as in web browsers)
 #
 def ChangeFontSize(delta):
-  global font_content
-
   font_content.configure(size=font_content.cget("size") + delta)
 
   cerr = ApplyFont()
@@ -1723,8 +1679,6 @@ def ChangeFontSize(delta):
 # The function returns 1 on success and saves the font setting in the RC.
 #
 def ApplyFont():
-  global font_content
-
   cerr = None
   try:
     wt.f1_t.configure(font=font_content)
@@ -1769,8 +1723,6 @@ def ToggleLineWrap():
 # placed at the top, center or bottom of the viewable area, if possible.
 #
 def YviewSet(wid, where, col):
-  global font_content
-
   wid.see("insert")
   pos = wid.bbox("insert")
   if pos is not None:
@@ -1814,8 +1766,6 @@ def YviewSet(wid, where, col):
 # is placed in the last visible line in scrolling direction.
 #
 def YviewScroll(wid, delta):
-  global font_content
-
   wid.yview_scroll(delta, "units")
 
   fh = font_content.metrics("linespace")
@@ -1834,8 +1784,6 @@ def YviewScroll(wid, delta):
 # in the given direction.
 #
 def YviewScrollHalf(wid, direction):
-  global font_content
-
   wh = wid.winfo_height()
   fh = font_content.metrics("linespace")
   if fh > 0:
@@ -2075,8 +2023,6 @@ def CursorMoveWord(is_fwd, spc_only, to_end):
 # the given window is fully visible.
 #
 def IsRowFullyVisible(wid, index):
-  global font_content
-
   fh = font_content.metrics("linespace")
   bbox = wid.bbox(index)
 
@@ -2102,7 +2048,7 @@ def ExtractText(pos1, pos2):
 # deleted (note for this comparison only the line number is considered.)
 #
 def CursorJumpPushPos(wid):
-  global cur_jump_stack, cur_jump_idx
+  global cur_jump_idx
 
   if wid == wt.f1_t:
     cur_pos = wt.f1_t.index("insert")
@@ -2132,7 +2078,7 @@ def CursorJumpPushPos(wid):
 # current position is pushed to the jump stack, if not already on the stack.
 #
 def CursorJumpToggle(wid):
-  global cur_jump_stack, cur_jump_idx
+  global cur_jump_idx
 
   if len(cur_jump_stack) > 0:
     ClearStatusLine("keycmd")
@@ -2165,7 +2111,7 @@ def CursorJumpToggle(wid):
 # position is pushed to the stack.
 #
 def CursorJumpHistory(wid, rel):
-  global cur_jump_stack, cur_jump_idx
+  global cur_jump_idx
 
   ClearStatusLine("keycmd")
   if len(cur_jump_stack) > 0:
@@ -2465,8 +2411,6 @@ def KeyCmd_Leave():
 # the last line.
 #
 def KeyCmd_ExecGoto():
-  global keycmd_ent
-
   # check if the content is a valid line number
   val = 0
   try:
@@ -2485,8 +2429,6 @@ def KeyCmd_ExecGoto():
 # This function moves the cursor up or down by a given number of lines.
 #
 def KeyCmd_ExecCursorUpDown(is_fwd):
-  global keycmd_ent
-
   # check if the content is a valid line number
   val = 0
   try:
@@ -2511,8 +2453,6 @@ def KeyCmd_ExecCursorUpDown(is_fwd):
 # Placement into the middle is also supported, but without offset.
 #
 def KeyCmd_ExecCursorVertSet(where):
-  global keycmd_ent
-
   # check if the content is a valid line number
   val = 0
   try:
@@ -2530,8 +2470,6 @@ def KeyCmd_ExecCursorVertSet(where):
 # This function sets the cursor into a given column
 #
 def KeyCmd_ExecAbsColumn():
-  global keycmd_ent
-
   # check if the content is a valid line number
   val = 0
   try:
@@ -2556,9 +2494,6 @@ def KeyCmd_ExecAbsColumn():
 # This function starts a search from within the command popup window.
 #
 def KeyCmd_ExecSearch(is_fwd):
-  global tlb_history, tlb_find, tlb_regexp, tlb_case
-  global keycmd_ent
-
   # check if the content is a repeat count
   val = 0
   try:
@@ -2598,8 +2533,6 @@ def KeyCmd_ExecSearch(is_fwd):
 # the number of times specified in the number entry field.
 #
 def KeyCmd_ExecCursorMove(key):
-  global keycmd_ent
-
   # check if the content is a repeat count
   val = 0
   try:
@@ -2625,8 +2558,6 @@ def KeyCmd_ExecCursorMove(key):
 # can be used, depending on which patterns are defined.
 #
 def ParseFrameTickNo(pos, fn_cache=None):
-  global tick_pat_sep, tick_pat_num, tick_str_prefix
-
   # query the cache before parsing for the frame number
   if fn_cache is not None:
     if fn_cache.get(pos) is not None:
@@ -2712,8 +2643,7 @@ def ParseFrameTickNo(pos, fn_cache=None):
 # is added to the bookmark list dialog, if it's currently open.
 #
 def Mark_Toggle(line, txt=""):
-  global img_marker, mark_list, mark_list_modified
-  global tick_str_prefix
+  global mark_list_modified
 
   if mark_list.get(line) is None:
     if txt == "":
@@ -2776,8 +2706,6 @@ def Mark_Line(line):
 # direction.
 #
 def Mark_JumpNext(is_fwd):
-  global mark_list
-
   pos = wt.f1_t.index("insert")
   if pos != "":
     goto = None
@@ -2815,7 +2743,7 @@ def Mark_JumpNext(is_fwd):
 # previously from a file.
 #
 def Mark_DeleteAll():
-  global mark_list, mark_list_modified
+  global mark_list_modified
 
   count = len(mark_list)
   if count > 0:
@@ -2837,7 +2765,7 @@ def Mark_DeleteAll():
 # not discarded, hence there's no warning when bookmarks already exist.)
 #
 def Mark_ReadFile(filename):
-  global mark_list, mark_list_modified
+  global mark_list_modified
 
   bol = []
   line_num = 0
@@ -2893,7 +2821,7 @@ def Mark_ReadFile(filename):
 # This function stores the bookmark list in a file.
 #
 def Mark_SaveFile(filename):
-  global mark_list, mark_list_modified
+  global mark_list_modified
 
   try:
     with open(filename, "w") as f:
@@ -2914,8 +2842,6 @@ def Mark_SaveFile(filename):
 # The user is asked to select a file; if he does so it's content is read.
 #
 def Mark_ReadFileFrom():
-  global cur_filename
-
   def_name = Mark_DefaultFile(cur_filename)
   if not os.path.isfile(def_name):
     def_name = ""
@@ -2934,8 +2860,6 @@ def Mark_ReadFileFrom():
 # naming convention, i.e. with ".bok" extension.
 #
 def Mark_ReadFileAuto():
-  global cur_filename
-
   bok_name = Mark_DefaultFile(cur_filename)
   if bok_name != "":
     Mark_ReadFile(bok_name)
@@ -2982,8 +2906,6 @@ def Mark_DefaultFile(trace_name):
 # The user is asked to select a file; if he does so the bookmarks are written to it.
 #
 def Mark_SaveFileAs():
-  global mark_list, cur_filename
-
   if len(mark_list) > 0:
     if cur_filename != "":
       def_name = cur_filename + ".bok"
@@ -3007,8 +2929,6 @@ def Mark_SaveFileAs():
 # is loaded.
 #
 def Mark_OfferSave():
-  global mark_list, mark_list_modified
-
   if mark_list_modified and (len(mark_list) > 0):
     answer = messagebox.askyesnocancel(parent=tk, default="yes", title="Trace browser",
                                        message="Store changes in the bookmark list before quitting?")
@@ -3028,8 +2948,6 @@ def Mark_OfferSave():
 # in the same way.
 #
 def MarkList_Insert(idx, line):
-  global patlist, mark_list
-
   tag_list = []
   for tag in wt.f1_t.tag_names("%d.1" % line):
     if re.match(r"^tag\d+$", tag):
@@ -3045,7 +2963,7 @@ def MarkList_Insert(idx, line):
 # This function fills the bookmark list dialog window with all bookmarks.
 #
 def MarkList_Fill():
-  global dlg_mark_shown, dlg_mark_list, mark_list
+  global dlg_mark_list
 
   if dlg_mark_shown:
     wt.dlg_mark_l.delete("1.0", "end")
@@ -3063,8 +2981,6 @@ def MarkList_Fill():
 # into the bookmark list dialog window.
 #
 def MarkList_Add(line):
-  global dlg_mark_shown, mark_list, dlg_mark_list, dlg_mark_sel
-
   if dlg_mark_shown:
     idx = 0
     for l in dlg_mark_list:
@@ -3083,8 +2999,6 @@ def MarkList_Add(line):
 # from the bookmark list dialog window.
 #
 def MarkList_Delete(line):
-  global dlg_mark_shown, mark_list, dlg_mark_list, dlg_mark_sel
-
   if dlg_mark_shown:
     try:
       idx = dlg_mark_list.index(line)
@@ -3100,8 +3014,6 @@ def MarkList_Delete(line):
 # allow the user to remove a bookmark via the bookmark list dialog.
 #
 def MarkList_RemoveSelected():
-  global dlg_mark_list, dlg_mark_sel
-
   sel = dlg_mark_sel.TextSel_GetSelection()
 
   # translate list indices to text lines, because indices change during removal
@@ -3118,8 +3030,6 @@ def MarkList_RemoveSelected():
 # The function opens an "overlay" window with an entry field.
 #
 def MarkList_RenameSelected():
-  global dlg_mark_sel
-
   sel = dlg_mark_sel.TextSel_GetSelection()
   if len(sel) == 1:
     MarkList_OpenRename(sel[0])
@@ -3132,8 +3042,6 @@ def MarkList_RenameSelected():
 # which contains the bookmark. If more than one bookmark nothing is done.
 #
 def MarkList_SelectionChange(sel):
-  global dlg_mark_list
-
   if len(sel) >= 1:
     line = dlg_mark_list[sel[0]]
     Mark_Line(line)
@@ -3150,7 +3058,6 @@ def MarkList_SelectionChange(sel):
 # elements in the list to determine the possible selection range.
 #
 def MarkList_GetLen():
-  global dlg_mark_list
   return len(dlg_mark_list)
 
 
@@ -3178,7 +3085,7 @@ def MarkList_AdjustLineNums(top_l, bottom_l):
 # closed the bookmark text entry dialog with "Return"
 #
 def MarkList_Rename(idx, txt):
-  global dlg_mark_shown, dlg_mark_list, dlg_mark_sel, mark_list, mark_list_modified
+  global mark_list_modified
 
   if dlg_mark_shown and (idx < len(dlg_mark_list)):
     line = dlg_mark_list[idx]
@@ -3196,8 +3103,6 @@ def MarkList_Rename(idx, txt):
 # This function pops up a context menu for the bookmark list dialog.
 #
 def MarkList_ContextMenu(xcoo, ycoo):
-  global dlg_mark_list, dlg_mark_sel
-
   dlg_mark_sel.TextSel_ContextSelection(xcoo, ycoo)
 
   sel = dlg_mark_sel.TextSel_GetSelection()
@@ -3218,8 +3123,7 @@ def MarkList_ContextMenu(xcoo, ycoo):
 # all currently defined bookmarks.
 #
 def MarkList_OpenDialog():
-  global font_content, col_bg_content, col_fg_content
-  global cur_filename, dlg_mark_shown, dlg_mark_sel
+  global dlg_mark_shown, dlg_mark_sel
 
   PreemptBgTasks()
   if not dlg_mark_shown:
@@ -3274,8 +3178,6 @@ def MarkList_OpenDialog():
 # This is used for initialisation and after editing highlight tags.
 #
 def MarkList_CreateHighlightTags():
-  global dlg_mark_shown, patlist, fmt_selection
-
   if dlg_mark_shown:
     for w in patlist:
       tagnam = w[4]
@@ -3291,8 +3193,6 @@ def MarkList_CreateHighlightTags():
 # This function is called after removal of tags in the Tag list dialog.
 #
 def MarkList_DeleteTag(tag):
-  global dlg_mark_shown
-
   if dlg_mark_shown:
     wt.dlg_mark_l.tag_delete(tag)
 
@@ -3319,9 +3219,7 @@ def MarkList_Quit(is_destroyed):
 # it appear as if the listbox entry could be edited directly.
 #
 def MarkList_OpenRename(idx):
-  global dlg_mark_shown, dlg_mark_list, mark_list
   global mark_rename, mark_rename_idx
-  global font_normal, font_bold, tick_str_prefix, tick_pat_num
 
   if dlg_mark_shown and (idx < len(dlg_mark_list)):
     wt.dlg_mark_l.see("%d.0" % (idx + 1))
@@ -3371,8 +3269,6 @@ def MarkList_OpenRename(idx):
 # The function assigned the entered text to the bookmark and closes the popup.
 #
 def MarkList_Assign():
-  global mark_rename, mark_rename_idx
-
   MarkList_Rename(mark_rename_idx, mark_rename.get())
   MarkList_LeaveRename()
 
@@ -3383,6 +3279,7 @@ def MarkList_Assign():
 #
 def MarkList_LeaveRename():
   global mark_rename, mark_rename_idx
+
   mark_rename = None
   mark_rename_idx = None
   SafeDestroy(wt.dlg_mark_mren)
@@ -3398,7 +3295,6 @@ def MarkList_LeaveRename():
 # search history, i.e. a list of previously used search expressions.
 #
 def SearchHistory_Open():
-  global font_content, col_bg_content, col_fg_content, cur_filename
   global dlg_hist_shown, dlg_hist_sel
 
   PreemptBgTasks()
@@ -3481,6 +3377,7 @@ def SearchHistory_Open():
 #
 def SearchHistory_Close():
   global dlg_hist_sel, dlg_hist_shown
+
   dlg_hist_sel = None
   dlg_hist_shown = False
 
@@ -3489,8 +3386,6 @@ def SearchHistory_Close():
 # This function pops up a context menu for the search history dialog.
 #
 def SearchHistory_ContextMenu(xcoo, ycoo):
-  global dlg_hist_sel
-
   dlg_hist_sel.TextSel_ContextSelection(xcoo, ycoo)
   sel = dlg_hist_sel.TextSel_GetSelection()
 
@@ -3517,7 +3412,6 @@ def SearchHistory_ContextMenu(xcoo, ycoo):
 # starts a search with the selected expression.
 #
 def SearchHistory_Trigger():
-  global tlb_last_dir
   SearchHistory_CopyToSearch()
   SearchHistory_SearchNext(tlb_last_dir)
 
@@ -3526,8 +3420,6 @@ def SearchHistory_Trigger():
 # to save the selection across history modifications.
 #
 def SearchHistory_StoreSel():
-  global dlg_hist_shown, dlg_hist_sel, tlb_history
-
   copy = []
   if dlg_hist_shown:
     sel = dlg_hist_sel.TextSel_GetSelection()
@@ -3544,8 +3436,6 @@ def SearchHistory_StoreSel():
 # order change due to use of a pattern for a search)
 #
 def SearchHistory_RestoreSel(copy):
-  global dlg_hist_shown, dlg_hist_sel, tlb_history
-
   if dlg_hist_shown:
     sel = []
     for cphl in copy:
@@ -3567,8 +3457,6 @@ def SearchHistory_RestoreSel(copy):
 # in the search history stack.  The last used expression is placed on top.
 #
 def SearchHistory_Fill():
-  global dlg_hist_shown, tlb_history
-
   if dlg_hist_shown:
     wt.dlg_hist_f1_l.delete("1.0", "end")
 
@@ -3587,8 +3475,6 @@ def SearchHistory_Fill():
 # lines are removed from the search list.
 #
 def SearchHistory_Remove():
-  global dlg_hist_sel, tlb_history
-
   sel = dlg_hist_sel.TextSel_GetSelection()
   sel.sort(reverse=True)
   for idx in sel:
@@ -3606,14 +3492,13 @@ def SearchHistory_Remove():
 # exists in the tag list dialog.)
 #
 def SearchHistory_CopyToSearch():
-  global tlb_history, tlb_find, tlb_regexp, tlb_case, tlb_find_focus
-  global dlg_hist_sel
+  global tlb_find_focus
 
   sel = dlg_hist_sel.TextSel_GetSelection()
   if len(sel) == 1:
     # force focus into find entry field & suppress "Enter" event
     SearchInit()
-    tlb_find_focus = 1
+    tlb_find_focus = True
     wt.f2_e.focus_set()
 
     hl = tlb_history[sel[0]]
@@ -3631,8 +3516,6 @@ def SearchHistory_CopyToSearch():
 # entry field. TODO: currently only one expression at a time can be searched
 #
 def SearchHistory_SearchNext(is_fwd):
-  global dlg_hist_sel, tlb_history, tlb_find
-
   ClearStatusLine("search")
 
   sel = dlg_hist_sel.TextSel_GetSelection()
@@ -3666,9 +3549,6 @@ def SearchHistory_SearchNext(is_fwd):
 # list (serializing multiple searches is handled by the search list dialog)
 #
 def SearchHistory_SearchAll(direction):
-  global tlb_history
-  global dlg_hist_sel
-
   ClearStatusLine("search")
 
   sel = dlg_hist_sel.TextSel_GetSelection()
@@ -3715,7 +3595,6 @@ def SearchHistory_SelectionChange(sel):
 # elements in the list to determine the possible selection range.
 #
 def SearchHistory_GetLen():
-  global tlb_history
   return len(tlb_history)
 
 
@@ -3727,11 +3606,8 @@ def SearchHistory_GetLen():
 # remove lines from the list.
 #
 def SearchList_Open(raise_win):
-  global font_content, col_bg_content, col_fg_content, cur_filename
-  global dlg_srch_shown, dlg_srch_sel, dlg_srch_lines, dlg_srch_fn_cache
-  global dlg_srch_show_fn, dlg_srch_show_tick, dlg_srch_tick_delta, dlg_srch_tick_root
-  global dlg_srch_highlight, dlg_srch_undo, dlg_srch_redo
-  global tick_pat_sep, tick_pat_num
+  global dlg_srch_shown, dlg_srch_sel
+  global dlg_srch_show_fn, dlg_srch_show_tick, dlg_srch_tick_delta, dlg_srch_highlight
 
   PreemptBgTasks()
   if not dlg_srch_shown:
@@ -3883,8 +3759,7 @@ def SearchList_Close():
 # This function removes all content in the search list.
 #
 def SearchList_Clear():
-  global dlg_srch_shown, dlg_srch_lines, dlg_srch_sel
-  global dlg_srch_undo, dlg_srch_redo
+  global dlg_srch_lines, dlg_srch_redo
 
   if dlg_srch_shown:
     SearchList_SearchAbort(False)
@@ -3904,7 +3779,7 @@ def SearchList_Clear():
 # The function is used when the window is newly opened or a new file is loaded.
 #
 def SearchList_Init():
-  global dlg_srch_shown, dlg_srch_lines, dlg_srch_fn_cache, dlg_srch_tick_root
+  global dlg_srch_lines, dlg_srch_fn_cache, dlg_srch_tick_root
   global dlg_srch_undo, dlg_srch_redo
 
   if dlg_srch_shown:
@@ -3920,8 +3795,6 @@ def SearchList_Init():
 # allow quick toggling of menu options.
 #
 def SearchList_ToggleOpt(opt):
-  global dlg_srch_show_fn, dlg_srch_show_tick, dlg_srch_tick_delta, dlg_srch_highlight
-
   if opt == "highlight":
     dlg_srch_highlight.set(not dlg_srch_highlight.get())
     SearchList_ToggleHighlight()
@@ -3940,8 +3813,6 @@ def SearchList_ToggleOpt(opt):
 # This function is called when the "edit" menu in the search list dialog is opened.
 #
 def SearchList_MenuPosted():
-  global dlg_srch_undo, dlg_srch_redo
-
   if len(dlg_srch_undo) > 0:
     cmd = dlg_srch_undo[-1]
     op = "addition" if cmd[0] > 0 else "removal"
@@ -3965,10 +3836,6 @@ def SearchList_MenuPosted():
 # This function pops up a context menu for the search list dialog.
 #
 def SearchList_ContextMenu(xcoo, ycoo):
-  global tlb_find
-  global dlg_srch_sel, dlg_srch_lines
-  global tick_pat_sep, tick_pat_num, tick_str_prefix, dlg_srch_fn_cache
-
   dlg_srch_sel.TextSel_ContextSelection(xcoo, ycoo)
   sel = dlg_srch_sel.TextSel_GetSelection()
 
@@ -4008,8 +3875,8 @@ def SearchList_ContextMenu(xcoo, ycoo):
 # are removed from the search list.
 #
 def SearchList_RemoveSelection():
-  global dlg_srch_sel, dlg_srch_lines
-  global dlg_srch_undo, dlg_srch_redo
+  global dlg_srch_lines
+  global dlg_srch_redo
 
   if SearchList_SearchAbort():
     sel = dlg_srch_sel.TextSel_GetSelection()
@@ -4037,8 +3904,6 @@ def SearchList_RemoveSelection():
 # line is found which is also listed in the filter dialog.
 #
 def SearchList_SearchNext(is_fwd):
-  global dlg_srch_sel, dlg_srch_lines
-
   old_yview = wt.f1_t.yview()
   old_cpos = wt.f1_t.index("insert")
 
@@ -4077,9 +3942,6 @@ def SearchList_SearchNext(is_fwd):
 # the display of frame numbers in front of each line on/off.
 #
 def SearchList_ToggleFrameNo():
-  global dlg_srch_sel, dlg_srch_lines, dlg_srch_fn_cache, tick_pat_sep, tick_pat_num
-  global dlg_srch_show_fn, dlg_srch_show_tick, dlg_srch_tick_delta, dlg_srch_tick_root
-
   if tick_pat_num == "":
     DisplayStatusLine("search", "error", "No patterns defined in the RC file for parsing frame numbers")
     dlg_srch_tick_delta.set(False)
@@ -4106,8 +3968,7 @@ def SearchList_ToggleFrameNo():
 # frame number delta display, which requires a complete refresh of the list.
 #
 def SearchList_SetFnRoot():
-  global dlg_srch_sel, dlg_srch_lines, dlg_srch_fn_cache, tick_pat_sep, tick_pat_num
-  global dlg_srch_show_fn, dlg_srch_show_tick, dlg_srch_tick_delta, dlg_srch_tick_root
+  global dlg_srch_tick_root
 
   if tick_pat_sep != "":
     if SearchList_SearchAbort():
@@ -4137,7 +3998,7 @@ def SearchList_SetFnRoot():
 # highlighting of lines matching searches in the main window on/off.
 #
 def SearchList_ToggleHighlight():
-  global dlg_srch_highlight, tlb_cur_hall_opt
+  global tlb_cur_hall_opt
 
   if dlg_srch_highlight.get():
     # search highlighting was enabled:
@@ -4155,7 +4016,6 @@ def SearchList_ToggleHighlight():
 # addition, either via search or manually.)
 #
 def SearchList_Undo():
-  global dlg_srch_shown, dlg_srch_undo, dlg_srch_redo
   global tid_search_list
 
   ClearStatusLine("search")
@@ -4175,7 +4035,6 @@ def SearchList_Undo():
 # This reverts the last "undo", if any.
 #
 def SearchList_Redo():
-  global dlg_srch_shown, dlg_srch_undo, dlg_srch_redo
   global tid_search_list
 
   ClearStatusLine("search")
@@ -4195,9 +4054,7 @@ def SearchList_Redo():
 # Each iteration of this task works on at most 250-500 lines.
 #
 def SearchList_BgUndoRedoLoop(op, line_list, mode, off):
-  global block_bg_tasks, tid_search_inc, tid_search_hall, tid_search_list
-  global dlg_srch_shown, dlg_srch_lines, dlg_srch_sel
-  global dlg_srch_undo, dlg_srch_redo
+  global tid_search_list
 
   if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None):
     # background tasks are suspended - re-schedule with timer
@@ -4281,12 +4138,10 @@ def SearchList_InvertCmd(op, line_list, mode):
 # Wrapper functions to simplify external interfaces
 #
 def SearchList_AddMatches(direction):
-  global tlb_find, tlb_regexp, tlb_case
   SearchList_SearchMatches(1, tlb_find.get(), tlb_regexp.get(), tlb_case.get(), direction)
 
 
 def SearchList_RemoveMatches(direction):
-  global tlb_find, tlb_regexp, tlb_case
   SearchList_SearchMatches(0, tlb_find.get(), tlb_regexp.get(), tlb_case.get(), direction)
 
 
@@ -4297,8 +4152,6 @@ def SearchList_RemoveMatches(direction):
 # function returns.
 #
 def SearchList_SearchMatches(do_add, pat, is_re, use_case, direction):
-  global dlg_srch_sel
-
   if pat != "":
     if SearchExprCheck(pat, is_re, True):
       hl = [pat, is_re, use_case]
@@ -4313,7 +4166,6 @@ def SearchList_SearchMatches(do_add, pat, is_re, use_case, direction):
 # values in the list are smaller.
 #
 def SearchList_GetLineIdx(ins_line):
-  global dlg_srch_lines
   return bisect.bisect_left(dlg_srch_lines, ins_line)
 #  end = len(dlg_srch_lines)
 #  min = -1
@@ -4369,8 +4221,7 @@ def SearchList_StartSearchAll(pat_list, do_add, direction):
 # itself as idle task.
 #
 def SearchList_BgSearchLoop(pat_list, do_add, direction, line, pat_idx, loop_cnt):
-  global block_bg_tasks, tid_search_inc, tid_search_hall, tid_search_list
-  global dlg_srch_shown, dlg_srch_lines, dlg_srch_sel, dlg_srch_undo
+  global tid_search_list
 
   if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None):
     # background tasks are suspended - re-schedule with timer
@@ -4494,8 +4345,7 @@ def SearchList_StartSearchTags(tag_list, direction):
 # matches on highlight tags.
 #
 def SearchList_BgSearchTagsLoop(tag_list, tag_idx, direction, line, loop_cnt):
-  global block_bg_tasks, tid_search_inc, tid_search_hall, tid_search_list
-  global dlg_srch_shown, dlg_srch_lines, dlg_srch_sel, dlg_srch_undo
+  global tid_search_list
 
   if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None):
     # background tasks are suspended - re-schedule with timer
@@ -4607,7 +4457,7 @@ def SearchList_SearchProgress(ratio):
 # return value if parameter "do_warn" is TRUE.
 #
 def SearchList_SearchAbort(do_warn=True):
-  global tid_search_list, dlg_srch_undo, dlg_srch_redo
+  global tid_search_list
   global vwait_search_complete
 
   cancel_new = False
@@ -4686,16 +4536,14 @@ def SearchList_SearchAbort(do_warn=True):
 
 
 def SearchList_DestroyCb():
-  global tid_search_list
-
   if vwait_search_complete.get() == "wait":
     if tid_search_list is not None:
       vwait_search_complete.set("cancel_new")
     else:
       vwait_search_complete.set("obsolete")
 
+
 def SearchList_AbortVwaitSet(val):
-  global vwait_search_complete
   vwait_search_complete.set(val)
 
 #
@@ -4705,8 +4553,6 @@ def SearchList_AbortVwaitSet(val):
 # insertions or removals (which may lead to scrolling.)
 #
 def SearchList_GetViewAnchor():
-  global dlg_srch_sel, dlg_srch_lines
-
   sel = dlg_srch_sel.TextSel_GetSelection()
   if len(sel) > 0:
     # keep selection visible
@@ -4728,8 +4574,6 @@ def SearchList_GetViewAnchor():
 # "anchor" line visible and to adjust the selection.
 #
 def SearchList_SeeViewAnchor(info):
-  global dlg_srch_sel, dlg_srch_lines
-
   anchor = info[1]
   if anchor >= 0:
     #set idx [lsearch -exact -integer -sorted -increasing $dlg_srch_lines $anchor]
@@ -4778,8 +4622,7 @@ def SearchList_BgSearch_FinalizeUndoList(undo_list):
 # This function inserts all selected lines in the main window into the list.
 #
 def SearchList_AddMainSelection():
-  global dlg_srch_shown, dlg_srch_lines, dlg_srch_sel
-  global dlg_srch_undo, dlg_srch_redo
+  global dlg_srch_redo
 
   if dlg_srch_shown and SearchList_SearchAbort():
     pos12 = wt.f1_t.tag_nextrange("sel", "1.0")
@@ -4815,8 +4658,7 @@ def SearchList_AddMainSelection():
 # press event in the main window.
 #
 def SearchList_CopyCurrentLine():
-  global dlg_srch_shown, dlg_srch_lines, dlg_srch_sel
-  global dlg_srch_undo, dlg_srch_redo
+  global dlg_srch_redo
 
   if not dlg_srch_shown:
     SearchList_Open(False)
@@ -4852,9 +4694,6 @@ def SearchList_CopyCurrentLine():
 # This is used for initialisation and after editing highlight tags.
 #
 def SearchList_CreateHighlightTags():
-  global patlist, fmt_find, fmt_selection
-  global dlg_srch_sel, dlg_srch_shown
-
   if dlg_srch_shown:
     # create highlight tags
     for w in patlist:
@@ -4879,8 +4718,6 @@ def SearchList_CreateHighlightTags():
 # This function is called after removal of tags in the Tag list dialog.
 #
 def SearchList_DeleteTag(tag):
-  global dlg_srch_shown
-
   if dlg_srch_shown:
     wt.dlg_srch_f1_l.tag_delete(tag)
 
@@ -4890,9 +4727,6 @@ def SearchList_DeleteTag(tag):
 # to which a highlight is applied.
 #
 def SearchList_HighlightLine(tag, line):
-  global dlg_srch_shown, dlg_srch_highlight, dlg_srch_lines
-  global tid_high_init
-
   if dlg_srch_shown:
     if dlg_srch_highlight.get() or (tid_high_init is not None):
       idx = SearchList_GetLineIdx(line)
@@ -4908,8 +4742,6 @@ def SearchList_HighlightLine(tag, line):
 # search list dialog's menu.  The function enables or disables search highlight.
 #
 def SearchList_HighlightClear():
-  global dlg_srch_shown
-
   if dlg_srch_shown:
     wt.dlg_srch_f1_l.tag_remove("find", "1.0", "end")
 
@@ -4919,8 +4751,6 @@ def SearchList_HighlightClear():
 # main window's text line becomes visible.
 #
 def SearchList_MatchView(line):
-  global dlg_srch_shown, dlg_srch_lines, dlg_srch_sel
-
   if dlg_srch_shown:
     idx = SearchList_GetLineIdx(line)
     if idx < len(dlg_srch_lines):
@@ -4947,9 +4777,6 @@ def SearchList_MatchView(line):
 # dialog and which already have a bookmark; see the insert function below)
 #
 def SearchList_MarkLine(line):
-  global dlg_srch_shown, dlg_srch_lines
-  global img_marker, mark_list
-
   if dlg_srch_shown:
     idx = SearchList_GetLineIdx(line)
     if (idx < len(dlg_srch_lines)) and (dlg_srch_lines[idx] == line):
@@ -4973,8 +4800,6 @@ def SearchList_MarkLine(line):
 # line (but only if exactly one line is selected.)
 #
 def SearchList_ToggleMark():
-  global dlg_srch_shown, dlg_srch_lines, dlg_srch_sel
-
   sel = dlg_srch_sel.TextSel_GetSelection()
   if len(sel) == 1:
     line = dlg_srch_lines[sel[0]]
@@ -4986,10 +4811,6 @@ def SearchList_ToggleMark():
 # bookmark marker) from the main window into the the search filter dialog.
 #
 def SearchList_InsertLine(line_idx, ins_pos):
-  global dlg_srch_show_fn, dlg_srch_show_tick, dlg_srch_tick_delta, dlg_srch_tick_root
-  global dlg_srch_fn_cache
-  global tick_pat_sep, tick_str_prefix, img_marker, mark_list
-
   # copy text content and tags out of the main window
   pos = "%d.0" % line_idx
   dump = ExtractText(pos + " linestart", pos + " lineend")
@@ -5049,8 +4870,7 @@ def SearchList_Refill():
 # with previous content, but in a different format (e.g. with added frame nums)
 #
 def SearchList_BgRefillLoop(off):
-  global block_bg_tasks, tid_search_inc, tid_search_hall, tid_search_list
-  global dlg_srch_shown, dlg_srch_lines
+  global tid_search_list
 
   if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None):
     # background tasks are suspended - re-schedule with timer
@@ -5096,8 +4916,6 @@ def SearchList_BgRefillLoop(off):
 # display the respective line.
 #
 def SearchList_SelectionChange(sel):
-  global dlg_srch_sel, dlg_srch_lines
-
   if len(sel) == 1:
     idx = sel[0]
     if idx < len(dlg_srch_lines):
@@ -5109,7 +4927,6 @@ def SearchList_SelectionChange(sel):
 # elements in the list to determine the possible selection range.
 #
 def SearchList_GetLen():
-  global dlg_srch_sel, dlg_srch_lines
   return len(dlg_srch_lines)
 
 
@@ -5120,7 +4937,7 @@ def SearchList_GetLen():
 # - bottom_l: this line and all below have been removed, or 0 if none
 #
 def SearchList_AdjustLineNums(top_l, bottom_l):
-  global dlg_srch_shown, dlg_srch_lines, dlg_srch_undo, dlg_srch_redo, dlg_srch_fn_cache
+  global dlg_srch_lines, dlg_srch_undo, dlg_srch_redo, dlg_srch_fn_cache
 
   if dlg_srch_shown:
     if bottom_l == 0:
@@ -5157,8 +4974,6 @@ def SearchList_AdjustLineNums(top_l, bottom_l):
 # This function stores all text lines in the search result window into a file.
 #
 def SearchList_SaveFile(filename, lnum_only):
-  global dlg_srch_lines
-
   try:
     with open(filename, "w") as f:
       if lnum_only:
@@ -5179,8 +4994,6 @@ def SearchList_SaveFile(filename, lnum_only):
 # content is written into it, in the format selected by the user.
 #
 def SearchList_SaveFileAs(lnum_only):
-  global dlg_srch_lines
-
   PreemptBgTasks()
   if len(dlg_srch_lines) > 0:
     def_name = ""
@@ -5261,8 +5074,8 @@ def SearchList_LoadFrom():
 # with a given list of line indices.
 #
 def SearchList_BgLoadLoop(line_list, off):
-  global block_bg_tasks, tid_search_inc, tid_search_hall, tid_search_list
-  global dlg_srch_shown, dlg_srch_lines, dlg_srch_undo, dlg_srch_redo
+  global tid_search_list
+  global dlg_srch_redo
 
   if block_bg_tasks or (tid_search_inc is not None) or (tid_search_hall is not None):
     # background tasks are suspended - re-schedule with timer
@@ -5315,8 +5128,6 @@ def SearchList_BgLoadLoop(line_list, off):
 # about the content of the search result list.
 #
 def SearchList_DisplayStats():
-  global dlg_srch_sel, dlg_srch_lines
-
   sel = dlg_srch_sel.TextSel_GetSelection()
   if len(sel) == 1:
     line_idx = sel[0] + 1
@@ -5333,7 +5144,6 @@ def SearchList_DisplayStats():
 # This dialog shows all currently defined tag assignments.
 #
 def TagList_OpenDialog():
-  global font_content, col_bg_content, col_fg_content
   global dlg_tags_shown, dlg_tags_sel
 
   PreemptBgTasks()
@@ -5429,8 +5239,6 @@ def TagList_DlgDestroyCb():
 # coordinates.
 #
 def TagList_ContextMenu(xcoo, ycoo):
-  global dlg_tags_sel
-
   dlg_tags_sel.TextSel_ContextSelection(xcoo, ycoo)
 
   TagList_ContextPopulate(wt.dlg_tags_ctxmen, 0)
@@ -5445,8 +5253,6 @@ def TagList_ContextMenu(xcoo, ycoo):
 # The contents depend on the number of selected items.
 #
 def TagList_ContextPopulate(wid, show_all):
-  global tlb_find, dlg_tags_sel
-
   sel = dlg_tags_sel.TextSel_GetSelection()
   sel_cnt = len(sel)
   sel_el = sel[0] if (sel_cnt > 0) else None
@@ -5475,8 +5281,6 @@ def TagList_ContextPopulate(wid, show_all):
 # the highlight list. The function opens the markup editor dialog.
 #
 def TagList_DoubleClick():
-  global patlist, dlg_tags_sel
-
   sel = dlg_tags_sel.TextSel_GetSelection()
   if len(sel) == 1:
     Markup_OpenDialog(sel[0])
@@ -5487,8 +5291,6 @@ def TagList_DoubleClick():
 # Each selected item (selection may be non-consecutive) is shifted up by one line.
 #
 def TagList_ShiftUp():
-  global patlist, dlg_tags_sel
-
   sel = dlg_tags_sel.TextSel_GetSelection()
   sel = sorted(sel) # must not sort inline
   if (len(sel) > 0) and (sel[0] > 0):
@@ -5513,8 +5315,6 @@ def TagList_ShiftUp():
 # list.  Each selected item is shifted down by one line.
 #
 def TagList_ShiftDown():
-  global patlist, dlg_tags_sel
-
   sel = dlg_tags_sel.TextSel_GetSelection()
   sel = sorted(sel, reverse=True) # must not sort inline
   if (len(sel) > 0) and (sel[0] < len(patlist) - 1):
@@ -5538,8 +5338,6 @@ def TagList_ShiftDown():
 # multiple tags are searched for, the closest match is used.
 #
 def TagList_Search(is_fwd):
-  global patlist, dlg_tags_sel
-
   min_line = -1
   sel = dlg_tags_sel.TextSel_GetSelection()
 
@@ -5580,8 +5378,6 @@ def TagList_Search(is_fwd):
 # the pattern for the currently selected color tags.
 #
 def TagList_SearchList(direction):
-  global patlist, dlg_tags_sel
-
   sel = dlg_tags_sel.TextSel_GetSelection()
   if len(sel) > 0:
     tag_list = []
@@ -5601,8 +5397,6 @@ def TagList_SearchList(direction):
 # This function is bound to changes of the selection in the color tags list.
 #
 def TagList_SelectionChange(sel):
-  global dlg_tags_sel
-
   state = DISABLED if (len(sel) == 0) else NORMAL
 
   wt.dlg_tags_f2_but_next.configure(state=state)
@@ -5620,7 +5414,6 @@ def TagList_SelectionChange(sel):
 # elements in the list to determine the possible selection range.
 #
 def TagList_GetLen():
-  global patlist
   return len(patlist)
 
 
@@ -5628,8 +5421,6 @@ def TagList_GetLen():
 # This function updates a color tag text in the listbox.
 #
 def TagList_Update(pat_idx):
-  global dlg_tags_shown, patlist
-
   if dlg_tags_shown:
     if pat_idx < len(patlist):
       TagList_Fill()
@@ -5650,8 +5441,6 @@ def TagList_DisplayDelete(pat_idx):
 # highlight format options.
 #
 def TagList_DisplayInsert(pos, pat_idx):
-  global patlist
-
   w = patlist[pat_idx]
   txt = w[0] + "\n"
 
@@ -5664,8 +5453,6 @@ def TagList_DisplayInsert(pos, pat_idx):
 # list entries.
 #
 def TagList_Fill():
-  global dlg_tags_shown, patlist, fmt_selection
-
   if dlg_tags_shown:
     wt.dlg_tags_f1_l.delete("1.0", "end")
 
@@ -5686,8 +5473,6 @@ def TagList_Fill():
 # This function allows to edit a color assigned to a tags entry.
 #
 def TagList_PopupColorPalette(pat_idx, is_fg):
-  global patlist
-
   if pat_idx < len(patlist):
     wt.dlg_tags_f1_l.see("%d.0" % (pat_idx + 1))
 
@@ -5710,8 +5495,6 @@ def TagList_PopupColorPalette(pat_idx, is_fg):
 # (color "none" refers to the default fore- and background colors)
 #
 def TagList_UpdateColor(col, pat_idx, is_fg):
-  global patlist, dlg_tags_sel
-
   if pat_idx < len(patlist):
     w = patlist[pat_idx]
     col_idx = 7 if is_fg else 6
@@ -5738,9 +5521,6 @@ def TagList_UpdateColor(col, pat_idx, is_fg):
 # list's context menu.
 #
 def TagList_AddSearch(parent):
-  global tlb_find, tlb_regexp, tlb_case
-  global dlg_tags_shown, dlg_tags_sel, patlist, fmt_find
-
   if tlb_find.get() != "":
     # search a free tag index
     dup_idx = -1
@@ -5805,15 +5585,14 @@ def TagList_AddSearch(parent):
 # highlight list's context menu.
 #
 def TagList_CopyToSearch(pat_idx):
-  global patlist
-  global tlb_find_focus, tlb_find, tlb_regexp, tlb_case
+  global tlb_find_focus
 
   if pat_idx < len(patlist):
     w = patlist[pat_idx]
 
     # force focus into find entry field & suppress "Enter" event
     SearchInit()
-    tlb_find_focus = 1
+    tlb_find_focus = True
     wt.f2_e.focus_set()
 
     SearchHighlightClear()
@@ -5827,9 +5606,6 @@ def TagList_CopyToSearch(pat_idx):
 # highlight list's context menu.
 #
 def TagList_CopyFromSearch(pat_idx):
-  global tlb_find_focus, tlb_find, tlb_regexp, tlb_case
-  global patlist
-
   if pat_idx < len(patlist):
     answer = messagebox.askokcancel(parent=wt.dlg_tags, message="Please confirm overwriting the search pattern for this entry? This cannot be undone")
     if answer:
@@ -5855,8 +5631,6 @@ def TagList_CopyFromSearch(pat_idx):
 # list's context menu.
 #
 def TagList_Remove(pat_sel):
-  global patlist
-
   cnt = len(pat_sel)
   if cnt > 0:
     if cnt == 1:
@@ -5889,8 +5663,6 @@ def TagList_Remove(pat_sel):
 # This function is bound to the "Delete" key in the highlight list.
 #
 def TagList_RemoveSelection():
-  global dlg_tags_sel
-
   sel = dlg_tags_sel.TextSel_GetSelection()
   if len(sel) > 0:
     TagList_Remove(sel)
@@ -5901,8 +5673,8 @@ def TagList_RemoveSelection():
 # This function creates or raises the font selection dialog.
 #
 def FontList_OpenDialog():
-  global font_normal, font_content, dlg_font_shown
-  global dlg_font_fams, dlg_font_size, dlg_font_bold
+  global dlg_font_shown
+  global dlg_font_bold, dlg_font_size
 
   PreemptBgTasks()
   if not dlg_font_shown:
@@ -5995,7 +5767,7 @@ def FontList_ClosedDialog():
 # font families which are available on the system.
 #
 def FontList_Fill():
-  global dlg_font_fams, dlg_font_size, dlg_font_bold
+  global dlg_font_fams
 
   # remove duplicates, then sort alphabetically
   dlg_font_fams = sorted(set(tkf.families(displayof=tk)))
@@ -6010,8 +5782,6 @@ def FontList_Fill():
 # the selection to the demo text.
 #
 def FontList_Selection():
-  global dlg_font_fams, dlg_font_size, dlg_font_bold
-
   sel = wt.dlg_font_f1_fams.curselection()
   if (len(sel) == 1) and (sel[0] < len(dlg_font_fams)):
     name = "{%s} %d" % (dlg_font_fams[sel[0]], dlg_font_size.get())
@@ -6029,7 +5799,6 @@ def FontList_Selection():
 #
 def FontList_Quit(do_store):
   global dlg_font_fams, dlg_font_size, dlg_font_bold
-  global font_content
 
   if do_store:
     sel = wt.dlg_font_f1_fams.curselection()
@@ -6058,10 +5827,7 @@ def FontList_Quit(do_store):
 # This function creates or raises the color highlight edit dialog.
 #
 def Markup_OpenDialog(pat_idx):
-  global font_normal, font_bold, font_content, font_hlink
-  global col_bg_content, col_fg_content
-  global fmt_selection, dlg_fmt_shown, dlg_fmt
-  global patlist, col_palette
+  global dlg_fmt_shown
 
   # fail-safety
   if pat_idx >= len(patlist): return
@@ -6224,7 +5990,7 @@ def Markup_DestroyCb():
 # format parameters from the global patlist into the dialog's hash array.
 #
 def Markup_InitConfig(pat_idx):
-  global patlist, dlg_fmt
+  global dlg_fmt
 
   dlg_fmt = {}
 
@@ -6250,8 +6016,6 @@ def Markup_InitConfig(pat_idx):
 # parameter list from the dialog's temporary hash array.
 #
 def Markup_GetConfig(pat_idx):
-  global dlg_fmt, patlist
-
   if pat_idx >= 0:
     w = patlist[pat_idx]
   else:
@@ -6290,7 +6054,7 @@ def Markup_GetConfig(pat_idx):
 # This function is bound to the "Ok" and "Abort" buttons in the mark-up dialog.
 #
 def Markup_Save(do_save, do_quit):
-  global dlg_fmt, patlist
+  global dlg_fmt
 
   if do_save:
     # determine the edited pattern's index in the list (use the unique tag
@@ -6345,8 +6109,6 @@ def Markup_Save(do_save, do_quit):
 # the sample text and the control widgets.
 #
 def Markup_UpdateFormat():
-  global dlg_fmt, font_content, col_bg_content, col_fg_content
-
   HighlightConfigure(wt.dlg_fmt_sample, "sample", Markup_GetConfig(-1))
 
   if dlg_fmt["relief"].get() != "none":
@@ -6392,8 +6154,6 @@ def Markup_UpdateFormat():
 #
 class Markup_ImageButton:
   def __init__(self, parent, wid_type):
-    global dlg_fmt
-
     CreateButtonBitmap("img_dropdown")
     self.wid = Frame(parent, relief=SUNKEN, borderwidth=1)
     iw = tk.call("image", "width", "img_dropdown") + 4
@@ -6421,8 +6181,6 @@ class Markup_ImageButton:
 # below the widget.
 #
 def Markup_PopupColorPalette(wid, wid_type):
-  global dlg_fmt
-
   rootx = wid.winfo_rootx()
   rooty = wid.winfo_rooty() + wid.winfo_height()
   PaletteMenu_Popup(wt.dlg_fmt, rootx, rooty,
@@ -6456,8 +6214,7 @@ def Markup_UpdateColor(wid_type, col):
 # add, delete, modify or reorder colors used for highlighting.
 #
 def Palette_OpenDialog():
-  global font_normal, dlg_cols_shown, dlg_cols_palette, dlg_cols_cid
-  global col_palette
+  global dlg_cols_shown, dlg_cols_palette, dlg_cols_cid
 
   if not dlg_cols_shown:
     wt.dlg_cols = Toplevel(tk)
@@ -6547,8 +6304,6 @@ def Palette_Fill(wid, palette, cids, sz=20, sel_cmd=None):
 # This function is bound to right mouse clicks on color items.
 #
 def Palette_ContextMenu(xcoo, ycoo):
-  global dlg_cols_palette, dlg_cols_cid
-
   cid = wt.dlg_cols_c.find("closest", xcoo, ycoo)
   if len(cid) == 1:
     cid = cid[0]
@@ -6577,8 +6332,6 @@ def Palette_ContextMenu(xcoo, ycoo):
 # color palette context menu.
 #
 def Palette_RemoveColor(idx):
-  global dlg_cols_palette, dlg_cols_cid
-
   if idx < len(dlg_cols_palette):
     del dlg_cols_palette[idx]
     Palette_Fill(wt.dlg_cols_c, dlg_cols_palette, dlg_cols_cid)
@@ -6590,15 +6343,11 @@ def Palette_RemoveColor(idx):
 # pointer position.
 #
 def Palette_InsertColor(idx):
-  global dlg_cols_palette, dlg_cols_cid
-
   dlg_cols_palette.insert(idx, "#ffffff")
   Palette_Fill(wt.dlg_cols_c, dlg_cols_palette, dlg_cols_cid)
 
 
 def Palette_DuplicateColor(idx):
-  global dlg_cols_palette, dlg_cols_cid
-
   if idx < len(dlg_cols_palette):
     col = dlg_cols_palette[idx]
     dlg_cols_palette.insert(idx, col)
@@ -6610,8 +6359,6 @@ def Palette_DuplicateColor(idx):
 # color palette context menu.
 #
 def Palette_EditColor(idx, cid):
-  global dlg_cols_palette
-
   col = dlg_cols_palette[idx]
   col = colorchooser.askcolor(initialcolor=col, parent=wt.dlg_cols, title="Select color")
   if col is not None:
@@ -6638,8 +6385,6 @@ def Palette_MoveColor(cid, xcoo, ycoo):
 # entries. It's used to change the order of colors by drag-and-drop.
 #
 def Palette_MoveColorEnd(idx, xcoo, ycoo):
-  global dlg_cols_palette, dlg_cols_cid
-
   sz = 20
   xcoo -= 2
   ycoo -= 2
@@ -6679,8 +6424,6 @@ def Palette_Save(do_save):
 # sub-menu (i.e. cascade) in other menus.
 #
 def PaletteMenu_Popup(parent, rootx, rooty, cmd, col_def):
-  global col_palette, font_hlink
-
   wt.colsel = Toplevel(tk, highlightthickness=0)
   wt.colsel.wm_title("Color selection menu")
   wt.colsel.wm_transient(parent)
@@ -6732,8 +6475,6 @@ def PaletteMenu_OtherColor(parent_wid, cmd, col_def):
 # This function creates the "About" dialog with copyleft info
 #
 def OpenAboutDialog():
-  global font_normal, font_bold
-
   PreemptBgTasks()
   if not wt_exists(wt.about):
     wt.about = Toplevel(tk)
@@ -7260,7 +7001,6 @@ class TextSel:
 # X window system.
 #
 def TextSel_XselectionHandler(off, xlen):
-  global main_selection_txt
   try:
       off = int(off)
       xlen = int(xlen)
@@ -7291,7 +7031,7 @@ def TextSel_XselectionExport(to_clipboard, txt):
 
 class LoadPipe:
   def __init__(self):
-    global load_file_mode, load_buf_size, load_buf_size_default
+    global load_buf_size
 
     if not load_buf_size:
       load_buf_size = load_buf_size_default
@@ -7323,7 +7063,7 @@ class LoadPipe:
   # This function opens the "Loading from STDIN" status dialog.
   #
   def LoadPipe_OpenDialog(self):
-    global font_normal, dlg_load_shown
+    global dlg_load_shown
 
     if not dlg_load_shown:
       wt.dlg_load = Toplevel(tk)
@@ -7473,8 +7213,6 @@ class LoadPipe:
   # copying large buffers.)
   #
   def LoadPipe_LimitData(self, exact):
-    global load_buf_size
-
     # tail mode: delete oldest data / head mode: delete newest data
     if load_file_mode == 0:
       lidx = -1
@@ -7512,8 +7250,6 @@ class LoadPipe:
   # when reading text data from STDIN, i.e. via a pipe.
   #
   def LoadPipe_BgLoop(self):
-    global load_buf_size
-
     try:
       while True:
         # limit read length to buffer size ("head" mode only)
@@ -7685,7 +7421,7 @@ class LoadPipe:
 # This function loads a text file (or parts of it) into the text widget.
 #
 def LoadFile(filename):
-  global cur_filename, load_pipe, load_buf_size, load_file_mode
+  global cur_filename, load_pipe
 
   cur_filename = filename
   load_pipe = None
@@ -7723,7 +7459,6 @@ def LoadFile(filename):
 #
 def InitContent():
   global tid_search_inc, tid_search_hall, tid_high_init
-  global cur_filename, load_pipe, dlg_mark_shown
 
   if tid_high_init is not None: tk.after_cancel(tid_high_init)
   if tid_search_inc is not None: tk.after_cancel(tid_search_inc)
@@ -7769,7 +7504,7 @@ def InitContent():
 # loaded.
 #
 def DiscardContent():
-  global patlist, mark_list, mark_list_modified
+  global mark_list, mark_list_modified
 
   # the following is a work-around for a performance issue in the text widget:
   # deleting text with large numbers of tags is extremely slow, so we clear
@@ -7795,8 +7530,6 @@ def DiscardContent():
 # The parameter specifies if content above or below the cursor is discarded.
 #
 def MenuCmd_Discard(is_fwd):
-  global cur_filename
-
   PreemptBgTasks()
   if is_fwd:
     # delete everything below the line holding the cursor
@@ -7844,7 +7577,6 @@ def MenuCmd_Discard(is_fwd):
         # the following is a work-around for a performance issue in the text widget:
         # deleting text with large numbers of tags is extremely slow, so we clear
         # the tags first (needed as of Tcl/Tk 8.4.7 to .13)
-        global patlist
         for w in patlist:
           wt.f1_t.tag_remove(w[4], "%d.%d" % (first_l, first_c), "%d.%d" % (last_l, last_c))
 
@@ -7871,8 +7603,6 @@ def MenuCmd_Discard(is_fwd):
 # This function is bound to the "Reload current file" menu command.
 #
 def MenuCmd_Reload():
-  global load_pipe, cur_filename
-
   # offer to save old bookmarks before discarding them below
   if not Mark_OfferSave():
     return
@@ -7923,7 +7653,7 @@ def UserQuit():
 # doesn't block.
 #
 def PreemptBgTasks():
-  global block_bg_tasks, block_bg_caller, tid_resume_bg
+  global block_bg_tasks, tid_resume_bg
 
   block_bg_caller.append(["LOCK", traceback.format_tb(sys.exc_info()[2], limit=-2)])
   if tid_resume_bg is not None:
@@ -7942,7 +7672,7 @@ def PreemptBgTasks():
 # window) have been processed.
 #
 def ResumeBgTasks():
-  global block_bg_tasks, block_bg_caller, tid_resume_bg
+  global block_bg_tasks, tid_resume_bg
 
   if block_bg_tasks > 1:
     block_bg_caller.append(["DEC #"+str(block_bg_tasks), traceback.format_tb(sys.exc_info()[2], limit=-2)])
@@ -8273,8 +8003,6 @@ def dlg_help_define_fonts():
 
 
 def dlg_help_add_menu_commands(wid_men):
-    global help_titles
-
     for title in helpIndex:
         help_titles.append(title)
 
@@ -8283,7 +8011,6 @@ def dlg_help_add_menu_commands(wid_men):
 
 class Help_dialog:
     def __init__(self, index, subheading, subrange):
-        global win_geom
         self.chapter_idx = -1
         self.help_stack = []
 
@@ -8439,8 +8166,6 @@ class Help_dialog:
 
 
     def __follow_help_hyperlink(self):
-        global helpIndex
-
         # the text under the mouse carries the mark 'current'
         curidx = self.wid_txt.index("current + 1 char")
 
@@ -8468,11 +8193,12 @@ class Help_dialog:
 # The function is called once during start-up.
 #
 def LoadRcFile():
-  global tlb_history, tlb_hist_maxlen, tlb_case, tlb_regexp, tlb_hall
+  global tlb_history, tlb_hist_maxlen
   global patlist, col_palette, tick_pat_sep, tick_pat_num, tick_str_prefix
   global font_content, col_bg_content, col_fg_content, fmt_find, fmt_findinc
-  global win_geom, fmt_selection, load_buf_size_default
+  global fmt_selection, load_buf_size_default
   global rcfile_version, myrcfile
+  #global tlb_case, tlb_regexp, tlb_hall, win_geom  # modified, but not assigned
 
   error = False
   ver_check = False
@@ -8557,12 +8283,7 @@ def LoadRcFile():
 # This function writes persistent configuration variables into the RC file
 #
 def UpdateRcFile():
-  global myrcfile, rcfile_compat, rcfile_version
-  global tid_update_rc_sec, tid_update_rc_min, rc_file_error
-  global tlb_history, tlb_hist_maxlen, tlb_case, tlb_regexp, tlb_hall
-  global patlist, col_palette, tick_pat_sep, tick_pat_num, tick_str_prefix
-  global font_content, col_bg_content, col_fg_content, fmt_find, fmt_findinc
-  global fmt_selection, load_buf_size_default
+  global tid_update_rc_min, rc_file_error
 
   if tid_update_rc_sec: tk.after_cancel(tid_update_rc_sec)
   if tid_update_rc_min: tk.after_cancel(tid_update_rc_min)
@@ -8903,7 +8624,7 @@ tlb_hall = False
 tlb_last_dir = 1
 
 # This variable indicates if the search entry field has keyboard focus.
-tlb_find_focus = 0
+tlb_find_focus = False
 
 # This variable contains the name of the widget which had input focus before
 # the focus was moved into the search entry field. Focus will return there
