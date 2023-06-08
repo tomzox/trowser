@@ -7150,7 +7150,7 @@ proc OpenAboutDialog {} {
     pack .about.url -side top -padx 5 -pady 5
 
     message .about.m -font $font_normal -text {
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.  
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
@@ -8117,7 +8117,7 @@ proc LoadPipe_CmdStop {} {
 # This function is bound to the "Ok" button in the "Load from pipe"
 #
 proc LoadPipe_CmdContinue {is_user} {
-  global load_file_mode load_buf_fill load_buf_size
+  global load_file_mode load_buf_fill load_buf_size load_buf_size_default
   global load_file_complete
   global dlg_load_file_limit
 
@@ -8125,6 +8125,8 @@ proc LoadPipe_CmdContinue {is_user} {
   if {[catch {set val [expr {1024*1024*$dlg_load_file_limit}]} cerr] == 0} {
     if {$val != $load_buf_size} {
       set load_buf_size $val
+
+      set load_buf_size_default $val
       UpdateRcAfterIdle
     }
   } elseif $is_user {
@@ -8260,15 +8262,15 @@ proc LoadDataFromPipe {} {
 #
 proc LoadPipe {} {
   global cur_filename load_file_complete load_file_data
-  global load_buf_size load_buf_fill load_file_mode load_file_close
+  global load_buf_size load_buf_size_default load_buf_fill load_file_mode load_file_close
   global load_file_sum_hi load_file_sum_lo load_file_sum_str
 
   set cur_filename ""
-  if {![info exists load_file_mode]}  {
-    set load_file_mode 0
+  if {$load_buf_size == 0} {
+    set load_buf_size $load_buf_size_default
   }
   if {![info exists load_file_close]} {
-    set load_file_close 1
+    set load_file_close 0
   }
   if {![info exists load_file_sum_lo]} {
     # split file length in HIGH and LOW (20 bit) as it may exceed 32-bit
@@ -8331,14 +8333,19 @@ proc LoadFile {filename} {
   if {[catch {
     set file [open $filename r]
 
-    # apply file length limit
-    file stat $filename sta
-    if {$load_file_mode && ($sta(size) > $load_buf_size)} {
-      seek $file [expr {0 - $load_buf_size}] end
+    if {$load_buf_size} {
+      # apply head/tail mode and length limit
+      file stat $filename sta
+      if {$load_file_mode && ($sta(size) > $load_buf_size)} {
+        seek $file [expr {0 - $load_buf_size}] end
+      }
+      set data [read $file $load_buf_size]
+    } else {
+      # read complete file
+      set data [read $file]
     }
 
     # insert the data into the text widget
-    set data [read $file $load_buf_size]
     .f1.t insert end $data
 
     # add missing newline at end of file
@@ -8550,7 +8557,7 @@ proc MenuCmd_OpenFile {} {
     return
   }
 
-  set filename [tk_getOpenFile -parent . -filetypes {{"trace" {out.*}} {all {*}}}]
+  set filename [tk_getOpenFile -parent . -filetypes {{all {*}} {"log" {*.log}} {"trace" {trace.*}}}]
   if {$filename ne ""} {
     DiscardContent
     after idle [list LoadFile $filename]
@@ -8681,7 +8688,7 @@ proc LoadRcFile {} {
   global dlg_mark_geom dlg_hist_geom dlg_srch_geom dlg_tags_geom main_win_geom
   global patlist col_palette tick_pat_sep tick_pat_num tick_str_prefix
   global font_content col_bg_content col_fg_content fmt_find fmt_findinc
-  global load_buf_size
+  global load_buf_size_default
   global rcfile_version myrcfile
 
   set error 0
@@ -8715,12 +8722,11 @@ proc LoadRcFile {} {
       }
     }
     close $rcfile
-  }
 
-  # override config var with command line options
-  global load_buf_size_opt
-  if {[info exists load_buf_size_opt]} {
-    set load_buf_size $load_buf_size_opt
+    # copy value, as parameter name does not match name of global variable
+    if {[info exists load_buf_size]} {
+      set load_buf_size_default $load_buf_size
+    }
   }
 }
 
@@ -8734,7 +8740,7 @@ proc UpdateRcFile {} {
   global dlg_mark_geom dlg_hist_geom dlg_srch_geom dlg_tags_geom main_win_geom
   global patlist col_palette tick_pat_sep tick_pat_num tick_str_prefix
   global font_content col_bg_content col_fg_content fmt_find fmt_findinc
-  global fmt_selection load_buf_size
+  global fmt_selection load_buf_size_default
 
   after cancel $tid_update_rc_sec
   after cancel $tid_update_rc_min
@@ -8802,8 +8808,8 @@ proc UpdateRcFile {} {
       puts $rcfile [list set fmt_findinc $fmt_findinc]
       puts $rcfile [list set fmt_selection $fmt_selection]
 
-      # misc (note the head/tail mode is omitted intentionally)
-      puts $rcfile [list set load_buf_size $load_buf_size]
+      # file/stream load parameters
+      puts $rcfile [list set load_buf_size $load_buf_size_default]
 
       close $rcfile
     } errstr] == 0} {
@@ -8918,7 +8924,7 @@ proc ParseArgInt {opt val var} {
 # This function parses and evaluates the command line arguments.
 #
 proc ParseArgv {} {
-  global argv load_file_mode load_buf_size_opt myrcfile
+  global argv load_file_mode load_buf_size myrcfile
 
   set file_seen 0
   for {set arg_idx 0} {$arg_idx < [llength $argv]} {incr arg_idx} {
@@ -8929,12 +8935,12 @@ proc ParseArgv {} {
         {^-t$} {
           ParseArgvLenCheck $argv $arg_idx
           incr arg_idx
-          ParseArgInt $arg [lindex $argv $arg_idx] load_buf_size_opt
+          ParseArgInt $arg [lindex $argv $arg_idx] load_buf_size
           set load_file_mode 1
         }
         {^--tail.*$} {
           if {[regexp -all -- {--tail=(\d+)} $arg foo val]} {
-            ParseArgInt $arg $val load_buf_size_opt
+            ParseArgInt $arg $val load_buf_size
           } else {
             PrintUsage $arg "requires a numerical argument (e.g. $arg=10000000)"
           }
@@ -8943,12 +8949,12 @@ proc ParseArgv {} {
         {^-h$} {
           ParseArgvLenCheck $argv $arg_idx
           incr arg_idx
-          ParseArgInt $arg [lindex $argv $arg_idx] load_buf_size_opt
+          ParseArgInt $arg [lindex $argv $arg_idx] load_buf_size
           set load_file_mode 0
         }
         {^--head.*$} {
           if {[regexp -all -- {--head=(\d+)} $arg foo val]} {
-            ParseArgInt $arg $val load_buf_size_opt
+            ParseArgInt $arg $val load_buf_size
           } else {
             PrintUsage $arg "requires a numerical argument (e.g. $arg=10000000)"
           }
@@ -8986,10 +8992,7 @@ proc ParseArgv {} {
       }
     }
   }
-  if {!$file_seen} {
-    puts stderr "File name missing (use \"-\" for stdin)"
-    PrintUsage {} {}
-  }
+  return $file_seen
 }
 
 
@@ -9181,9 +9184,10 @@ set patlist {
   {{^\[ } 1 1 default tag1 {} #b4e79c {} 0 0 0 {} {} {} 1 0}
 }
 
-# This variable contains the limit for file load
-# The value can be changed by the "head" and "tail" command line options.
-set load_buf_size 2000000
+# This variable contains the limit in Bytes to read from input file or stream,
+# set via "head" and "tail" command line options. Default is no limit.
+set load_buf_size_default 2000000
+set load_buf_size 0
 set load_file_mode 0
 
 # define RC file version limit for forwards compatibility
@@ -9199,17 +9203,19 @@ if {[catch {tk appname "trowser"}]} {
   puts stderr "Tk initialization failed"
   exit
 }
-ParseArgv
+set load_initial_file [ParseArgv]
 LoadRcFile
 InitResources
 CreateMainWindow
 HighlightCreateTags
 update
 
-if {[lindex $argv end] eq "-"} {
-  LoadPipe
-} else {
-  LoadFile [lindex $argv end]
+if {$load_initial_file} {
+  if {[lindex $argv end] eq "-"} {
+    LoadPipe
+  } else {
+    LoadFile [lindex $argv end]
+  }
 }
 
 # done - all following actions are event-driven

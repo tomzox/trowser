@@ -31,7 +31,7 @@ B<trowser> - Browser for line-oriented text files with color highlighting
 
 =head1 SYNOPSIS
 
-B<trowser> [{-t|-h} limit] [-r path] {file|-}
+B<trowser> [{-t|-h} limit] [-r path] [file|-]
 
 B<trowser> -help
 
@@ -39,12 +39,13 @@ B<trowser> -help
 
 I<Trowser> is a graphical browser for large line-oriented text files with color
 highlighting and a highly flexible search and cherry-picking window. Trowser
-was developed as an alternative to UNIX-tool "less" when analyzing debug log
-files (aka traces - hence the name).
+was developed as an alternative to tools such as "less" (UNIX) or "Notepad++"
+(Windows) when analyzing debug log files (or "trace files", as they are often
+called in embedded software world - hence the name).
 
 Trowser has a graphical interface, but is designed to allow browsing via
-the keyboard at least to the same extent as less. Key bindings and the cursor
-positioning concept are derived from vim.
+the keyboard at least to the same extent as less. Additional key bindings
+and the cursor positioning concept are derived from the Vim text editor.
 
 Note in this context "line-oriented" denotes that each line of text is
 considered a data unit.  Color highlighting (including search matches)
@@ -601,33 +602,37 @@ The following command line options are available:
 
 =item B<-h> I<limit>, B<--head=limit>
 
-This option specifies the maximum number of bytes read from the start
-of the input file or stream, i.e. any following text is silently
-ignored.
+This option specifies the maximum number of bytes to load from input file
+or stream for display. When loading from a stream via STDIN, it's possible
+to continue reading more data later via command I<Continue loading STDIN>.
 
-The limit value is remembered in the configuration file and used in
-the next invocation unless overridden.  When neither B<-h> or B<-t> are
-specified and data is loaded from a stream via STDIN, a small dialog
-window pops up when the buffer limit is exceeded. This allows the user
-to select between head and tail modes manually.
+The limit value is remembered in the configuration file and used as default
+the next time data is loaded from STDIN. When loading from a file, default
+is to load the complete file.
+
+When neither option B<-h> or B<-t> are specified and data is loaded from a
+stream via STDIN, a small dialog window pops up when the buffer limit is
+exceeded. This allows the user to select between head and tail modes
+manually.
 
 =item B<-t> I<limit>, B<--tail=limit>
 
-This option specifies the maximum number of bytes to be read into the
-display buffer.  If the input is a file which is larger then the given
-buffer limit, text at the beginning of the file is skipped. If the
-input is a stream, all data is read into a temporary queue until
-the end-of-stream is reached; then the last I<limit> number of bytes
-which were read from the stream are loaded into the display buffer.
+This option specifies to load only the given maximum number of bytes into
+the display from the end of the file or input stream. This means when
+reading from a file, data from the beginning is skipped if the file is
+larger than the limit.  If the input is a STDIN stream, data is read into
+a ring buffer of the given size. Once the end-of-stream is reached, the
+last content of the ring buffer is loaded into the display.
 
-The limit value is remembered in the configuration file and used in
-the next invocation unless overridden.
+The limit value is remembered in the configuration file equivalently as
+described for the "head" option.
+
 
 =item B<-r> I<path>, B<--rcfile=path>
 
 This option can be used to specify an alternate configuration file.
 When this option is not present, the configuration file is stored in
-the home directory, see section FILES.
+system directories, see L<"FILES">.
 
 =back
 
@@ -644,14 +649,19 @@ address) and B<HOME> (home directory, for storing the configuration file.)
 
 I<UNIX>:
 Configuration file where all personal settings and the search history are
-stored. Per default this file is created in your home directory, but a
-different path and file name can be specified with the B<--rcfile> option
+stored. The path may be overriden via environment variable C<XDG_CONFIG_HOME>.
+A different file name can be specified with the B<--rcfile> option
 (see L<"OPTIONS">).
 
-During updates to this file, trowser temporarily creates a file called
-C<.trowserc.XXXXX.tmp> in the home directory, where "XXXXX" is a random
-number. The old file is then replaced with this new file. This procedure
-will obviously fail if your home directory is not writable.
+During updates to this file, trowser temporarily creates a new file the same
+directory, where "XXXXX" is a random number. The old file is then replaced
+with this new file. This procedure will obviously fail if the target directory
+(not the file itself!) is not writable. 
+
+I<MS Windows>:
+On the MS Windows platform, the configuration file is created in the hidden
+application data directory in your user home. The specific path depends on
+your operating system version. (The path is qeried via a system API.)
 
 =back
 

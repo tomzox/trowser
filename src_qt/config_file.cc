@@ -114,9 +114,9 @@ QJsonObject ConfigFile::getRcValues()
     // font and color settings
     obj.insert("main_text_font", QJsonValue(s_mainText->getFontContent().toString()));
 
-    // misc (note the head/tail mode is omitted intentionally)
-    obj.insert("load_buf_size_lsb", QJsonValue(int(load_buf_size & 0xFFFFFFFFU)));
-    obj.insert("load_buf_size_msb", QJsonValue(int(load_buf_size >> 32)));
+    // file/stream load parameters
+    obj.insert("load_buf_size_lsb", QJsonValue(int(load_buf_size_stream_default & 0xFFFFFFFFU)));
+    obj.insert("load_buf_size_msb", QJsonValue(int(load_buf_size_stream_default >> 32)));
 
     // dump software version (use prefix "xx" to keep this entry at the end when sorted)
     obj.insert("xx_trowser_version", QJsonValue(int(rcfile_version)));
@@ -154,9 +154,7 @@ void ConfigFile::setRcValues(const QJsonObject& obj)
             fprintf(stderr, "trowser: ignoring unknown keyword at top-level in rcfile: %s\n", var.toLatin1().data());
     }
 
-    // buffer size provided via command line has precedence over the one from RC file
-    if (!load_buf_size_opt && (load_buf_size_lsb || load_buf_size_msb))
-        load_buf_size = size_t(load_buf_size_lsb) | (size_t(load_buf_size_msb) << 32);
+    load_buf_size_stream_default = size_t(load_buf_size_lsb) | (size_t(load_buf_size_msb) << 32);
 }
 
 /**
@@ -423,7 +421,7 @@ static void PrintUsage(const char * const argv[], int argvn=-1, const char * rea
         fprintf(stderr, "The following options are available:\n"
                         "  --head=size\t\tLoad <size> bytes from the start of the file\n"
                         "  --tail=size\t\tLoad <size> bytes from the end of the file\n"
-                        "  --rcfile=<path>\tUse alternate config file (default: ~/.trowserc)\n");
+                        "  --rcfile=<path>\tUse alternate config file\n");
     }
     exit(1);
 }
@@ -464,7 +462,7 @@ static int ParseArgInt(const char * const argv[], int arg_idx, const char * opt)
 /**
  * This function parses and evaluates the command line arguments.
  */
-void ParseArgv(int argc, const char * const argv[])
+bool ParseArgv(int argc, const char * const argv[])
 {
     bool file_seen = false;
     int arg_idx = 1;
@@ -554,11 +552,7 @@ void ParseArgv(int argc, const char * const argv[])
         arg_idx += 1;
     }
 
-    if (!file_seen)
-    {
-        fprintf(stderr, "File name missing (use \"-\" for stdin)\n");
-        PrintUsage(argv);
-    }
+    return file_seen;
 }
 
 // ----------------------------------------------------------------------------
@@ -574,6 +568,7 @@ Highlighter * ConfigFile::s_higl;
 // Command line parameters
 LoadMode      ConfigFile::load_file_mode = ConfigFile::defaultLoadFileMode;
 size_t        ConfigFile::load_buf_size = ConfigFile::defaultLoadBufSize;
+size_t        ConfigFile::load_buf_size_stream_default = ConfigFile::defaultLoadBufSizeStream;
 bool          ConfigFile::load_buf_size_opt = false;
 const char *  ConfigFile::myrcfile = nullptr;
 
@@ -610,16 +605,20 @@ void ConfigFile::updateRcAfterIdle()  /*static*/
         s_instance->writeConfigDelayed();
 }
 
-void ConfigFile::getFileLoadParams(LoadMode& mode, size_t& size)  /*static*/
+void ConfigFile::getFileLoadParams(LoadMode& mode, size_t& size, bool fromPipe)  /*static*/
 {
     mode = load_file_mode;
-    size = load_buf_size;
+
+    if (!load_buf_size_opt && fromPipe)
+        size = load_buf_size_stream_default;
+    else
+        size = load_buf_size;
 }
 
 void ConfigFile::updateFileLoadParams(LoadMode mode, size_t size)  /*static*/
 {
     load_file_mode = mode;
-    load_buf_size = size;
+    load_buf_size_stream_default = size;
     updateRcAfterIdle();
 }
 

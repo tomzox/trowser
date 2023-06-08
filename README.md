@@ -2,10 +2,11 @@
 
 Trowser is a browser for large line-oriented text files with color highlighting
 and a highly flexible search and cherry-picking window.  Trowser was developed
-as an alternative to UNIX-tool "less" when analyzing debug log/trace files
+as an alternative to tools such as "less" (UNIX) or "Notepad++" (Windows)
+when analyzing debug log/trace files
 created by other applications. Trowser integrates well with
-[GtestGui](http://github.com/tomzox/gtest_gui) as viewer for text output of test
-applications using GoogleTest framework.
+[GtestGui test-runner](http://github.com/tomzox/gtest_gui) as viewer for
+text output of test applications using GoogleTest (GTest) framework.
 
 Compared to plain text viewers, trowser adds color highlighting, a persistent
 search history, graphical bookmarking and a separate search result window. The

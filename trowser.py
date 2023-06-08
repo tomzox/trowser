@@ -7291,7 +7291,10 @@ def TextSel_XselectionExport(to_clipboard, txt):
 
 class LoadPipe:
   def __init__(self):
-    global load_file_mode
+    global load_file_mode, load_buf_size, load_buf_size_default
+
+    if not load_buf_size:
+      load_buf_size = load_buf_size_default
 
     self._opt_file_close = IntVar(tk, 0)             # option configurable via dlg.
     self._opt_file_mode = IntVar(tk, load_file_mode) # copy of cfg. opt. for display
@@ -7434,7 +7437,7 @@ class LoadPipe:
   # This function is bound to the "Ok" button in the "Load from pipe"
   #
   def LoadPipe_CmdContinue(self):
-    global load_buf_size, load_file_mode
+    global load_buf_size, load_buf_size_default, load_file_mode
 
     # apply possible change of buffer mode and limit by the user
     load_file_mode = self._opt_file_mode.get()
@@ -7446,6 +7449,8 @@ class LoadPipe:
 
     if abs(val - load_buf_size) >= 1024*1024:
       load_buf_size = val
+
+      load_buf_size_default = val
       UpdateRcAfterIdle()
 
     if (self._opt_file_mode.get() == 0) and (self._read_buffered >= load_buf_size):
@@ -7686,21 +7691,23 @@ def LoadFile(filename):
   load_pipe = None
 
   try:
-    file = open(filename, "rb")
+    with open(filename, "rb") as infile:
+      if load_buf_size:
+        # apply head/tail mode and length limit
+        stat = os.fstat(infile.fileno())
+        if load_file_mode and (stat.st_size > load_buf_size):
+          # FIXME this won't work well on a file containing UTF
+          infile.seek(0 - load_buf_size, 2)
 
-    # apply file length limit
-    stat = os.fstat(file.fileno())
-    if load_file_mode and (stat.st_size > load_buf_size):
-      file.seek(0 - load_buf_size, 2)
-
-    # insert the data into the text widget
-    data = file.read(load_buf_size)
-    file.close()
+        data = infile.read(load_buf_size)
+      else:
+        data = infile.read()
 
   except OSError as e:
     messagebox.showerror(message="Failed to load file %s: %s" % (filename, e.strerror))
     data = b""
 
+  # insert the data into the text widget
   wt.f1_t.insert("end", data)
 
   # add missing newline at end of file
@@ -7889,7 +7896,9 @@ def MenuCmd_OpenFile():
   if not Mark_OfferSave():
     return
 
-  filename = filedialog.askopenfilename(parent=tk, filetypes=(("trace", "out.*"), ("all", "*")))
+  filename = filedialog.askopenfilename(parent=tk, filetypes=(("all", "*"),
+                                                              ("log", "*.log"),
+                                                              ("trace", "trace.*")))
   if filename:
     DiscardContent()
     tk.after_idle(lambda: LoadFile(filename))
@@ -8024,11 +8033,11 @@ helpSections[(1,4)] = '''Key Bindings in Dialogs'''
 
 helpTexts = {}
 helpTexts[0] = (('''Description''', 'title1'), ('''
-''', ''), ('''Trowser''', 'underlined'), (''' is a graphical browser for large line-oriented text files with color highlighting and a highly flexible search and cherry-picking window. Trowser was developed as an alternative to UNIX-tool "less" when analyzing debug log files (aka traces - hence the name).
-''', ''), ('''Trowser has a graphical interface, but is designed to allow browsing via the keyboard at least to the same extent as less. Key bindings and the cursor positioning concept are derived from vim.
+''', ''), ('''Trowser''', 'underlined'), (''' is a graphical browser for large line-oriented text files with color highlighting and a highly flexible search and cherry-picking window. Trowser was developed as an alternative to tools such as "less" (UNIX) or "Notepad++" (Windows) when analyzing debug log files (or "trace files", as they are often called in embedded software world - hence the name).
+''', ''), ('''Trowser has a graphical interface, but is designed to allow browsing via the keyboard at least to the same extent as less. Additional key bindings and the cursor positioning concept are derived from the Vim text editor.
 ''', ''), ('''Note in this context "line-oriented" denotes that each line of text is considered a data unit.  Color highlighting (including search matches) will always apply the highlight to a complete line of text.
 ''', ''), ('''When you start trowser for the first time, you'll have to create highlight patterns for your type of file.  To do this, first enter a search pattern and verify that it matches the intended lines. Then open the ''', ''), ('''Edit highlight patterns''', 'underlined'), (''' dialog in the ''', ''), ('''Search''', 'underlined'), (''' menu, press the right mouse button to open the context menu and select ''', ''), ('''Add current search''', 'underlined'), ('''. You can change the highlight color or select a different kind of mark-up by double-clicking on the new entry in the dialog, or by selecting ''', ''), ('''Edit markup''', 'underlined'), (''' in the context menu.  To define new colors, click on ''', ''), ('''Edit color palette''', 'underlined'), (''' at the bottom of the markup editor dialog.
-''', ''), ('''There are several ways to quickly navigate in the file to lines matching search patterns: Firstly, you can search forwards or backwards to any sub-string or pattern you enter in the ''', ''), ('''Find:''', 'underlined'), (''' field. Secondly, you can repeat previous searches by opening the search history dialog and double-clicking on an entry, or by clicking ''', ''), ('''Next''', 'underlined'), (''' or ''', ''), ('''Previous''', 'underlined'), ('''. Third, you can assign bookmarks to selected text lines and jump in-between those lines by clicking on them in the bookmark list dialog or via ''', ''), (''''+''', 'fixed'), (''' and ''', ''), (''''-''', 'fixed'), (''' key bindings (not in vim.) Fourth, you can search for patterns defined in the color highlight list by selecting a pattern in the list and then clicking on ''', ''), ('''Next''', 'underlined'), (''' or ''', ''), ('''Previous''', 'underlined'), (''' in the pattern list dialog. Fifth, you can open the ''', ''), ('''Search result list''', 'underlined'), (''' (via the ''', ''), ('''Search''', 'underlined'), (''' menu or by clicking on ''', ''), ('''List all''', 'underlined'), (''' in any dialog or by entering ''', ''), ('''ALT-a''', 'fixed'), (''') to display all text lines which match a set of patterns and click on an entry in this list to jump to the respective line in the main window. Sixth, you can manually copy arbitrary lines from the main text window into the search result window via the ''', ''), (''' 'i' ''', 'fixed'), (''' key (not in vim.)
+''', ''), ('''There are several ways to quickly navigate in the file to lines matching search patterns: Firstly, you can search forwards or backwards to any sub-string or pattern you enter in the ''', ''), ('''Find:''', 'underlined'), (''' field. Secondly, you can repeat previous searches by opening the search history dialog and double-clicking on an entry, or by clicking ''', ''), ('''Next''', 'underlined'), (''' or ''', ''), ('''Previous''', 'underlined'), ('''. Third, you can assign bookmarks to selected text lines and jump in-between those lines by clicking on them in the bookmark list dialog or via ''', ''), (''''+''', 'fixed'), (''' and ''', ''), (''''-''', 'fixed'), (''' key bindings (not in vim.) Fourth, you can search for patterns defined in the color highlight list by selecting a pattern in the list and then clicking on ''', ''), ('''Next''', 'underlined'), (''' or ''', ''), ('''Previous''', 'underlined'), (''' in the pattern list dialog. Fifth, you can open the ''', ''), ('''Search result list''', 'underlined'), (''' (via the ''', ''), ('''Search''', 'underlined'), (''' menu or by clicking on ''', ''), ('''List all''', 'underlined'), (''' in any dialog or by entering ''', ''), ('''ALT-a''', 'fixed'), (''') to display all text lines which match a set of patterns and click on an entry in this list to jump to the respective line in the main window. Sixth, you can manually copy arbitrary lines from the main text window into the search result window via the ''', ''), (''''i\'''', 'fixed'), (''' key (not in vim.)
 ''', ''), ('''The search filter list is one of the main features of the trace browser, as it allows to consecutively build an arbitrary sub-set of text lines in the main window. You can not only use one or more search patterns to add text, but also add selected text lines from the main text window via the ''', ''), ('''i''', 'fixed'), (''' key binding and remove individual lines again, either manually or by use of a search pattern.  Additionally you can use bookmarks in the search result window. When searching in the main window, the search result list will scroll to show the same region of text. Thus you effectively can navigate the text on three levels: Bookmarks > Search list > Main text.
 ''', ''), ('''Both the bookmark and search result lists support prefixing all entries with a "frame number". This is useful when your input file does not have time-stamp prefixes on each line. In this case trowser can search for a preceding time-stamp and automatically prefix bookmarked lines with this number.  Additionally trowser allows to fetch a "frame number" which is not printed in the same line as the frame interval start line. In this case trowser searches the next frame start lines in forward and backward direction and then inside of that range for a line containing the frame number value.  Note for the search result list this feature is disabled by default for performance reasons. It must be enabled in the dialog's ''', ''), ('''Options''', 'underlined'), (''' menu. The search patterns used to locate time-stamps currently have to be inserted into the RC file manually.
 ''', ''), ('''For performance reasons most search-related commands are executed as background processes, so that the GUI remains responsive during search. For example, this applies to the initial color highlighting, global search highlighting, incremental search while editing search patterns and filling the search result list.  Such background activity is indicated by display of a progress bar and switching the mouse cursor to a watch or hourglass image.  You still can use trowser as usual during this time though.  The background activity is automatically aborted or restarted when a conflicting command is entered (e.g. when the search pattern is modified during global search highlighting.)
@@ -8072,21 +8081,21 @@ helpTexts[1] = (('''Key bindings''', 'title1'), ('''
 ''', ''), ('''Search for the following character in the same line to the right or left respectively (same as in vim)
 ''', 'indent'), (''';''', 'fixed'), (''', ''', ''), (''',''', 'fixed'), (''' (semicolon, comma)
 ''', ''), ('''Repeat a previous in-line search (''', 'indent'), ('''f''', ('fixed', 'indent')), (''' or ''', 'indent'), ('''F''', ('fixed', 'indent')), (''') in the same or opposite direction respectively (same as in vim)
-''', 'indent'), ('''''''', 'fixed'), (''' (two apostrophes)
-''', ''), ('''Moves the cursor to the position before the latest jump (same as in vim and less.)  A "jump" is one of the following commands: ''', 'indent'), (''' ' ''', ('fixed', 'indent')), (''', ''', 'indent'), ('''G''', ('fixed', 'indent')), (''', ''', 'indent'), ('''/''', ('fixed', 'indent')), (''', ''', 'indent'), ('''?''', ('fixed', 'indent')), (''', ''', 'indent'), ('''n''', ('fixed', 'indent')), (''', ''', 'indent'), ('''N''', ('fixed', 'indent')), (''', ''', 'indent'), ('''L''', ('fixed', 'indent')), (''', ''', 'indent'), ('''M''', ('fixed', 'indent')), (''' and ''', 'indent'), ('''H''', ('fixed', 'indent')), (''' (same as in vim.)  Note movements controlled via the GUI, such as the bookmark list or search result list, do not modify the jump list.
+''', 'indent'), (''''\'''', 'fixed'), (''' (two apostrophes)
+''', ''), ('''Moves the cursor to the position before the latest jump (same as in vim and less.)  A "jump" is one of the following commands: ''', 'indent'), ('''\'''', ('fixed', 'indent')), (''', ''', 'indent'), ('''G''', ('fixed', 'indent')), (''', ''', 'indent'), ('''/''', ('fixed', 'indent')), (''', ''', 'indent'), ('''?''', ('fixed', 'indent')), (''', ''', 'indent'), ('''n''', ('fixed', 'indent')), (''', ''', 'indent'), ('''N''', ('fixed', 'indent')), (''', ''', 'indent'), ('''L''', ('fixed', 'indent')), (''', ''', 'indent'), ('''M''', ('fixed', 'indent')), (''' and ''', 'indent'), ('''H''', ('fixed', 'indent')), (''' (same as in vim.)  Note movements controlled via the GUI, such as the bookmark list or search result list, do not modify the jump list.
 ''', 'indent'), (''''+''', 'fixed'), (''', ''', ''), (''''-''', 'fixed'), ('''
 ''', ''), ('''Moves the cursor to the next or previous bookmark (not in vim)
 ''', 'indent'), (''''^''', 'fixed'), (''', ''', ''), (''''$''', 'fixed'), ('''
 ''', ''), ('''Moves the cursor to the start or end of file (same as in less; not in vim)
 ''', 'indent'), ('''^o''', 'fixed'), (''', ''', ''), ('''^i''', 'fixed'), ('''
-''', ''), ('''Moves the cursor to the next older (or newer respectively) position in the jump list (same as in vim; note ''', 'indent'), ('''TAB''', ('fixed', 'indent')), (''' which is identical to ''', 'indent'), ('''^i''', ('fixed', 'indent')), (''' in vim has a different meaning here.) See ''', 'indent'), ('''''''', ('fixed', 'indent')), (''' for a list of commands which are considered jumps and add pre-jump cursor positions to the list.
+''', ''), ('''Moves the cursor to the next older (or newer respectively) position in the jump list (same as in vim; note ''', 'indent'), ('''TAB''', ('fixed', 'indent')), (''' which is identical to ''', 'indent'), ('''^i''', ('fixed', 'indent')), (''' in vim has a different meaning here.) See ''', 'indent'), (''''\'''', ('fixed', 'indent')), (''' for a list of commands which are considered jumps and add pre-jump cursor positions to the list.
 ''', 'indent'), ('''1''', 'fixed'), (''', ''', ''), ('''2''', 'fixed'), (''', ... ''', ''), ('''9''', 'fixed'), ('''
 ''', ''), ('''A number without leading zeroes can be used to repeat the subsequent key command or place the cursor on a given line or column (same as in vim)
 ''', 'indent'), ('''For example: ''', 'indent'), ('''1G''', ('fixed', 'indent')), (''' places the cursor in the first line of the file; ''', 'indent'), ('''10|''', ('fixed', 'indent')), (''' places the cursor in the tenth column of the current line (line and column numbering starts at 1.)  Note the number cannot start with zero, as ''', 'indent'), ('''0''', ('fixed', 'indent')), (''' is treated specially (immediately moves the cursor into the first column, same as in vim.)
 ''', 'indent'), ('''Searching and repeating:
 ''', ''), ('''/''', 'fixed'), (''', ''', ''), ('''?''', 'fixed'), ('''
 ''', ''), ('''Search for the following pattern (same as in vim.) Similar to vim, the keyboard focus is moved from the main text into a small text entry field (command line in vim) Note the previous search pattern is always cleared when re-entering the entry field, but all previously used patterns are still available in the history which can be accessed with the cursor up/down keys like in vim. Note in addition, you can use ''', 'indent'), ('''^d''', ('fixed', 'indent')), (''' in the search field to copy the text under the cursor in the main window into the search field, word by word.
-''', 'indent'), ('''As soon as a search expression is typed into the field, an incremental search is started and matching lines are highlighted. The cursor in the main text isn't actually moved there until the search is completed by pressing ''', 'indent'), ('''Return''', ('fixed', 'indent')), ('''.  The search can be aborted by ''', 'indent'), ('''^C''', ('fixed', 'indent')), (''' or ''', 'indent'), ('''Escape''', ('fixed', 'indent')), ('''. For more details see ''', 'indent'), ('''Key bindings: Key Bindings in the Search Entry Field''', ('href', 'indent')), ('''.
+''', 'indent'), ('''As soon as a search expression is typed into the field, an incremental search is started and matching lines are highlighted. The cursor in the main text isn't actually moved there until the search is completed by pressing ''', 'indent'), ('''Return''', ('fixed', 'indent')), ('''.  The search can be aborted by ''', 'indent'), ('''^C''', ('fixed', 'indent')), (''' or ''', 'indent'), ('''Escape''', ('fixed', 'indent')), ('''. For more details see ''', 'indent'), ('''Key bindings: Key bindings in the search entry field''', ('href', 'indent')), ('''.
 ''', 'indent'), ('''n''', 'fixed'), (''', ''', ''), ('''N''', 'fixed'), ('''
 ''', ''), ('''Repeats the previous search in forward or backwards direction respectively (similar to vim - however in contrary to vim ''', 'indent'), ('''n''', ('fixed', 'indent')), (''' always searches forward and ''', 'indent'), ('''N''', ('fixed', 'indent')), (''' always backwards because the standard vim behavior of remembering and reversing the search direction with ''', 'indent'), ('''N''', ('fixed', 'indent')), (''' is very confusing.)
 ''', 'indent'), ('''*''', 'fixed'), (''', ''', ''), ('''#''', 'fixed'), ('''
@@ -8187,13 +8196,14 @@ helpTexts[1] = (('''Key bindings''', 'title1'), ('''
 helpTexts[2] = (('''Options''', 'title1'), ('''
 ''', ''), ('''The following command line options are available:
 ''', ''), ('''-h''', 'bold'), (''' ''', ''), ('''limit''', 'underlined'), (''', ''', ''), ('''--head=limit''', 'bold'), ('''
-''', ''), ('''This option specifies the maximum number of bytes read from the start of the input file or stream, i.e. any following text is silently ignored.
-''', 'indent'), ('''The limit value is remembered in the configuration file and used in the next invocation unless overridden.  When neither ''', 'indent'), ('''-h''', ('bold', 'indent')), (''' or ''', 'indent'), ('''-t''', ('bold', 'indent')), (''' are specified and data is loaded from a stream via STDIN, a small dialog window pops up when the buffer limit is exceeded. This allows the user to select between head and tail modes manually.
+''', ''), ('''This option specifies the maximum number of bytes to load from input file or stream for display. When loading from a stream via STDIN, it's possible to continue reading more data later via command ''', 'indent'), ('''Continue loading STDIN''', ('underlined', 'indent')), ('''.
+''', 'indent'), ('''The limit value is remembered in the configuration file and used as default the next time data is loaded from STDIN. When loading from a file, default is to load the complete file.
+''', 'indent'), ('''When neither option ''', 'indent'), ('''-h''', ('bold', 'indent')), (''' or ''', 'indent'), ('''-t''', ('bold', 'indent')), (''' are specified and data is loaded from a stream via STDIN, a small dialog window pops up when the buffer limit is exceeded. This allows the user to select between head and tail modes manually.
 ''', 'indent'), ('''-t''', 'bold'), (''' ''', ''), ('''limit''', 'underlined'), (''', ''', ''), ('''--tail=limit''', 'bold'), ('''
-''', ''), ('''This option specifies the maximum number of bytes to be read into the display buffer.  If the input is a file which is larger then the given buffer limit, text at the beginning of the file is skipped. If the input is a stream, all data is read into a temporary queue until the end-of-stream is reached; then the last ''', 'indent'), ('''limit''', ('underlined', 'indent')), (''' number of bytes which were read from the stream are loaded into the display buffer.
-''', 'indent'), ('''The limit value is remembered in the configuration file and used in the next invocation unless overridden.
+''', ''), ('''This option specifies to load only the given maximum number of bytes into the display from the end of the file or input stream. This means when reading from a file, data from the beginning is skipped if the file is larger than the limit.  If the input is a STDIN stream, data is read into a ring buffer of the given size. Once the end-of-stream is reached, the last content of the ring buffer is loaded into the display.
+''', 'indent'), ('''The limit value is remembered in the configuration file equivalently as described for the "head" option.
 ''', 'indent'), ('''-r''', 'bold'), (''' ''', ''), ('''path''', 'underlined'), (''', ''', ''), ('''--rcfile=path''', 'bold'), ('''
-''', ''), ('''This option can be used to specify an alternate configuration file. When this option is not present, the configuration file is stored in the home directory, see section FILES.
+''', ''), ('''This option can be used to specify an alternate configuration file. When this option is not present, the configuration file is stored in system directories, see ''', 'indent'), ('''Files''', ('href', 'indent')), ('''.
 ''', 'indent'), )
 
 helpTexts[3] = (('''Environment''', 'title1'), ('''
@@ -8202,8 +8212,9 @@ helpTexts[3] = (('''Environment''', 'title1'), ('''
 
 helpTexts[4] = (('''Files''', 'title1'), ('''
 ''', ''), ('''$HOME/.config/trowser/trowser.py.rc''', 'bold'), ('''
-''', ''), ('''UNIX''', ('underlined', 'indent')), (''': Configuration file where all personal settings and the search history are stored. Per default this file is created in your home directory, but a different path and file name can be specified with the ''', 'indent'), ('''--rcfile''', ('bold', 'indent')), (''' option (see ''', 'indent'), ('''Options''', ('href', 'indent')), (''').
-''', 'indent'), ('''During updates to this file, trowser temporarily creates a file called ''', 'indent'), ('''.trowserc.XXXXX.tmp''', ('fixed', 'indent')), (''' in the home directory, where "XXXXX" is a random number. The old file is then replaced with this new file. This procedure will obviously fail if your home directory is not writable.
+''', ''), ('''UNIX''', ('underlined', 'indent')), (''': Configuration file where all personal settings and the search history are stored. The path may be overriden via environment variable ''', 'indent'), ('''XDG_CONFIG_HOME''', ('fixed', 'indent')), ('''. A different file name can be specified with the ''', 'indent'), ('''--rcfile''', ('bold', 'indent')), (''' option (see ''', 'indent'), ('''Options''', ('href', 'indent')), (''').
+''', 'indent'), ('''During updates to this file, trowser temporarily creates a new file the same directory, where "XXXXX" is a random number. The old file is then replaced with this new file. This procedure will obviously fail if the target directory (not the file itself!) is not writable.
+''', 'indent'), ('''MS Windows''', ('underlined', 'indent')), (''': On the MS Windows platform, the configuration file is created in the hidden application data directory in your user home. The specific path depends on your operating system version. (The path is qeried via a system API.)
 ''', 'indent'), )
 
 helpTexts[5] = (('''Caveats''', 'title1'), ('''
@@ -8460,8 +8471,7 @@ def LoadRcFile():
   global tlb_history, tlb_hist_maxlen, tlb_case, tlb_regexp, tlb_hall
   global patlist, col_palette, tick_pat_sep, tick_pat_num, tick_str_prefix
   global font_content, col_bg_content, col_fg_content, fmt_find, fmt_findinc
-  global win_geom, fmt_selection
-  global load_buf_size
+  global win_geom, fmt_selection, load_buf_size_default
   global rcfile_version, myrcfile
 
   error = False
@@ -8501,7 +8511,7 @@ def LoadRcFile():
             elif (var == "col_fg_content"):    col_fg_content = val
             elif (var == "fmt_find"):          fmt_find = val
             elif (var == "fmt_findinc"):       fmt_findinc = val
-            elif (var == "load_buf_size"):     load_buf_size = val
+            elif (var == "load_buf_size"):     load_buf_size_default = val
             elif (var == "rcfile_version"):    rcfile_version = val
             elif (var == "rc_compat_version"): rc_compat_version = val
             elif (var == "rc_timestamp"):      pass
@@ -8538,14 +8548,6 @@ def LoadRcFile():
     except Exception as e:
       print("Error configuring content font:", str(e), file=sys.stderr)
 
-    # override config var with command line options
-    try:
-      global load_buf_size_opt
-      if load_buf_size_opt != 0:
-        load_buf_size = load_buf_size_opt
-    except:
-      pass
-
   except OSError as e:
     if e.errno != errno.ENOENT:
       print("Failed to load config file:", str(e), file=sys.stderr)
@@ -8560,7 +8562,7 @@ def UpdateRcFile():
   global tlb_history, tlb_hist_maxlen, tlb_case, tlb_regexp, tlb_hall
   global patlist, col_palette, tick_pat_sep, tick_pat_num, tick_str_prefix
   global font_content, col_bg_content, col_fg_content, fmt_find, fmt_findinc
-  global fmt_selection, load_buf_size
+  global fmt_selection, load_buf_size_default
 
   if tid_update_rc_sec: tk.after_cancel(tid_update_rc_sec)
   if tid_update_rc_min: tk.after_cancel(tid_update_rc_min)
@@ -8619,8 +8621,8 @@ def UpdateRcFile():
       print("fmt_findinc=", json.dumps(fmt_findinc), file=rcfile)
       print("fmt_selection=", json.dumps(fmt_selection), file=rcfile)
 
-      # misc (note the head/tail mode is omitted intentionally)
-      print("load_buf_size=", json.dumps(load_buf_size), file=rcfile)
+      # file/stream load parameters
+      print("load_buf_size=", json.dumps(load_buf_size_default), file=rcfile)
 
     # copy attributes on the new file
     try:
@@ -8754,7 +8756,7 @@ def ParseArgInt(opt, val):
 # This function parses and evaluates the command line arguments.
 #
 def ParseArgv():
-  global load_file_mode, load_buf_size_opt, myrcfile
+  global load_file_mode, load_buf_size, myrcfile
 
   file_seen = False
   arg_idx = 1
@@ -8765,13 +8767,13 @@ def ParseArgv():
       if arg == "-t":
         ParseArgvLenCheck(arg_idx)
         arg_idx += 1
-        load_buf_size_opt = ParseArgInt(arg, sys.argv[arg_idx])
+        load_buf_size = ParseArgInt(arg, sys.argv[arg_idx])
         load_file_mode = 1
 
       elif arg.startswith("--tail"):
         match = re.match("^--tail=(.+)$", arg)
         if match:
-          load_buf_size_opt = ParseArgInt(arg, match.group(1))
+          load_buf_size = ParseArgInt(arg, match.group(1))
           load_file_mode = 1
         else:
           PrintUsage(arg, "requires a numerical argument (e.g. --tail=10000000)")
@@ -8779,13 +8781,13 @@ def ParseArgv():
       elif arg == "-h":
         ParseArgvLenCheck(arg_idx)
         arg_idx += 1
-        load_buf_size_opt = ParseArgInt(arg, sys.argv[arg_idx])
+        load_buf_size = ParseArgInt(arg, sys.argv[arg_idx])
         load_file_mode = 0
 
       elif arg.startswith("--head"):
         match = re.match("^--head=(.+)$", arg)
         if match:
-          load_buf_size_opt = ParseArgInt(arg, match.group(1))
+          load_buf_size = ParseArgInt(arg, match.group(1))
           load_file_mode = 0
         else:
           PrintUsage(arg, "requires a numerical argument (e.g. --head=10000000)")
@@ -8819,9 +8821,7 @@ def ParseArgv():
 
     arg_idx += 1
 
-  if not file_seen:
-    print("File name missing (use \"-\" for stdin)", file=sys.stderr)
-    PrintUsage()
+  return file_seen
 
 
 # ----------------------------------------------------------------------------
@@ -9080,11 +9080,11 @@ patlist = [
   ["^\\[ ", True, True, "default", "tag1", "", "#b4e79c", "", False, False, False, "", "", "", 1, 0]
 ]
 
-# This variable contains the mode and limit for file load. The mode can be
-# 0 for "head" or 1 for "tail" (i.e. load data from end of the file). The
-# values can be changed by the "head" and "tail" command line options.
+# This variable contains the limit in Bytes to read from input file or stream,
+# set via "head" and "tail" command line options. Default is no limit.
 load_file_mode = 0
-load_buf_size = 0x100000
+load_buf_size = 0
+load_buf_size_default = 0x100000
 
 # define RC file version limit for forwards compatibility
 rcfile_compat = 0x02000001
@@ -9112,7 +9112,7 @@ font_content = tkf.Font(font=tkf.nametofont(font_content_default))
 
 # Parse command line parameters & load configuration options
 myrcfile = GetRcFilePath()
-ParseArgv()
+load_initial_file = ParseArgv()
 LoadRcFile()
 
 InitResources()
@@ -9120,12 +9120,13 @@ CreateMainWindow()
 HighlightCreateTags()
 tk.wm_deiconify()
 
-if sys.argv[-1] == "-":
-  cur_filename = ""
-  load_pipe = LoadPipe()
-  load_pipe.LoadPipe_Start()
-else:
-  LoadFile(sys.argv[-1])
+if load_initial_file:
+  if sys.argv[-1] == "-":
+    cur_filename = ""
+    load_pipe = LoadPipe()
+    load_pipe.LoadPipe_Start()
+  else:
+    LoadFile(sys.argv[-1])
 
 # done - all following actions are event-driven
 # the application exits when the main window is closed

@@ -45,7 +45,7 @@ public:
     static void updateRcFile();
     static void updateRcAfterIdle();
     static bool isValid();
-    static void getFileLoadParams(LoadMode& mode, size_t& size);
+    static void getFileLoadParams(LoadMode& mode, size_t& size, bool fromPipe);
     static void updateFileLoadParams(LoadMode mode, size_t size);
 
 private:
@@ -79,14 +79,16 @@ private:
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     // command line parameters
     //
-    friend void ParseArgv(int argc, const char * const argv[]);
+    friend bool ParseArgv(int argc, const char * const argv[]);
 
     static LoadMode load_file_mode;
+    static size_t load_buf_size_stream_default;
     static size_t load_buf_size;
     static bool load_buf_size_opt;
 
     static const LoadMode defaultLoadFileMode = LoadMode::Head;
-    static const size_t defaultLoadBufSize = 20*1024*1024;
+    static const size_t defaultLoadBufSize = 0;
+    static const size_t defaultLoadBufSizeStream = 20*1024*1024;
     static constexpr const char * defaultRcFileName = ".trowserc.qt";
 
     static const char * myrcfile;
@@ -94,6 +96,6 @@ private:
     static const uint32_t rcfile_version = 0x03000001;
 };
 
-void ParseArgv(int argc, const char * const argv[]);
+bool ParseArgv(int argc, const char * const argv[]);
 
 #endif // _CONFIG_FILE_H

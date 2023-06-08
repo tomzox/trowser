@@ -50,6 +50,7 @@ def ReplaceEntity(match):
       sys.exit(1)
 
 def Escape(txt):
+    txt = txt.replace("\\", "\\\\")
     if txt.endswith("'"):
         return txt[:-1] + r"\'"
     else:

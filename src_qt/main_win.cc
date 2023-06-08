@@ -185,6 +185,7 @@ void MainWin::populateMenus()
         connect(act, &QAction::triggered, this, &MainWin::menuCmdFileOpen);
     m_actFileReload = menubar_ctrl->addAction("Reload current file");
         connect(m_actFileReload, &QAction::triggered, this, &MainWin::menuCmdReload);
+        m_actFileReload->setEnabled(false);
     menubar_ctrl->addSeparator();
     act = menubar_ctrl->addAction("Discard above cursor...");
         connect(act, &QAction::triggered, [=](){ MainWin::menuCmdDiscard(false); });
@@ -545,9 +546,17 @@ void MainWin::startLoading(const char * fileName)
     this->show();
 
     if (strcmp(fileName, "-") == 0)
+    {
         loadFromPipe();
-    else
+    }
+    else if (strlen(fileName) > 0)
+    {
         loadFromFile(fileName);
+    }
+    else
+    {
+        // no file specified: show empty window
+    }
 }
 
 /**
@@ -560,14 +569,21 @@ void MainWin::loadFromFile(const QString& fileName)
     {
         LoadMode load_file_mode;
         size_t load_buf_size;
-        ConfigFile::getFileLoadParams(load_file_mode, load_buf_size);
+        ConfigFile::getFileLoadParams(load_file_mode, load_buf_size, false);
 
-        if (   (load_file_mode == LoadMode::Tail)
-            && (size_t(fh.size()) > load_buf_size))
+        if (load_buf_size > 0)
         {
-            fh.seek(fh.size() - load_buf_size);
+            if (   (load_file_mode == LoadMode::Tail)
+                && (size_t(fh.size()) > load_buf_size))
+            {
+                fh.seek(fh.size() - load_buf_size);
+            }
+            if (load_buf_size > size_t(fh.size()))
+            {
+                load_buf_size = fh.size();
+            }
         }
-        if (load_buf_size > size_t(fh.size()))
+        else
         {
             load_buf_size = fh.size();
         }
@@ -668,7 +684,7 @@ void MainWin::loadFromPipe()
     {
         LoadMode load_file_mode;
         size_t load_buf_size;
-        ConfigFile::getFileLoadParams(load_file_mode, load_buf_size);
+        ConfigFile::getFileLoadParams(load_file_mode, load_buf_size, true);
 
         m_loadPipe = new LoadPipe(this, m_mainText, load_file_mode, load_buf_size);
         connect(m_loadPipe, &LoadPipe::pipeLoaded, this, &MainWin::loadPipeDone);
@@ -755,11 +771,12 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     app.setApplicationName("trowser");
-    ParseArgv(argc, argv);
+    bool load_initial_file = ParseArgv(argc, argv);
 
-    MainWin main(&app);
+    MainWin main_win(&app);
     ConfigFile::loadRcFile();
-    main.startLoading(argv[argc - 1]);
+
+    main_win.startLoading(load_initial_file ? argv[argc - 1] : "");
 
     return app.exec();
 }
