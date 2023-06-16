@@ -2384,7 +2384,6 @@ def KeyCmd_KeyPress(ev):
     KeyCmd_ExecAbsColumn()
     return "break"
   elif not ev.char.isdigit() and re.match(r'[\x21-\x7e\s\n]', ev.char): # [[:graph:][:space:]]
-    print("XXX break")
     return "break"
   else:
     return None
